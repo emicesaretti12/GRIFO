@@ -5,11 +5,14 @@
 -- ejemplo del contrato, así que sirven para reproducirlo tal cual.
 -- ═════════════════════════════════════════════════════════════════════════════
 
-insert into public.grifos (id, nombre, precio_litro_centavos, pulsos_por_litro, ml_minimos)
+-- activo = false en los que todavia no existen fisicamente. Un grifo activo sin
+-- token es una contradiccion (no puede operar) y ensucia el arqueo.
+-- Al montar uno: rotar_token_grifo(id) y despues activo = true.
+insert into public.grifos (id, nombre, precio_litro_centavos, pulsos_por_litro, ml_minimos, activo)
 values
-  (1, 'IPA',        320000, 452.700, 50),   -- $3200 el litro
-  (2, 'Rubia',      280000, 452.700, 50),   -- $2800 el litro
-  (3, 'Negra',      350000, 452.700, 50)
+  (1, 'IPA',        320000, 452.700, 50, true),    -- $3200 el litro
+  (2, 'Rubia',      280000, 452.700, 50, false),   -- $2800 el litro
+  (3, 'Negra',      350000, 452.700, 50, false)
 on conflict (id) do nothing;
 
 -- Las tarjetas se crean con cargar_saldo, NO escribiendo la tabla a mano.

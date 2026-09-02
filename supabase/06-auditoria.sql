@@ -49,9 +49,27 @@ select id, uid, grifo_id, estado, abierta_en,
  order by abierta_en;
 
 
--- ── 5. Grifos sin token ─────────────────────────────────────────────────────
--- Estos no pueden operar (fallan cerrado). Si un grifo está en la barra y
--- aparece acá, hay que correrle rotar_token_grifo y grabarle el token.
+-- ── 5. Grifos ACTIVOS sin token ─────────────────────────────────────────────
+-- Un grifo sin token no puede operar (falla cerrado). Filtramos por `activo`
+-- para que la lista solo muestre problemas de verdad: una canilla que se supone
+-- que está andando pero no puede.
+--
+-- Los grifos que todavía no existen físicamente van con activo = false, y así
+-- no ensucian este arqueo. Cuando montes uno:
+--    select public.rotar_token_grifo(2);
+--    update public.grifos set activo = true where id = 2;
 select id, nombre, activo, token_rotado_en
   from public.grifos
- where token_hash is null;
+ where token_hash is null and activo;
+
+
+-- ── 6. Inventario de grifos ─────────────────────────────────────────────────
+-- Panorama general, para ver de un vistazo cuál está listo y cuál no.
+select id, nombre,
+       activo,
+       (token_hash is not null) as tiene_token,
+       precio_litro_centavos,
+       pulsos_por_litro,
+       token_rotado_en
+  from public.grifos
+ order by id;
