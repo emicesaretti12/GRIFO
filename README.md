@@ -16,7 +16,7 @@ YF-S201C · válvula solenoide 12V vía módulo relé
 |---|---|
 | **Última etapa aceptada** | ✅ 1 — Blink (LED parpadeando + Serial a 115200, verificado en placa) |
 | **Próxima etapa** | 2 — Lector RFID |
-| **En paralelo** | backend de Supabase con token por grifo y recarga en caja — ⚠️ hay que volver a correr `01` y `02` en el proyecto |
+| **En paralelo** | ✅ backend de Supabase **verificado punta a punta sobre HTTP** contra el proyecto real |
 | **Bloqueado por hardware** | etapas 2 y 3 esperan los cables dupont · etapa 4 espera el módulo relé |
 
 ### Datos de la placa real

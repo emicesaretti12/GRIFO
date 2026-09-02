@@ -32,15 +32,20 @@ Salida esperada:
 ✅ PERMISOS OK — anon solo puede ejecutar las dos RPC
 ```
 
-> ⚠️ **Hay que volver a correr `01` y `02`** si ya aplicaste la versión sin
-> token: agregan las columnas de token y la tabla `movimientos`, borran las
-> firmas viejas de las RPC (las sin token, que si quedaran serían una puerta
-> abierta) y crean `cargar_saldo`. Son idempotentes, se pueden correr de nuevo
-> sin problema. Después: `select public.rotar_token_grifo(1);` para generar el
-> token del grifo.
+> ✅ **Verificado punta a punta sobre HTTP** contra el proyecto real
+> (`bkrwabezndztkldwygjd`), con la anon key y el mismo transporte que va a usar
+> el ESP32:
 >
-> Los cinco scripts se corrieron dos veces seguidas contra un PostgreSQL 16
-> local y pasan, así que son idempotentes.
+> | Prueba | Resultado |
+> |---|---|
+> | `GET /rest/v1/tarjetas` | `permission denied for table tarjetas` |
+> | `abrir_sesion` con token falso | `{"ok":false,"motivo":"token_invalido"}` |
+> | `abrir_sesion` con token válido | `sesion_id 13, saldo 850000, ml_maximos 2656` |
+> | `cerrar_sesion` 473 mL | `saldo 698640, costo 151360` — el número exacto del contrato |
+> | `cerrar_sesion` repetido | `"repetida": true`, saldo **sigue** en 698640 |
+>
+> Los cinco scripts se corrieron además dos veces seguidas contra un
+> PostgreSQL 16 local, así que son idempotentes.
 
 ## Probar con curl
 
