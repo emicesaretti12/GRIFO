@@ -86,6 +86,7 @@ supabase/
   06-auditoria.sql          arqueo: descuadres, cobros recortados, sesiones colgadas
   07-personal.sql           roles del personal, policies RLS y RPC de caja/admin
   08-pruebas-personal.sql   pruebas de roles y permisos
+  09-primer-admin.sql       crea el primer admin (se corre una sola vez)
 docs/
   plan-de-etapas.md         las 8 etapas, qué necesita cada una, criterio de aceptación
   pinout-y-trampas.md       pinout definitivo + trampas de hardware explicadas

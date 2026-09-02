@@ -64,17 +64,14 @@ VITE_SUPABASE_ANON_KEY=sb_publishable_...
 
 ### El primer usuario
 
-`admin_set_rol` requiere ser admin, así que el primero se crea a mano. Una vez:
+Huevo y gallina: `admin_set_rol` exige ser admin, así que el primero no puede
+crearse desde la app. Se hace una vez:
 
-1. Supabase → **Authentication → Users → Add user**, con tu mail y una contraseña.
-2. En el **SQL Editor**:
-
-```sql
-insert into public.personal (user_id, nombre, rol)
-select id, 'Tu Nombre', 'admin' from auth.users
- where email = 'vos@ejemplo.com'
-on conflict (user_id) do update set rol = 'admin', activo = true;
-```
+1. Supabase → **Authentication → Users → Add user**, con tu mail y una
+   contraseña. Marcá **Auto Confirm User** para no tener que validar el mail.
+2. Corré [`supabase/09-primer-admin.sql`](../supabase/09-primer-admin.sql) en el
+   SQL Editor. Si el usuario todavía no existe, el script corta con un mensaje
+   que te dice exactamente eso en vez de fallar en silencio.
 
 De ahí en adelante, al resto del personal lo das de alta desde la pantalla
 **Personal**.
