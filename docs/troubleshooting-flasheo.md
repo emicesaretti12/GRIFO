@@ -66,6 +66,46 @@ Es más lento pero mucho más tolerante con cables largos o conversores clon.
 
 ---
 
+## `Unable to verify flash chip connection (No serial data received.)`
+
+Se reconoce porque el flasheo llega lejos —detecta el chip, lee el MAC, sube y
+corre el stub— y muere **justo despues** de estas dos lineas:
+
+```
+Changing baud rate to 460800
+Changed.
+
+A fatal error occurred: Unable to verify flash chip connection (No serial data received.)
+```
+
+**Qué pasa.** esptool se conecta a 115200 y despues negocia subir a 460800 para
+escribir mas rapido. La placa acepta el cambio (`Changed.`), pero a esa velocidad
+el conversor CP2102 y/o el cable no dan abasto: los datos llegan corruptos y la
+PC deja de entender las respuestas.
+
+Suele venir acompanado de este warning mas arriba, que es el mismo problema visto
+de otra forma — esptool mide el cristal contando tiempos por el puerto serie, y
+si el enlace no es preciso, la medicion da cualquier cosa:
+
+```
+WARNING: Detected crystal freq 15.55MHz is quite different to normalized freq 26MHz
+```
+
+**Solucion.** No negociar la subida de velocidad: flashear todo a 115200. Ya esta
+puesto en `platformio.ini`:
+
+```ini
+upload_speed = 115200
+```
+
+**Si aun asi falla:**
+
+- Enchufar la placa a un puerto USB **directo de la PC**, no a un hub.
+- Probar otro cable USB (que sea de datos, no de solo carga).
+- Mantener apretado **BOOT** durante el `Connecting`.
+
+---
+
 ## `Could not open port ... Access is denied` / `Resource busy`
 
 Hay otro programa usando el puerto. Casi siempre es **el monitor serial que
