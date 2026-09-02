@@ -70,6 +70,7 @@ pio run -e etapa1_blink -t upload
 
 ```
 platformio.ini              un [env:...] por etapa
+.mcp.json                   servidor MCP de Supabase (hay que autenticarlo local, ver docs)
 src/
   etapa1_blink/main.cpp     etapa 1 — blink + info del chip
 supabase/

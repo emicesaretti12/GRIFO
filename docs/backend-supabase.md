@@ -39,8 +39,8 @@ Salida esperada:
 ## Probar con curl
 
 ```bash
-SUPA=https://TUPROYECTO.supabase.co
-KEY=tu-anon-key
+SUPA=https://bkrwabezndztkldwygjd.supabase.co
+KEY=tu-anon-key     # nunca la commitees; exportala en tu shell
 
 curl -s -X POST "$SUPA/rest/v1/rpc/abrir_sesion" \
   -H "apikey: $KEY" -H "Authorization: Bearer $KEY" \
@@ -62,6 +62,34 @@ Y para comprobar que las tablas están cerradas — esto **tiene** que fallar:
 curl -s "$SUPA/rest/v1/tarjetas?select=*" -H "apikey: $KEY"
 # {"code":"42501","message":"permission denied for table tarjetas"}
 ```
+
+---
+
+## MCP de Supabase
+
+El repo trae un [`.mcp.json`](../.mcp.json) con el servidor MCP de Supabase
+apuntando al proyecto `bkrwabezndztkldwygjd`. Sirve para que Claude Code pueda
+aplicar migraciones, consultar el esquema y leer logs sin salir de la terminal.
+
+**Hay que autenticarlo, y eso se hace una sola vez, en tu máquina:**
+
+```bash
+cd ~/GRIFO/GRIFO
+git pull
+claude          # abrir Claude Code en la carpeta del proyecto
+/mcp            # elegir "supabase" -> Authenticate
+```
+
+Se abre el navegador, entrás a tu cuenta de Supabase y listo. Tiene que ser una
+terminal común, no una extensión de IDE.
+
+> ⚠️ El flujo es OAuth con navegador, así que **no se puede completar desde una
+> sesión remota de Claude Code en la nube**: ahí no hay navegador ni forma de
+> recibir el callback. Desde el contenedor remoto las herramientas de Supabase
+> no van a estar disponibles aunque el `.mcp.json` esté en el repo.
+
+Sin el MCP igual está todo cubierto: los cinco `.sql` se pegan en el SQL Editor
+de Supabase y hacen exactamente lo mismo.
 
 ---
 
