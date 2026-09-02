@@ -14,9 +14,25 @@ YF-S201C · válvula solenoide 12V vía módulo relé
 
 | | |
 |---|---|
-| **Etapa en curso** | 1 — Blink |
-| **Esperando** | que el blink corra en la placa física |
-| **Bloqueado por hardware** | etapas 2 y 3 esperan cables dupont · etapa 4 espera el módulo relé |
+| **Última etapa aceptada** | ✅ 1 — Blink (LED parpadeando + Serial a 115200, verificado en placa) |
+| **Próxima etapa** | 2 — Lector RFID |
+| **Bloqueado por hardware** | etapas 2 y 3 esperan los cables dupont · etapa 4 espera el módulo relé |
+
+### Datos de la placa real
+
+Confirmados al flashear la etapa 1:
+
+| | |
+|---|---|
+| Chip | ESP32-D0WD-V3, revisión v3.1 |
+| Cristal | 40 MHz |
+| Flash | 4 MB |
+| MAC | `20:50:0D:D1:CC:3C` |
+| Puerto (Debian) | `/dev/ttyUSB0` (conversor CP2102) |
+
+⚠️ **Esta placa necesita `upload_speed = 115200`.** Con el default de esptool
+(460800) el flasheo muere después del `Changing baud rate`. Ya está fijado en
+`platformio.ini` — no lo subas.
 
 Ver el plan completo en [`docs/plan-de-etapas.md`](docs/plan-de-etapas.md).
 

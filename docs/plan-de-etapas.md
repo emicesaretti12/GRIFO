@@ -8,8 +8,8 @@ sistema. Por eso el relé va cuarto y no segundo.
 
 | # | Etapa | Hardware que necesita | Estado |
 |---|---|---|---|
-| 1 | Blink | solo cable USB | 🔵 en curso |
-| 2 | Lector RFID solo | ⏳ cables dupont | pendiente |
+| 1 | Blink | solo cable USB | ✅ **aceptada** |
+| 2 | Lector RFID solo | ⏳ cables dupont | 🔵 próxima |
 | 3 | Caudalímetro solo | ⏳ cables dupont | pendiente |
 | 4 | Relé solo | ⏳ módulo relé | pendiente |
 | 5 | Los tres juntos, sin red | — | pendiente |
@@ -24,6 +24,10 @@ sistema. Por eso el relé va cuarto y no segundo.
 **Objetivo:** confirmar toolchain, driver CP2102 y que podemos flashear.
 **Se acepta cuando:** se ve el LED parpadear y sale algo por Serial a 115200.
 **Detalle:** [`etapa-01-blink.md`](etapa-01-blink.md)
+
+✅ **ACEPTADA.** LED azul (GPIO2) parpadeando y banner por Serial a 115200,
+verificado en la placa. Lo que dejó de aprendizaje: esta placa no tolera el
+flasheo a 460800 — ver `upload_speed` en `platformio.ini`.
 
 ## Etapa 2 — Lector RFID solo
 **Necesita:** cables dupont (⏳ no llegaron).

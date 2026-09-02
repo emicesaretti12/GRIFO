@@ -80,6 +80,21 @@ velocidad. Tiene que ser **115200**.
 Cuando esto ande, avisá y pasamos a la etapa 2 (lector RFID) — que necesita los
 cables dupont.
 
+## Resultado ✅ ACEPTADA
+
+Verificado en la placa: LED azul (GPIO2) parpadeando 1 vez por segundo y banner
+por Serial a 115200.
+
+Lo que quedó confirmado del hardware:
+
+- ESP32-D0WD-V3 rev v3.1, cristal 40 MHz, flash 4 MB, MAC `20:50:0D:D1:CC:3C`.
+- Debian ve la placa en `/dev/ttyUSB0` vía CP2102.
+- **El flasheo tiene que ser a 115200.** Con el default (460800) esptool
+  conecta, lee el MAC y corre el stub, pero muere en `Unable to verify flash
+  chip connection`. Además, a 460800 leía mal el cristal (15.55 MHz → asumía
+  26 MHz); a 115200 lo lee bien: 40 MHz.
+
 ## Si no flashea
+
 
 Ver [`troubleshooting-flasheo.md`](troubleshooting-flasheo.md).
