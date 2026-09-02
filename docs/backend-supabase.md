@@ -71,17 +71,35 @@ El repo trae un [`.mcp.json`](../.mcp.json) con el servidor MCP de Supabase
 apuntando al proyecto `bkrwabezndztkldwygjd`. Sirve para que Claude Code pueda
 aplicar migraciones, consultar el esquema y leer logs sin salir de la terminal.
 
-**Hay que autenticarlo, y eso se hace una sola vez, en tu máquina:**
+**No hace falta para trabajar.** Los cinco `.sql` se pegan en el SQL Editor de
+Supabase y hacen exactamente lo mismo. El MCP es una comodidad: le permite a
+Claude Code aplicar migraciones y leer el esquema sin que copies y pegues.
+
+Si lo querés, hay que autenticarlo una sola vez, y **requiere el CLI de Claude
+Code instalado en tu máquina** (la versión web no sirve para esto):
 
 ```bash
+# 1. instalar el CLI (necesita Node.js)
+npm install -g @anthropic-ai/claude-code
+
+# 2. abrir Claude Code parado en la carpeta del proyecto
 cd ~/GRIFO/GRIFO
-git pull
-claude          # abrir Claude Code en la carpeta del proyecto
-/mcp            # elegir "supabase" -> Authenticate
+claude
 ```
 
-Se abre el navegador, entrás a tu cuenta de Supabase y listo. Tiene que ser una
-terminal común, no una extensión de IDE.
+Y **una vez adentro de Claude Code** —o sea, ya no en la terminal— escribir:
+
+```
+/mcp
+```
+
+Ahí elegís `supabase` → *Authenticate*. Se abre el navegador, entrás a tu cuenta
+y listo.
+
+> `/mcp` es un comando de Claude Code, no de bash. Si lo tipeás en la terminal
+> te va a decir `No existe el fichero o el directorio`.
+
+Tiene que ser una terminal común, no una extensión de IDE.
 
 > ⚠️ El flujo es OAuth con navegador, así que **no se puede completar desde una
 > sesión remota de Claude Code en la nube**: ahí no hay navegador ni forma de
