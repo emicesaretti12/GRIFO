@@ -24,31 +24,15 @@ Ver el plan completo en [`docs/plan-de-etapas.md`](docs/plan-de-etapas.md).
 
 ## Cómo compilar y flashear
 
-> La primera vez PlatformIO baja el toolchain del ESP32 (unos cientos de MB).
-> Tarda un par de minutos. Es una sola vez.
+**En Linux, de cero y paso a paso:** [`docs/setup-linux.md`](docs/setup-linux.md)
+— instalación de PlatformIO, permisos del puerto serie, flasheo y monitor, con
+lo que tenés que ver después de cada comando.
 
-### Opción A — VSCode (recomendada si es tu primera vez)
-
-1. Instalá [VSCode](https://code.visualstudio.com/).
-2. En VSCode: pestaña de extensiones (el ícono de los cuadraditos, o `Ctrl+Shift+X`)
-   → buscá **PlatformIO IDE** → *Install*. Tarda, y al final pide recargar.
-3. `File → Open Folder…` → elegí **esta carpeta** (la que tiene el `platformio.ini`).
-   Importante: la carpeta del proyecto, no una de más arriba ni `src/`.
-4. Enchufá la ESP32 por USB.
-5. En la barra de estado (abajo de todo) aparecen unos íconos chiquitos:
-   - **✓** → *Build* (solo compila)
-   - **→** → *Upload* (compila y flashea)
-   - **🔌** → *Serial Monitor*
-6. Dale a **→** (Upload). Cuando termine con `SUCCESS`, dale al **🔌**.
-
-### Opción B — línea de comandos
+Resumen, parado en la carpeta del proyecto (la que tiene el `platformio.ini`):
 
 ```bash
-pip install platformio          # una sola vez
-
-pio run                         # solo compila
 pio run -t upload               # compila y flashea
-pio device monitor -b 115200    # abre el monitor serial
+pio device monitor -b 115200    # abre la consola de la placa (Ctrl+C para salir)
 ```
 
 Para flashear una etapa puntual (cuando haya más de una):
@@ -57,8 +41,11 @@ Para flashear una etapa puntual (cuando haya más de una):
 pio run -e etapa1_blink -t upload
 ```
 
+> La primera compilación tarda varios minutos: PlatformIO baja el toolchain del
+> ESP32 (unos cientos de MB). Es una sola vez, después compila en segundos.
+
 **¿No flashea?** → [`docs/troubleshooting-flasheo.md`](docs/troubleshooting-flasheo.md)
-(driver CP2102, botón BOOT, permisos en Linux, puerto ocupado).
+(cable USB de solo carga, permisos, botón BOOT, puerto ocupado, baudrate).
 
 ---
 
@@ -72,6 +59,7 @@ docs/
   plan-de-etapas.md         las 8 etapas, qué necesita cada una, criterio de aceptación
   pinout-y-trampas.md       pinout definitivo + trampas de hardware explicadas
   etapa-01-blink.md         cableado y qué esperar en esta etapa
+  setup-linux.md            paso a paso completo en Linux, de cero a flashear
   troubleshooting-flasheo.md  cuando no flashea
 ```
 
