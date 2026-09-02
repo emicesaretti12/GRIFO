@@ -16,7 +16,8 @@ YF-S201C · válvula solenoide 12V vía módulo relé
 |---|---|
 | **Última etapa aceptada** | ✅ 1 — Blink (LED parpadeando + Serial a 115200, verificado en placa) |
 | **Próxima etapa** | 2 — Lector RFID |
-| **En paralelo** | ✅ backend de Supabase **verificado punta a punta sobre HTTP** contra el proyecto real |
+| **En paralelo** | ✅ backend de Supabase verificado punta a punta sobre HTTP |
+| **App de gestión** | ✅ React + Vite + TypeScript, compila y renderiza — falta aplicar `07` y crear el primer admin |
 | **Bloqueado por hardware** | etapas 2 y 3 esperan los cables dupont · etapa 4 espera el módulo relé |
 
 ### Datos de la placa real
@@ -73,19 +74,26 @@ platformio.ini              un [env:...] por etapa
 .mcp.json                   servidor MCP de Supabase (hay que autenticarlo local, ver docs)
 src/
   etapa1_blink/main.cpp     etapa 1 — blink + info del chip
+app/                        app de gestión (React + Vite + TypeScript)
+  src/pantallas/            caja, tarjetas, grifos, reportes, personal
+  src/lib/                  cliente supabase, lector RFID USB, plata en centavos
 supabase/
   01-schema.sql             tablas (con el libro mayor), índices y RLS
   02-funciones.sql          RPC del dispositivo + caja + tokens + permisos
   03-seed.sql               datos de prueba
   04-pruebas.sql            suite de pruebas (corre en transacción, hace ROLLBACK)
   05-permisos.sql           verifica que la anon key no pueda tocar nada más
+  06-auditoria.sql          arqueo: descuadres, cobros recortados, sesiones colgadas
+  07-personal.sql           roles del personal, policies RLS y RPC de caja/admin
+  08-pruebas-personal.sql   pruebas de roles y permisos
 docs/
   plan-de-etapas.md         las 8 etapas, qué necesita cada una, criterio de aceptación
-  backend-supabase.md       cómo aplicar y probar el backend + decisiones de diseño
   pinout-y-trampas.md       pinout definitivo + trampas de hardware explicadas
   etapa-01-blink.md         cableado y qué esperar en esta etapa
   setup-linux.md            paso a paso completo en Linux, de cero a flashear
   troubleshooting-flasheo.md  cuando no flashea
+  backend-supabase.md       backend: aplicar, probar, decisiones de diseño
+  app-gestion.md            app de gestión: puesta en marcha, roles, lector RFID
 ```
 
 ### Por qué un sketch por etapa
