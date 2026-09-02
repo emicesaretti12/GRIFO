@@ -16,7 +16,7 @@ YF-S201C · válvula solenoide 12V vía módulo relé
 |---|---|
 | **Última etapa aceptada** | ✅ 1 — Blink (LED parpadeando + Serial a 115200, verificado en placa) |
 | **Próxima etapa** | 2 — Lector RFID |
-| **En paralelo** | ✅ backend de Supabase **aplicado y verificado** en el proyecto real (`bkrwabezndztkldwygjd`) |
+| **En paralelo** | backend de Supabase con token por grifo y recarga en caja — ⚠️ hay que volver a correr `01` y `02` en el proyecto |
 | **Bloqueado por hardware** | etapas 2 y 3 esperan los cables dupont · etapa 4 espera el módulo relé |
 
 ### Datos de la placa real
@@ -74,8 +74,8 @@ platformio.ini              un [env:...] por etapa
 src/
   etapa1_blink/main.cpp     etapa 1 — blink + info del chip
 supabase/
-  01-schema.sql             tablas, índices y RLS
-  02-funciones.sql          las dos RPC + mantenimiento + permisos
+  01-schema.sql             tablas (con el libro mayor), índices y RLS
+  02-funciones.sql          RPC del dispositivo + caja + tokens + permisos
   03-seed.sql               datos de prueba
   04-pruebas.sql            suite de pruebas (corre en transacción, hace ROLLBACK)
   05-permisos.sql           verifica que la anon key no pueda tocar nada más

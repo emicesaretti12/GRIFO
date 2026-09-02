@@ -8,8 +8,8 @@ Supabase y con `curl`.
 
 | Archivo | Qué hace |
 |---|---|
-| [`supabase/01-schema.sql`](../supabase/01-schema.sql) | Tablas, índices y RLS |
-| [`supabase/02-funciones.sql`](../supabase/02-funciones.sql) | Las dos RPC + mantenimiento + permisos |
+| [`supabase/01-schema.sql`](../supabase/01-schema.sql) | Tablas (incluye `movimientos`), índices y RLS |
+| [`supabase/02-funciones.sql`](../supabase/02-funciones.sql) | Las dos RPC del dispositivo + caja + tokens + mantenimiento + permisos |
 | [`supabase/03-seed.sql`](../supabase/03-seed.sql) | Datos de prueba (incluye el ejemplo del contrato) |
 | [`supabase/04-pruebas.sql`](../supabase/04-pruebas.sql) | Suite de pruebas. Corre en transacción y hace ROLLBACK |
 | [`supabase/05-permisos.sql`](../supabase/05-permisos.sql) | Verifica que la anon key no pueda tocar nada más |
@@ -32,10 +32,15 @@ Salida esperada:
 ✅ PERMISOS OK — anon solo puede ejecutar las dos RPC
 ```
 
-> ✅ **Aplicado y verificado en el proyecto real** (`bkrwabezndztkldwygjd`):
-> los cinco scripts corrieron en el SQL Editor de Supabase y las dos
-> verificaciones pasaron. Antes se habían corrido dos veces seguidas contra un
-> PostgreSQL 16 local para comprobar que son idempotentes.
+> ⚠️ **Hay que volver a correr `01` y `02`** si ya aplicaste la versión sin
+> token: agregan las columnas de token y la tabla `movimientos`, borran las
+> firmas viejas de las RPC (las sin token, que si quedaran serían una puerta
+> abierta) y crean `cargar_saldo`. Son idempotentes, se pueden correr de nuevo
+> sin problema. Después: `select public.rotar_token_grifo(1);` para generar el
+> token del grifo.
+>
+> Los cinco scripts se corrieron dos veces seguidas contra un PostgreSQL 16
+> local y pasan, así que son idempotentes.
 
 ## Probar con curl
 
@@ -43,18 +48,27 @@ Salida esperada:
 SUPA=https://bkrwabezndztkldwygjd.supabase.co
 KEY=tu-anon-key     # nunca la commitees; exportala en tu shell
 
+TOKEN=el-token-que-devolvio-rotar_token_grifo
+
 curl -s -X POST "$SUPA/rest/v1/rpc/abrir_sesion" \
   -H "apikey: $KEY" -H "Authorization: Bearer $KEY" \
   -H "Content-Type: application/json" \
-  -d '{"p_uid":"A1B2C3D4","p_grifo":1}'
+  -d "{\"p_uid\":\"A1B2C3D4\",\"p_grifo\":1,\"p_token\":\"$TOKEN\"}"
 # {"ok":true,"sesion_id":1,"saldo_centavos":850000,
 #  "precio_litro_centavos":320000,"pulsos_por_litro":452.700,"ml_maximos":2656}
 
 curl -s -X POST "$SUPA/rest/v1/rpc/cerrar_sesion" \
   -H "apikey: $KEY" -H "Authorization: Bearer $KEY" \
   -H "Content-Type: application/json" \
-  -d '{"p_sesion_id":1,"p_ml":473,"p_pulsos":214}'
+  -d "{\"p_sesion_id\":1,\"p_ml\":473,\"p_pulsos\":214,\"p_token\":\"$TOKEN\"}"
 # {"ok":true,"saldo_centavos":698640,"ml_servidos":473,"costo_centavos":151360}
+
+# Sin el token, o con uno inventado, no se hace nada:
+curl -s -X POST "$SUPA/rest/v1/rpc/abrir_sesion" \
+  -H "apikey: $KEY" -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"p_uid":"A1B2C3D4","p_grifo":1,"p_token":"cualquier-cosa"}'
+# {"ok":false,"motivo":"token_invalido"}
 ```
 
 Y para comprobar que las tablas están cerradas — esto **tiene** que fallar:
@@ -118,7 +132,9 @@ de Supabase y hacen exactamente lo mismo.
 física: la tarjeta solo aporta el UID.
 
 **`grifos`** — precio por litro (cada cerveza vale distinto), calibración
-`pulsos_por_litro` y `ml_minimos`.
+`pulsos_por_litro`, `ml_minimos` y el `token_hash` del dispositivo.
+
+**`movimientos`** — el libro mayor: una fila por cada carga y por cada consumo.
 
 **`sesiones`** — una fila por "tarjeta apoyada en el grifo". Guarda un
 **snapshot** de saldo, precio y calibración al abrir, y el resultado al cerrar.
@@ -246,41 +262,90 @@ que la anon key puede hacer en toda la base es ejecutar `abrir_sesion` y
 
 ---
 
-## Preguntas abiertas ⚠️
+## El token de dispositivo
 
-### A. La anon key es pública — y eso tiene un límite real
+La anon key va grabada en el ESP32, así que es **pública** por diseño. El RLS
+impide leer las tablas, pero sin nada más, cualquiera que extraiga esa key
+podría llamar `cerrar_sesion` con mL inflados y **vaciarle el saldo a un
+cliente**. Por eso las dos RPC piden además un **token por grifo**.
 
-El brief lo dice: la anon key va grabada en el dispositivo, así que es pública.
-El RLS ya impide leer las tablas, pero **cualquiera que extraiga la key del
-ESP32 puede llamar las dos RPC**. En concreto, podría:
+**Cómo funciona.** Cada grifo tiene un token propio. La base guarda solo su
+**SHA-256** — si alguien se lleva un dump, no se lleva los tokens, igual que no
+se guardan contraseñas en claro. El ESP32 guarda el suyo en NVS y lo manda en
+cada llamada.
 
-- Probar UIDs hasta encontrar tarjetas válidas.
-- Abrir sesiones en nombre de otro (molesto: le bloquea la tarjeta al cliente).
-- Llamar `cerrar_sesion` con mL inflados y **vaciarle el saldo a alguien**.
+**Falla cerrado.** Un grifo con `token_hash` NULL no opera. Nunca hay un camino
+en el que "sin token" signifique "pasá igual".
 
-Lo último es plata real. La forma barata de taparlo es un **token por grifo**:
-una columna `grifos.token`, un `p_token` en las dos RPC, y cada ESP32 con el
-suyo en NVS. Quien tenga solo la anon key no puede hacer nada; quien abra un
-grifo obtiene un token que se revoca desde la base sin tocar los otros.
+**Está acotado por grifo.** El token del grifo 1 no abre sesiones en el 2, ni
+puede liquidar una sesión que se abrió en el 2. Si comprometen un grifo, rotás
+ese token y los demás siguen andando.
 
-**Esto cambia el contrato** (agrega un parámetro), así que no lo implementé.
-Hay que decidirlo.
+### Poner en marcha un grifo
 
-### B. La "reserva" de saldo es un lock, no un movimiento de plata
+```sql
+select public.rotar_token_grifo(1);
+```
 
-El brief dice que `abrir_sesion` "reserva el saldo". Está implementado como
-**exclusividad**: una sola sesión abierta por tarjeta, garantizada por índice.
-La plata no se mueve hasta `cerrar_sesion`.
+```json
+{"ok": true, "grifo_id": 1,
+ "token": "8a2ec52792034f2ebeb321d89cf1d9a1a7dd0254401140a3933ad8d005559b3e",
+ "aviso": "Guardalo ahora. Se guarda hasheado y no se puede volver a ver."}
+```
 
-Los números del contrato confirman esta lectura (850000 → 698640, sin pasar por
-cero). La alternativa —descontar todo al abrir y devolver la diferencia al
-cerrar— protege contra que alguien baje el saldo en caja a mitad de una tirada,
-pero deja la plata del cliente en cero si el ESP32 muere y nunca liquida.
+Ese token va grabado en el ESP32 de **ese** grifo. Es el mismo trato que un
+personal access token de GitHub: se ve una vez; si lo perdés, rotás otro.
 
-Me parece mejor la actual, pero confirmalo.
+> ⚠️ Rotar un token **invalida el anterior al instante**. Si el ESP32 de ese
+> grifo todavía tiene el viejo, ese grifo deja de funcionar hasta que le cargues
+> el nuevo. Por eso las llamadas a `rotar_token_grifo` están comentadas en
+> `03-seed.sql`: para que volver a correr el seed no baje un grifo en producción.
 
-### C. Falta la recarga en caja
+---
 
-No hay función para cargar saldo todavía — el brief no la especificaba. Cuando
-la hagamos: va con la **service_role key** desde el backend de caja,
-**nunca** con la anon key.
+## Recarga en caja
+
+```sql
+select public.cargar_saldo(
+  p_uid                => 'A1B2C3D4',
+  p_centavos           => 500000,          -- $5000
+  p_referencia         => 'ticket-4471',
+  p_clave_idempotencia => 'caja1-ticket-4471'
+);
+```
+
+- **Solo `service_role`**, la key del backend de caja. Nunca la anon key, nunca
+  un dispositivo. Verificado en `05-permisos.sql`.
+- **Da de alta la tarjeta** si el UID no existía: la primera carga crea al
+  cliente. La respuesta trae `tarjeta_creada`.
+- **Es idempotente** si le pasás `p_clave_idempotencia` (el número de ticket de
+  caja, por ejemplo). Si la caja tuvo timeout y reintenta, la segunda llamada
+  devuelve el resultado de la primera en vez de cargar dos veces. La garantía es
+  un índice único sobre esa columna, no un `if`.
+
+### El libro mayor
+
+Toda la plata que entra y sale queda asentada en `movimientos`: una fila `carga`
+por cada recarga y una `consumo` por cada sesión liquidada, con el saldo
+resultante. `tarjetas.saldo_centavos` es el acumulado; `movimientos` es el
+detalle que lo explica.
+
+El asiento de consumo lleva `clave_idempotencia = 'sesion:<id>'`, así que el
+índice único garantiza **un solo cobro por sesión** aunque el código llegara ahí
+dos veces. La idempotencia está defendida en dos capas: el estado de la sesión y
+el índice del libro mayor.
+
+---
+
+## Decisiones ya tomadas
+
+**La reserva de saldo es un lock, no un movimiento de plata.** `abrir_sesion`
+no toca el saldo: garantiza exclusividad (una sola sesión abierta por tarjeta,
+por índice único) y la plata se mueve recién al cerrar. Coincide con los números
+del contrato (850000 → 698640, sin pasar por cero) y si el ESP32 muere, el saldo
+del cliente sigue visible e intacto.
+
+## Pendiente
+
+Nada del lado servidor. Lo que falta de la etapa 6 es firmware: `tareaRed`, el
+cliente HTTP y la cola offline en NVS.

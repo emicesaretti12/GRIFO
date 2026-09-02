@@ -6,9 +6,10 @@
 --
 -- Reglas que atraviesan todo el diseño:
 --   · La plata SIEMPRE en centavos enteros (bigint). Nunca float.
---   · Las tablas no se exponen a la anon key. Se entra solo por las dos RPC.
+--   · Las tablas no se exponen a la anon key. Se entra solo por las RPC.
 --   · Una tarjeta no puede tener dos sesiones abiertas a la vez, y eso lo
 --     garantiza un índice, no la aplicación.
+--   · Todo movimiento de plata queda asentado en `movimientos`.
 -- ═════════════════════════════════════════════════════════════════════════════
 
 -- ── Tarjetas ────────────────────────────────────────────────────────────────
@@ -37,10 +38,17 @@ create table if not exists public.grifos (
   activo                 boolean not null default true
 );
 
+-- Token del dispositivo. Se guarda HASHEADO: si alguien se lleva un dump de la
+-- base, no se lleva los tokens. Es lo mismo que no guardar contraseñas en claro.
+alter table public.grifos add column if not exists token_hash    text;
+alter table public.grifos add column if not exists token_rotado_en timestamptz;
+
 comment on column public.grifos.pulsos_por_litro is
   'Calibración del caudalímetro (etapa 7). Es una constante física, no plata: numeric está bien.';
 comment on column public.grifos.ml_minimos is
   'Si el saldo no alcanza ni para esto, no se abre sesión. Evita abrir una sesión por 3 ml.';
+comment on column public.grifos.token_hash is
+  'SHA-256 del token del dispositivo. NULL = grifo sin token = no puede operar (falla cerrado).';
 
 
 -- ── Estados de una sesión ───────────────────────────────────────────────────
@@ -101,6 +109,33 @@ create index if not exists sesiones_abiertas_idx
 create index if not exists sesiones_uid_idx on public.sesiones (uid, abierta_en desc);
 
 
+-- ── Movimientos ─────────────────────────────────────────────────────────────
+-- Libro mayor: toda la plata que entra y sale de una tarjeta queda asentada acá.
+-- El saldo de `tarjetas` es el acumulado; esto es el detalle que lo explica.
+create table if not exists public.movimientos (
+  id                  bigint generated always as identity primary key,
+  uid                 text   not null references public.tarjetas(uid),
+  tipo                text   not null check (tipo in ('carga', 'consumo')),
+  centavos            bigint not null,   -- positivo carga, negativo consumo
+  saldo_resultante    bigint not null,
+  sesion_id           bigint references public.sesiones(id),
+  referencia          text,              -- nro de ticket de caja, quién cargó, etc.
+  clave_idempotencia  text,
+  creado_en           timestamptz not null default now()
+);
+
+-- La clave de idempotencia como índice único: si una recarga se reintenta con
+-- la misma clave, el segundo INSERT rebota en la base. La garantía no depende
+-- de que el código se acuerde de chequear.
+create unique index if not exists movimientos_clave_idem
+  on public.movimientos (clave_idempotencia) where (clave_idempotencia is not null);
+
+create index if not exists movimientos_uid_idx on public.movimientos (uid, creado_en desc);
+
+comment on table public.movimientos is
+  'Libro mayor de la plata. Una fila por carga y por consumo. tarjetas.saldo_centavos es el acumulado de esto.';
+
+
 -- ── RLS: las tablas se cierran por completo ─────────────────────────────────
 -- Activamos RLS y NO creamos ninguna policy. Sin policy, RLS niega todo.
 -- La anon key del dispositivo no puede leer ni escribir una sola fila.
@@ -109,10 +144,19 @@ create index if not exists sesiones_uid_idx on public.sesiones (uid, abierta_en 
 -- del dueño de las tablas, que sí pasa. Es exactamente un endpoint de backend:
 -- el cliente no toca la base, le pide a una función que haga una operación
 -- concreta y validada.
-alter table public.tarjetas enable row level security;
-alter table public.grifos   enable row level security;
-alter table public.sesiones enable row level security;
+alter table public.tarjetas    enable row level security;
+alter table public.grifos      enable row level security;
+alter table public.sesiones    enable row level security;
+alter table public.movimientos enable row level security;
 
-revoke all on table public.tarjetas from anon, authenticated;
-revoke all on table public.grifos   from anon, authenticated;
-revoke all on table public.sesiones from anon, authenticated;
+revoke all on table public.tarjetas    from anon, authenticated;
+revoke all on table public.grifos      from anon, authenticated;
+revoke all on table public.sesiones    from anon, authenticated;
+revoke all on table public.movimientos from anon, authenticated;
+
+-- service_role es la key del backend de caja: puede todo, y saltea RLS.
+-- Nunca va grabada en un dispositivo.
+grant all on table public.tarjetas    to service_role;
+grant all on table public.grifos      to service_role;
+grant all on table public.sesiones    to service_role;
+grant all on table public.movimientos to service_role;

@@ -1,21 +1,70 @@
 -- ═════════════════════════════════════════════════════════════════════════════
--- GRIFO — Las dos RPC
+-- GRIFO — Funciones
 --
--- Ambas son SECURITY DEFINER (corren con permisos del dueño, saltean el RLS)
+-- Todas son SECURITY DEFINER (corren con permisos del dueño, saltean el RLS)
 -- y con `search_path = ''`, que obliga a calificar todo con `public.`. Eso
 -- cierra la puerta a que alguien cree un objeto con el mismo nombre en otro
 -- esquema y se cuele en la función.
 --
--- ORDEN DE LOCKS: siempre tarjetas → sesiones, en las dos funciones. Tomar los
--- locks siempre en el mismo orden es lo que evita los deadlocks (dos
--- transacciones esperándose cruzado). Es la misma regla que en cualquier
--- código concurrente.
+-- ORDEN DE LOCKS: siempre tarjetas → sesiones, en todas las funciones. Tomar
+-- los locks siempre en el mismo orden es lo que evita los deadlocks (dos
+-- transacciones esperándose cruzado). Misma regla que en cualquier código
+-- concurrente.
+--
+-- QUIÉN PUEDE LLAMAR QUÉ:
+--   anon (grabada en el ESP32, PÚBLICA) → abrir_sesion, cerrar_sesion,
+--                                          y encima con el token del grifo
+--   service_role (backend de caja)      → cargar_saldo, rotar_token_grifo,
+--                                          cerrar_sesiones_abandonadas
 -- ═════════════════════════════════════════════════════════════════════════════
+
+-- Las versiones viejas SIN token quedarían callables como sobrecarga y
+-- anularían todo el punto del token. Se borran explícitamente.
+drop function if exists public.abrir_sesion(text, int);
+drop function if exists public.cerrar_sesion(bigint, int, int);
+
+
+-- ── Tokens de dispositivo ───────────────────────────────────────────────────
+-- Genera un token nuevo para un grifo, guarda solo el hash y devuelve el token
+-- en claro UNA SOLA VEZ. Anotalo: no hay forma de volver a verlo.
+--
+-- Es el mismo trato que un personal access token de GitHub.
+create or replace function public.rotar_token_grifo(p_grifo int)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_token text;
+begin
+  if not exists (select 1 from public.grifos where id = p_grifo) then
+    return jsonb_build_object('ok', false, 'motivo', 'grifo_desconocido');
+  end if;
+
+  -- 2 UUID v4 pegados = 64 caracteres hexa, ~244 bits de azar. De sobra.
+  v_token := replace(gen_random_uuid()::text, '-', '')
+          || replace(gen_random_uuid()::text, '-', '');
+
+  update public.grifos
+     set token_hash      = encode(sha256(convert_to(v_token, 'UTF8')), 'hex'),
+         token_rotado_en = now()
+   where id = p_grifo;
+
+  return jsonb_build_object(
+    'ok',       true,
+    'grifo_id', p_grifo,
+    'token',    v_token,
+    'aviso',    'Guardalo ahora. Se guarda hasheado y no se puede volver a ver.'
+  );
+end;
+$$;
 
 
 -- ── abrir_sesion ────────────────────────────────────────────────────────────
--- POST /rest/v1/rpc/abrir_sesion   { "p_uid": "A1B2C3D4", "p_grifo": 1 }
-create or replace function public.abrir_sesion(p_uid text, p_grifo int)
+-- POST /rest/v1/rpc/abrir_sesion
+--   { "p_uid": "A1B2C3D4", "p_grifo": 1, "p_token": "..." }
+create or replace function public.abrir_sesion(p_uid text, p_grifo int, p_token text)
 returns jsonb
 language plpgsql
 security definer
@@ -37,6 +86,14 @@ begin
   select * into v_grifo from public.grifos where id = p_grifo and activo;
   if not found then
     return jsonb_build_object('ok', false, 'motivo', 'grifo_desconocido');
+  end if;
+
+  -- Token del dispositivo. FALLA CERRADO: un grifo sin token no opera.
+  -- Tener solo la anon key no alcanza para nada.
+  if v_grifo.token_hash is null
+     or v_grifo.token_hash is distinct from
+        encode(sha256(convert_to(coalesce(p_token, ''), 'UTF8')), 'hex') then
+    return jsonb_build_object('ok', false, 'motivo', 'token_invalido');
   end if;
 
   -- Lock de fila sobre la tarjeta. Serializa TODO lo que le pase a esta tarjeta:
@@ -110,8 +167,10 @@ $$;
 
 -- ── cerrar_sesion ───────────────────────────────────────────────────────────
 -- POST /rest/v1/rpc/cerrar_sesion
---   { "p_sesion_id": 1234, "p_ml": 473, "p_pulsos": 214 }
-create or replace function public.cerrar_sesion(p_sesion_id bigint, p_ml int, p_pulsos int)
+--   { "p_sesion_id": 1234, "p_ml": 473, "p_pulsos": 214, "p_token": "..." }
+create or replace function public.cerrar_sesion(
+  p_sesion_id bigint, p_ml int, p_pulsos int, p_token text
+)
 returns jsonb
 language plpgsql
 security definer
@@ -119,15 +178,27 @@ set search_path = ''
 as $$
 declare
   v_uid     text;
+  v_grifo   int;
+  v_hash    text;
   v_ses     public.sesiones%rowtype;
   v_costo   bigint;
   v_saldo   bigint;
   v_recorte boolean := false;
 begin
-  -- Leemos sin lock solo para saber de qué tarjeta hablamos...
-  select uid into v_uid from public.sesiones where id = p_sesion_id;
+  -- Leemos sin lock solo para saber de qué tarjeta y grifo hablamos...
+  select uid, grifo_id into v_uid, v_grifo
+    from public.sesiones where id = p_sesion_id;
   if not found then
     return jsonb_build_object('ok', false, 'motivo', 'sesion_desconocida');
+  end if;
+
+  -- El token tiene que ser el del grifo DE ESTA SESIÓN. Un grifo no puede
+  -- liquidar sesiones de otro.
+  select token_hash into v_hash from public.grifos where id = v_grifo;
+  if v_hash is null
+     or v_hash is distinct from
+        encode(sha256(convert_to(coalesce(p_token, ''), 'UTF8')), 'hex') then
+    return jsonb_build_object('ok', false, 'motivo', 'token_invalido');
   end if;
 
   -- ...y ahora tomamos los locks en el orden canónico: tarjeta, después sesión.
@@ -191,11 +262,99 @@ begin
          cerrada_en           = now()
    where id = v_ses.id;
 
+  -- Asiento en el libro mayor. La clave de idempotencia lleva el id de sesión,
+  -- así que el índice único garantiza UN consumo por sesión aunque el código
+  -- llegara acá dos veces.
+  insert into public.movimientos (uid, tipo, centavos, saldo_resultante, sesion_id, clave_idempotencia)
+  values (v_ses.uid, 'consumo', -v_costo, v_saldo, v_ses.id, 'sesion:' || v_ses.id);
+
   return jsonb_build_object(
     'ok',             true,
     'saldo_centavos', v_saldo,
     'ml_servidos',    p_ml,
     'costo_centavos', v_costo
+  );
+end;
+$$;
+
+
+-- ── cargar_saldo (caja) ─────────────────────────────────────────────────────
+-- Carga plata en una tarjeta. Si el UID no existe, crea la tarjeta: la primera
+-- carga da de alta al cliente.
+--
+-- SOLO service_role. Nunca la anon key, nunca un dispositivo.
+--
+-- p_clave_idempotencia: mandá el nro de ticket / id de la operación de caja. Si
+-- la caja reintenta por timeout, la segunda llamada devuelve el resultado de la
+-- primera en vez de cargar de nuevo. Mismo principio que cerrar_sesion.
+create or replace function public.cargar_saldo(
+  p_uid                text,
+  p_centavos           bigint,
+  p_referencia         text default null,
+  p_clave_idempotencia text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_uid    text;
+  v_mov    public.movimientos%rowtype;
+  v_saldo  bigint;
+  v_creada boolean := false;
+  v_mov_id bigint;
+begin
+  v_uid := upper(trim(coalesce(p_uid, '')));
+  if v_uid = '' then
+    return jsonb_build_object('ok', false, 'motivo', 'uid_invalido');
+  end if;
+
+  if p_centavos is null or p_centavos <= 0 then
+    return jsonb_build_object('ok', false, 'motivo', 'monto_invalido');
+  end if;
+
+  -- Idempotencia: ¿ya procesamos esta operación de caja?
+  if p_clave_idempotencia is not null then
+    select * into v_mov from public.movimientos
+     where clave_idempotencia = p_clave_idempotencia;
+    if found then
+      return jsonb_build_object(
+        'ok',             true,
+        'uid',            v_mov.uid,
+        'saldo_centavos', v_mov.saldo_resultante,
+        'movimiento_id',  v_mov.id,
+        'repetida',       true
+      );
+    end if;
+  end if;
+
+  -- Alta de la tarjeta si es la primera carga.
+  insert into public.tarjetas (uid) values (v_uid) on conflict (uid) do nothing;
+  if found then
+    v_creada := true;
+  end if;
+
+  -- Mismo orden de locks que el resto: la tarjeta primero.
+  perform 1 from public.tarjetas where uid = v_uid for update;
+
+  update public.tarjetas
+     set saldo_centavos = saldo_centavos + p_centavos,
+         actualizada_en = now()
+   where uid = v_uid
+   returning saldo_centavos into v_saldo;
+
+  insert into public.movimientos (uid, tipo, centavos, saldo_resultante, referencia, clave_idempotencia)
+  values (v_uid, 'carga', p_centavos, v_saldo, p_referencia, p_clave_idempotencia)
+  returning id into v_mov_id;
+
+  return jsonb_build_object(
+    'ok',              true,
+    'uid',             v_uid,
+    'saldo_centavos',  v_saldo,
+    'cargado',         p_centavos,
+    'movimiento_id',   v_mov_id,
+    'tarjeta_creada',  v_creada
   );
 end;
 $$;
@@ -208,8 +367,6 @@ $$;
 -- Esto las marca 'abandonada', que libera la tarjeta PERO NO COBRA y NO cierra:
 -- si el ESP32 vuelve y drena su cola del NVS, cerrar_sesion todavía la liquida
 -- con los mL reales. Cobrar 0 acá rompería el invariante de la cola offline.
---
--- NO se expone a anon. Es tarea de mantenimiento (pg_cron o a mano).
 create or replace function public.cerrar_sesiones_abandonadas(p_minutos int default 15)
 returns int
 language plpgsql
@@ -231,11 +388,18 @@ $$;
 -- ── Permisos ────────────────────────────────────────────────────────────────
 -- En Postgres, PUBLIC recibe EXECUTE sobre toda función nueva por defecto.
 -- Hay que sacárselo explícitamente y después dar solo lo justo.
-revoke all on function public.abrir_sesion(text, int)                from public, anon, authenticated;
-revoke all on function public.cerrar_sesion(bigint, int, int)        from public, anon, authenticated;
-revoke all on function public.cerrar_sesiones_abandonadas(int)       from public, anon, authenticated;
+revoke all on function public.abrir_sesion(text, int, text)              from public, anon, authenticated;
+revoke all on function public.cerrar_sesion(bigint, int, int, text)      from public, anon, authenticated;
+revoke all on function public.cargar_saldo(text, bigint, text, text)     from public, anon, authenticated;
+revoke all on function public.rotar_token_grifo(int)                     from public, anon, authenticated;
+revoke all on function public.cerrar_sesiones_abandonadas(int)           from public, anon, authenticated;
 
--- Lo ÚNICO que la anon key del dispositivo puede hacer en toda la base:
-grant execute on function public.abrir_sesion(text, int)         to anon;
-grant execute on function public.cerrar_sesion(bigint, int, int) to anon;
--- cerrar_sesiones_abandonadas queda fuera a propósito.
+-- Lo ÚNICO que la anon key del dispositivo puede hacer en toda la base
+-- (y encima necesita el token del grifo para que le sirva de algo):
+grant execute on function public.abrir_sesion(text, int, text)         to anon;
+grant execute on function public.cerrar_sesion(bigint, int, int, text) to anon;
+
+-- Caja y mantenimiento: solo service_role.
+grant execute on function public.cargar_saldo(text, bigint, text, text) to service_role;
+grant execute on function public.rotar_token_grifo(int)                 to service_role;
+grant execute on function public.cerrar_sesiones_abandonadas(int)       to service_role;
