@@ -32,9 +32,10 @@ Salida esperada:
 ✅ PERMISOS OK — anon solo puede ejecutar las dos RPC
 ```
 
-> Ya se corrieron los cinco contra un PostgreSQL 16 local, dos veces seguidas,
-> y pasan. Pero conviene correrlos igual en Supabase: confirma que el proyecto
-> real quedó bien configurado.
+> ✅ **Aplicado y verificado en el proyecto real** (`bkrwabezndztkldwygjd`):
+> los cinco scripts corrieron en el SQL Editor de Supabase y las dos
+> verificaciones pasaron. Antes se habían corrido dos veces seguidas contra un
+> PostgreSQL 16 local para comprobar que son idempotentes.
 
 ## Probar con curl
 

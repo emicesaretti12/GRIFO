@@ -70,7 +70,7 @@ las funciones a crear en Supabase y la config de RLS.
 **Se acepta cuando:** funciona con red, y si se corta el WiFi a mitad de una
 tirada la válvula cierra igual y la transacción se sincroniza al volver.
 
-🟢 **La mitad servidor ya está hecha y probada** (se adelantó porque no depende
+🟢 **La mitad servidor ya está hecha, aplicada y verificada en el proyecto real** (se adelantó porque no depende
 del hardware): esquema, las dos RPC, RLS y suite de pruebas en `supabase/`.
 Ver [`backend-supabase.md`](backend-supabase.md). Falta la parte del firmware:
 `tareaRed`, el cliente HTTP y la cola en NVS.
