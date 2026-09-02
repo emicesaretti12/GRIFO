@@ -1,3 +1,11 @@
 .pio/
 .vscode/
 .DS_Store
+
+# Credenciales del dispositivo (etapa 6). NUNCA al repo.
+# La anon/publishable key es publica por diseno, pero el token del grifo NO:
+# quien lo tenga puede liquidar sesiones en ese grifo.
+include/secrets.h
+src/secrets.h
+**/secrets.h
+.env
