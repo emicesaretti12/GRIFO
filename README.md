@@ -16,6 +16,7 @@ YF-S201C · válvula solenoide 12V vía módulo relé
 |---|---|
 | **Última etapa aceptada** | ✅ 1 — Blink (LED parpadeando + Serial a 115200, verificado en placa) |
 | **Próxima etapa** | 2 — Lector RFID |
+| **En paralelo** | ✅ backend de Supabase listo y probado (no depende del hardware) |
 | **Bloqueado por hardware** | etapas 2 y 3 esperan los cables dupont · etapa 4 espera el módulo relé |
 
 ### Datos de la placa real
@@ -71,8 +72,15 @@ pio run -e etapa1_blink -t upload
 platformio.ini              un [env:...] por etapa
 src/
   etapa1_blink/main.cpp     etapa 1 — blink + info del chip
+supabase/
+  01-schema.sql             tablas, índices y RLS
+  02-funciones.sql          las dos RPC + mantenimiento + permisos
+  03-seed.sql               datos de prueba
+  04-pruebas.sql            suite de pruebas (corre en transacción, hace ROLLBACK)
+  05-permisos.sql           verifica que la anon key no pueda tocar nada más
 docs/
   plan-de-etapas.md         las 8 etapas, qué necesita cada una, criterio de aceptación
+  backend-supabase.md       cómo aplicar y probar el backend + decisiones de diseño
   pinout-y-trampas.md       pinout definitivo + trampas de hardware explicadas
   etapa-01-blink.md         cableado y qué esperar en esta etapa
   setup-linux.md            paso a paso completo en Linux, de cero a flashear
