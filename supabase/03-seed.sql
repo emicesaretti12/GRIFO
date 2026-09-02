@@ -12,13 +12,30 @@ values
   (3, 'Negra',      350000, 452.700, 50)
 on conflict (id) do nothing;
 
-insert into public.tarjetas (uid, saldo_centavos, bloqueada, nota)
-values
-  ('A1B2C3D4', 850000, false, 'tarjeta del ejemplo del contrato: $8500'),
-  ('11223344', 200000, false, 'saldo chico: $2000'),
-  ('DEADBEEF',    100, false, 'saldo casi cero, no alcanza al minimo de 50 ml'),
-  ('B10QU34D4', 500000, true,  'bloqueada a proposito para probar')
-on conflict (uid) do nothing;
+-- Las tarjetas se crean con cargar_saldo, NO escribiendo la tabla a mano.
+-- Si le metieramos el saldo inicial directo, ese saldo no quedaria asentado en
+-- `movimientos` y el libro mayor no cuadraria con el saldo desde el dia uno.
+-- Toda la plata entra por la puerta de entrada, tambien la de prueba.
+--
+-- El `if not exists` hace que volver a correr el seed no recargue tarjetas que
+-- ya existen: no queremos duplicar saldos por correr esto dos veces.
+do $$
+begin
+  if not exists (select 1 from public.tarjetas where uid = 'A1B2C3D4') then
+    perform public.cargar_saldo('A1B2C3D4', 850000, 'seed: ejemplo del contrato', 'seed:A1B2C3D4');
+  end if;
+  if not exists (select 1 from public.tarjetas where uid = '11223344') then
+    perform public.cargar_saldo('11223344', 200000, 'seed: saldo chico', 'seed:11223344');
+  end if;
+  if not exists (select 1 from public.tarjetas where uid = 'DEADBEEF') then
+    perform public.cargar_saldo('DEADBEEF', 100, 'seed: casi sin saldo', 'seed:DEADBEEF');
+  end if;
+  if not exists (select 1 from public.tarjetas where uid = 'B10QU34D4') then
+    perform public.cargar_saldo('B10QU34D4', 500000, 'seed: para bloquear', 'seed:B10QU34D4');
+    update public.tarjetas set bloqueada = true, nota = 'bloqueada a proposito para probar'
+     where uid = 'B10QU34D4';
+  end if;
+end $$;
 
 
 -- ═════════════════════════════════════════════════════════════════════════════

@@ -13,6 +13,7 @@ Supabase y con `curl`.
 | [`supabase/03-seed.sql`](../supabase/03-seed.sql) | Datos de prueba (incluye el ejemplo del contrato) |
 | [`supabase/04-pruebas.sql`](../supabase/04-pruebas.sql) | Suite de pruebas. Corre en transacción y hace ROLLBACK |
 | [`supabase/05-permisos.sql`](../supabase/05-permisos.sql) | Verifica que la anon key no pueda tocar nada más |
+| [`supabase/06-auditoria.sql`](../supabase/06-auditoria.sql) | Arqueo: descuadres, cobros recortados, sesiones colgadas, grifos sin token |
 
 ## Cómo aplicarlo
 
@@ -339,6 +340,12 @@ El asiento de consumo lleva `clave_idempotencia = 'sesion:<id>'`, así que el
 índice único garantiza **un solo cobro por sesión** aunque el código llegara ahí
 dos veces. La idempotencia está defendida en dos capas: el estado de la sesión y
 el índice del libro mayor.
+
+**Toda la plata entra por la puerta de entrada**, incluida la de prueba: el seed
+crea las tarjetas con `cargar_saldo` en vez de escribir la tabla, para que
+`sum(movimientos) = saldo_centavos` valga desde el primer centavo. Si en algún
+momento cargás saldo editando la tabla a mano, esa tarjeta queda descuadrada y
+`06-auditoria.sql` te la muestra.
 
 ---
 
