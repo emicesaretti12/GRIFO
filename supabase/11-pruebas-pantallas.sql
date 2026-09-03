@@ -5,6 +5,27 @@
 
 begin;
 
+-- ── Guarda de orden ─────────────────────────────────────────────────────────
+-- Este archivo necesita columnas que agrega 01-schema.sql. Sin esto, correrlo
+-- fuera de orden falla con un "column ... does not exist" que no dice qué hacer.
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+     where table_schema = 'public' and table_name = 'grifos'
+       and column_name = 'costo_litro_centavos'
+  ) then
+    raise exception
+      E'FALTA CORRER 01-schema.sql PRIMERO.\n\n'
+      'A la tabla grifos le falta la columna costo_litro_centavos, que agrega\n'
+      'ese archivo. Corré, en este orden:\n'
+      '   01-schema.sql  ->  02-funciones.sql  ->  10-pantallas.sql\n'
+      'y recién después este.\n\n'
+      'Si ya lo corriste, revisá que sea la version nueva del repo (git pull).';
+  end if;
+end $$;
+
+
 insert into public.grifos (id, nombre, precio_litro_centavos, costo_litro_centavos,
                            pulsos_por_litro, ml_minimos, activo, estilo, color)
 values (921, 'test-pantalla', 400000, 150000, 452.700, 50, true, 'IPA', '#c8811f'),

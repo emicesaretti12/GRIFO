@@ -15,6 +15,26 @@
 -- ═════════════════════════════════════════════════════════════════════════════
 
 
+-- ── Guarda de orden ─────────────────────────────────────────────────────────
+-- Este archivo necesita columnas que agrega 01-schema.sql. Sin esto, correrlo
+-- fuera de orden falla con un "column ... does not exist" que no dice qué hacer.
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+     where table_schema = 'public' and table_name = 'grifos'
+       and column_name = 'costo_litro_centavos'
+  ) then
+    raise exception
+      E'FALTA CORRER 01-schema.sql PRIMERO.\n\n'
+      'A la tabla grifos le falta la columna costo_litro_centavos, que agrega\n'
+      'ese archivo. Corré, en este orden:\n'
+      '   01-schema.sql  ->  02-funciones.sql  ->  10-pantallas.sql\n'
+      'y recién después este.\n\n'
+      'Si ya lo corriste, revisá que sea la version nueva del repo (git pull).';
+  end if;
+end $$;
+
 -- ── Estado de la canilla, para su pantalla ──────────────────────────────────
 create or replace function public.pantalla_estado(p_grifo int, p_token text)
 returns jsonb
