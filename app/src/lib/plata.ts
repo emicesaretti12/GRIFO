@@ -50,3 +50,11 @@ export function fecha(iso: string | null | undefined): string {
     hour: '2-digit', minute: '2-digit',
   })
 }
+
+/** Solo el día, para columnas donde la hora no aporta y roba ancho. */
+export function fechaCorta(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleDateString('es-AR', {
+    day: '2-digit', month: '2-digit', year: '2-digit',
+  })
+}

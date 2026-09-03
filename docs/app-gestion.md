@@ -90,22 +90,82 @@ en modo kiosco. No hay servidor que mantener.
 La que más se usa. Apoyás la tarjeta en el lector y aparece la ficha: saldo,
 estado, últimos 15 movimientos y si está sirviendo en este momento.
 
-Cargar saldo con cuatro montos rápidos o uno a mano. Bloquear la tarjeta si el
-cliente la perdió.
+Cargar saldo con cuatro montos rápidos o uno a mano. Bloquear la tarjeta pide un
+motivo, que queda guardado con quién la bloqueó.
 
 Si la tarjeta no está registrada no es un error: la primera carga la da de alta.
 
-### Tarjetas · Grifos · Reportes · Personal
-Solo admin. Padrón de tarjetas con saldo en circulación; precios, calibración,
-estado y tokens de cada canilla; facturación y volumen por período y por canilla;
-alta y baja del personal.
+**F2** devuelve el foco al campo de la tarjeta desde cualquier parte de la
+pantalla, sin sacar la mano del teclado.
 
-En **Reportes** hay dos alertas que conviene mirar:
+### Panel (admin)
+Cómo viene el día: facturado, servido, promedio por tirada y cuántas canillas
+están sirviendo en este momento. Facturación de los últimos 14 días y ranking por
+canilla. Se refresca solo cada 20 segundos, y **solo mientras la pestaña está
+visible** — no tiene sentido pegarle a la API para una pantalla que nadie mira.
+
+Arriba de todo aparecen las alertas que hay que atender: canillas en servicio sin
+token, cobros recortados y sesiones sin liquidar.
+
+### Tarjetas (admin)
+Padrón con saldo en circulación, filtros por estado y exportación a CSV.
+
+> El **saldo en circulación** es plata ya cobrada que el bar todavía debe en
+> cerveza. Es un pasivo, no una ganancia.
+
+### Canillas (admin)
+Precio, calibración, estado y tokens. Editar abre un diálogo que muestra, mientras
+escribís el precio, **cuánto va a salir un vaso de 473 ml** — así el número tiene
+sentido antes de guardarlo.
+
+Generar o rotar un token pide confirmación explícita (el token viejo muere al
+instante) y después lo muestra una sola vez, con botón para copiarlo.
+
+### Reportes (admin)
+Facturación y volumen por período (7 / 14 / 30 / 90 días), con gráfico por día y
+ranking por canilla. Exportación a CSV de todas las tiradas.
+
+Dos alertas que conviene mirar:
 
 - **Cobros recortados** — se sirvió más de lo que había en la tarjeta, o sea que
-  el corte local del ESP32 falló. Suele ser calibración mal medida.
+  el corte local del ESP32 no llegó a tiempo. Casi siempre es la calibración mal
+  medida en esa canilla.
 - **Cierres reintentados** — al ESP32 no le llegó la respuesta y volvió a mandar.
-  Unos pocos son normales; muchos indican problema de red en el bar.
+  La idempotencia evitó el cobro doble, pero muchos reintentos indican problema
+  de WiFi en el bar.
+
+### Personal (admin)
+Alta, cambio de rol y baja. Sobre tu propio usuario no se ofrece ninguna acción:
+bajarte el rol te dejaría afuera, y si sos el único admin no queda nadie que
+pueda arreglarlo.
+
+---
+
+## Detalles de la interfaz
+
+**Nada de `confirm()` ni `prompt()`.** Todo lo destructivo pasa por un diálogo
+propio con foco atrapado, cierre con Escape y un botón que dice qué va a hacer
+("Rotar token", "Dar de baja") en vez de un "Aceptar" genérico.
+
+**Avisos en una esquina, no carteles que empujan el contenido.** Cuando aparece
+un mensaje el layout no salta y no perdés de vista lo que estabas mirando. Los
+errores duran casi el doble que las confirmaciones: hay que poder leerlos.
+
+**Skeletons mientras carga**, no un "Cargando…". Ves la forma de lo que viene y
+la página no se reacomoda de golpe cuando llegan los datos.
+
+**Modo claro y oscuro.** Por defecto sigue al sistema operativo; el botón de la
+barra lateral fija tu elección y queda guardada. Los colores de los gráficos
+están definidos por separado para cada modo, no son un invertido automático.
+
+**Los gráficos** usan una paleta verificada para daltonismo y contraste sobre las
+dos superficies. Barras finas con la punta redondeada, grilla apenas visible, y
+**una sola etiqueta directa** (el máximo) en vez de un número sobre cada barra,
+que se vuelve ruido. Los mismos datos van en una tabla oculta para lectores de
+pantalla, así la información no depende de poder ver el gráfico.
+
+**Red de contención.** Si algo falla al dibujar, se ve un mensaje con el error y
+un botón de recargar, no una pantalla en blanco.
 
 ---
 

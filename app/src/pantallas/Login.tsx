@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
+import { Nota } from '../componentes/UI'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -9,34 +10,42 @@ export default function Login() {
 
   async function entrar(e: FormEvent) {
     e.preventDefault()
-    setError(null)
-    setEnviando(true)
+    setError(null); setEnviando(true)
     const { error } = await supabase.auth.signInWithPassword({ email, password: clave })
-    if (error) setError('No pudimos entrar: revisá el mail y la contraseña.')
+    if (error) {
+      setError(error.message.includes('Email not confirmed')
+        ? 'Ese usuario todavía no confirmó el mail. Confirmalo desde Supabase → Authentication.'
+        : 'Mail o contraseña incorrectos.')
+    }
     setEnviando(false)
   }
 
   return (
-    <div className="login">
-      <form className="panel caja" onSubmit={entrar}>
-        <h2>Grifo — Gestión</h2>
-        <p className="sub">Entrá con tu usuario del personal.</p>
+    <div className="portada">
+      <form className="panel" onSubmit={entrar}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+          <span style={{ fontSize: 26 }} aria-hidden="true">🍺</span>
+          <div>
+            <h2 style={{ fontSize: 18 }}>Grifo</h2>
+            <p className="bajada" style={{ margin: 0 }}>Gestión del autoservicio</p>
+          </div>
+        </div>
 
-        <div style={{ marginBottom: 12 }}>
+        <div style={{ margin: '20px 0 12px' }}>
           <label htmlFor="email">Mail</label>
-          <input id="email" className="campo" type="email" value={email}
+          <input id="email" className="campo" type="email" value={email} autoFocus
                  onChange={e => setEmail(e.target.value)} autoComplete="username" required />
         </div>
 
-        <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: 18 }}>
           <label htmlFor="clave">Contraseña</label>
           <input id="clave" className="campo" type="password" value={clave}
                  onChange={e => setClave(e.target.value)} autoComplete="current-password" required />
         </div>
 
-        {error && <div className="aviso error">{error}</div>}
+        {error && <Nota tono="grave">{error}</Nota>}
 
-        <button className="btn primario ancho" disabled={enviando}>
+        <button className="btn primario bloque lg" disabled={enviando || !email || !clave}>
           {enviando ? 'Entrando…' : 'Entrar'}
         </button>
       </form>

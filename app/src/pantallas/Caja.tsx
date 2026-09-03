@@ -1,194 +1,199 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useLectorRFID } from '../lib/useLectorRFID'
 import { normalizarUid, type FormatoLector } from '../lib/uid'
 import { pesos, aCentavos, volumen, fecha } from '../lib/plata'
 import { mensajeDeError, type RespuestaFicha, type FichaTarjeta } from '../lib/tipos'
+import { Panel, Stat, Chip, Nota, Vacio, Hueso } from '../componentes/UI'
+import { Modal } from '../componentes/Modal'
+import { useAvisos } from '../componentes/Toast'
+import Icono from '../componentes/Icono'
 
-const MONTOS_RAPIDOS = [200000, 500000, 1000000, 2000000] // $2000, $5000, $10000, $20000
+const RAPIDOS = [200000, 500000, 1000000, 2000000]
 
 export default function Caja() {
+  const { avisar } = useAvisos()
   const [uid, setUid] = useState('')
   const [ficha, setFicha] = useState<FichaTarjeta | null>(null)
   const [esNueva, setEsNueva] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [exito, setExito] = useState<string | null>(null)
+  const [buscando, setBuscando] = useState(false)
   const [ocupado, setOcupado] = useState(false)
   const [monto, setMonto] = useState('')
+  const [modalBloqueo, setModalBloqueo] = useState(false)
+  const [motivo, setMotivo] = useState('')
+  const entrada = useRef<HTMLInputElement>(null)
 
-  // Algunos lectores tipean el UID en decimal y otros en hexa. Se elige una vez
-  // por puesto de caja y queda guardado en el navegador de esa máquina.
   const [formato, setFormato] = useState<FormatoLector>(
     () => (localStorage.getItem('grifo.formatoLector') as FormatoLector) ?? 'hex'
   )
   useEffect(() => { localStorage.setItem('grifo.formatoLector', formato) }, [formato])
 
   const buscar = useCallback(async (crudo: string) => {
-    const limpio = normalizarUid(crudo, 'hex') // ya viene normalizado del lector
+    const limpio = normalizarUid(crudo, 'hex')
     if (!limpio) return
-    setOcupado(true); setError(null); setExito(null); setFicha(null); setEsNueva(false)
+    setBuscando(true); setFicha(null); setEsNueva(false)
 
-    const { data, error: err } = await supabase.rpc('caja_buscar_tarjeta', { p_uid: limpio })
-    setOcupado(false)
+    const { data, error } = await supabase.rpc('caja_buscar_tarjeta', { p_uid: limpio })
+    setBuscando(false)
 
-    if (err) { setError('No pudimos consultar: ' + err.message); return }
+    if (error) { avisar('No pudimos consultar', { tono: 'grave', detalle: error.message }); return }
     const r = data as RespuestaFicha
-    if (!r.ok) { setError(mensajeDeError(r)); return }
+    if (!r.ok) { avisar('No se pudo', { tono: 'grave', detalle: mensajeDeError(r) }); return }
 
     setUid(r.uid)
-    if (r.existe) setFicha(r as FichaTarjeta)
-    else setEsNueva(true)
+    if (r.existe) setFicha(r as FichaTarjeta); else setEsNueva(true)
+  }, [avisar])
+
+  useLectorRFID({ alLeer: u => { setUid(u); void buscar(u) }, formato })
+
+  // F2 vuelve el foco al campo de la tarjeta desde cualquier parte de la pantalla.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'F2') { e.preventDefault(); entrada.current?.focus(); entrada.current?.select() }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
   }, [])
-
-  // El lector RFID USB funciona aunque el foco esté en cualquier lado.
-  useLectorRFID({ alLeer: uid => { setUid(uid); void buscar(uid) }, formato })
-
-  function buscarManual(e: FormEvent) {
-    e.preventDefault()
-    void buscar(uid)
-  }
 
   async function cargar(centavos: number) {
     if (!uid || centavos <= 0) return
-    setOcupado(true); setError(null); setExito(null)
-
-    // Clave de idempotencia: si el navegador reintenta o el cajero hace doble
-    // clic, el servidor no carga dos veces.
-    const clave = `caja:${uid}:${centavos}:${Date.now()}`
-    const { data, error: err } = await supabase.rpc('caja_cargar_saldo', {
-      p_uid: uid,
-      p_centavos: centavos,
-      p_referencia: 'caja',
-      p_clave_idempotencia: clave,
+    setOcupado(true)
+    const { data, error } = await supabase.rpc('caja_cargar_saldo', {
+      p_uid: uid, p_centavos: centavos, p_referencia: 'caja',
+      p_clave_idempotencia: `caja:${uid}:${centavos}:${Date.now()}`,
     })
     setOcupado(false)
 
-    if (err) { setError('No pudimos cargar: ' + err.message); return }
+    if (error) { avisar('No pudimos cargar', { tono: 'grave', detalle: error.message }); return }
     const r = data as { ok: boolean; motivo?: string; saldo_centavos?: number }
-    if (!r.ok) { setError(mensajeDeError(r)); return }
+    if (!r.ok) { avisar('No se pudo cargar', { tono: 'grave', detalle: mensajeDeError(r) }); return }
 
-    setExito(`Cargaste ${pesos(centavos)}. Saldo nuevo: ${pesos(r.saldo_centavos!)}`)
+    avisar(`Cargaste ${pesos(centavos)}`, { tono: 'bien', detalle: `Saldo nuevo: ${pesos(r.saldo_centavos!)}` })
     setMonto('')
     void buscar(uid)
   }
 
   async function cambiarBloqueo(bloquear: boolean) {
-    if (!uid) return
-    const motivo = bloquear
-      ? (prompt('¿Por qué se bloquea? (se pierde, se robó, etc.)') ?? '')
-      : null
-    if (bloquear && motivo === '') return
-
-    setOcupado(true); setError(null); setExito(null)
-    const { data, error: err } = await supabase.rpc('caja_bloquear_tarjeta', {
-      p_uid: uid, p_bloquear: bloquear, p_motivo: motivo,
+    setOcupado(true)
+    const { data, error } = await supabase.rpc('caja_bloquear_tarjeta', {
+      p_uid: uid, p_bloquear: bloquear, p_motivo: bloquear ? motivo : null,
     })
-    setOcupado(false)
+    setOcupado(false); setModalBloqueo(false); setMotivo('')
 
-    if (err) { setError(err.message); return }
+    if (error) { avisar('Error', { tono: 'grave', detalle: error.message }); return }
     const r = data as { ok: boolean; motivo?: string }
-    if (!r.ok) { setError(mensajeDeError(r)); return }
+    if (!r.ok) { avisar('No se pudo', { tono: 'grave', detalle: mensajeDeError(r) }); return }
 
-    setExito(bloquear ? 'Tarjeta bloqueada.' : 'Tarjeta desbloqueada.')
+    avisar(bloquear ? 'Tarjeta bloqueada' : 'Tarjeta desbloqueada', { tono: 'bien' })
     void buscar(uid)
-  }
-
-  function limpiar() {
-    setUid(''); setFicha(null); setEsNueva(false)
-    setError(null); setExito(null); setMonto('')
   }
 
   const montoCentavos = aCentavos(monto)
 
   return (
     <>
-      <div className="panel">
-        <h2>Caja</h2>
-        <p className="sub">
-          Apoyá la tarjeta en el lector, o escribí el número y dale Buscar.
-          El lector funciona aunque el cursor no esté en el campo.
-        </p>
-
-        <form onSubmit={buscarManual}>
+      <Panel>
+        <form onSubmit={(e: FormEvent) => { e.preventDefault(); void buscar(uid) }}>
           <div className="fila">
-            <div style={{ flex: 3 }}>
-              <label htmlFor="uid">Número de tarjeta</label>
-              <input id="uid" className="campo grande" value={uid} autoFocus
-                     placeholder="A1B2C3D4"
+            <div className="crece" style={{ minWidth: 260 }}>
+              <label htmlFor="uid">
+                Tarjeta <span style={{ fontWeight: 500, color: 'var(--ink-3)' }}>· apoyala en el lector o escribí el número (F2)</span>
+              </label>
+              <input id="uid" ref={entrada} className="campo mono xl" value={uid} autoFocus
+                     placeholder="A1B2C3D4" spellCheck={false}
                      onChange={e => setUid(e.target.value.toUpperCase())} />
             </div>
-            <div className="angosto">
+            <div>
               <label htmlFor="formato">Lector</label>
-              <select id="formato" className="campo" value={formato}
+              <select id="formato" className="campo" value={formato} style={{ width: 165 }}
                       onChange={e => setFormato(e.target.value as FormatoLector)}>
                 <option value="hex">Hexadecimal</option>
                 <option value="decimal">Decimal</option>
               </select>
             </div>
-            <div className="angosto">
-              <button className="btn primario" disabled={ocupado || !uid}>Buscar</button>
-            </div>
-            <div className="angosto">
-              <button type="button" className="btn" onClick={limpiar}>Limpiar</button>
-            </div>
+            <button className="btn primario lg" disabled={buscando || !uid}>
+              <Icono nombre="buscar" tam={16} /> Buscar
+            </button>
+            {(ficha || esNueva) && (
+              <button type="button" className="btn lg" onClick={() => {
+                setUid(''); setFicha(null); setEsNueva(false); setMonto('')
+                entrada.current?.focus()
+              }}>Limpiar</button>
+            )}
           </div>
         </form>
+      </Panel>
 
-        {error && <div className="aviso error">{error}</div>}
-        {exito && <div className="aviso exito">{exito}</div>}
-      </div>
+      {buscando && (
+        <div className="panel"><div style={{ display: 'grid', gap: 14 }}>
+          <Hueso alto={18} ancho="35%" /><Hueso alto={40} ancho="45%" /><Hueso alto={14} ancho="70%" />
+        </div></div>
+      )}
+
+      {!buscando && !ficha && !esNueva && (
+        <Panel>
+          <Vacio icono="tarjeta" titulo="Ninguna tarjeta consultada">
+            Apoyá una tarjeta en el lector para ver su saldo y cargarle plata.
+          </Vacio>
+        </Panel>
+      )}
 
       {esNueva && (
-        <div className="panel">
-          <div className="aviso info">
-            La tarjeta <span className="uid">{uid}</span> no está registrada.
-            Se da de alta sola con la primera carga.
-          </div>
+        <Panel titulo="Tarjeta nueva" bajada={`${uid} todavía no está registrada.`}>
+          <Nota tono="info">
+            No es un error: la tarjeta se da de alta sola con la primera carga.
+          </Nota>
           <Cargador monto={monto} setMonto={setMonto} montoCentavos={montoCentavos}
                     ocupado={ocupado} onCargar={cargar} />
-        </div>
+        </Panel>
       )}
 
       {ficha && (
-        <div className="grid2">
-          <div className="panel">
-            <h2>
-              <span className="uid">{ficha.uid}</span>{' '}
-              {ficha.bloqueada
-                ? <span className="chip alerta">Bloqueada</span>
-                : <span className="chip ok">Activa</span>}
-            </h2>
-            <div className="saldo">{pesos(ficha.saldo_centavos)}</div>
-
-            {ficha.bloqueada && ficha.bloqueada_motivo && (
-              <div className="aviso error">Motivo: {ficha.bloqueada_motivo}</div>
-            )}
-
-            {ficha.sesion_abierta && (
-              <div className="aviso info">
-                Está sirviendo ahora en el grifo {ficha.sesion_abierta.grifo_id} —
-                hasta {volumen(ficha.sesion_abierta.ml_maximos)}.
-                Empezó {fecha(ficha.sesion_abierta.abierta_en)}.
+        <div className="rejilla lado">
+          <div>
+            <Panel>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                <span className="uid">{ficha.uid}</span>
+                {ficha.bloqueada ? <Chip tono="grave">Bloqueada</Chip> : <Chip tono="bien">Activa</Chip>}
+                {ficha.sesion_abierta && <Chip tono="dato">Sirviendo</Chip>}
               </div>
-            )}
 
-            <Cargador monto={monto} setMonto={setMonto} montoCentavos={montoCentavos}
-                      ocupado={ocupado || ficha.bloqueada} onCargar={cargar} />
+              <Stat etiqueta="Saldo disponible" valor={pesos(ficha.saldo_centavos)} hero />
 
-            <button className={ficha.bloqueada ? 'btn ancho' : 'btn peligro ancho'}
-                    style={{ marginTop: 12 }} disabled={ocupado}
-                    onClick={() => cambiarBloqueo(!ficha.bloqueada)}>
-              {ficha.bloqueada ? 'Desbloquear tarjeta' : 'Bloquear tarjeta'}
-            </button>
+              {ficha.bloqueada && (
+                <Nota tono="grave">
+                  Bloqueada{ficha.bloqueada_motivo ? `: ${ficha.bloqueada_motivo}` : '.'} No puede
+                  abrir sesión en ninguna canilla hasta desbloquearla.
+                </Nota>
+              )}
+
+              {ficha.sesion_abierta && (
+                <Nota tono="info">
+                  Está sirviendo ahora en la canilla {ficha.sesion_abierta.grifo_id}, con un tope
+                  de {volumen(ficha.sesion_abierta.ml_maximos)}. Empezó {fecha(ficha.sesion_abierta.abierta_en)}.
+                </Nota>
+              )}
+
+              <div style={{ marginTop: 18 }}>
+                <span className="etiqueta-campo">Cargar saldo</span>
+                <Cargador monto={monto} setMonto={setMonto} montoCentavos={montoCentavos}
+                          ocupado={ocupado || ficha.bloqueada} onCargar={cargar} />
+              </div>
+
+              <button className={ficha.bloqueada ? 'btn bloque' : 'btn grave bloque'}
+                      style={{ marginTop: 14 }} disabled={ocupado}
+                      onClick={() => ficha.bloqueada ? cambiarBloqueo(false) : setModalBloqueo(true)}>
+                <Icono nombre={ficha.bloqueada ? 'candado-abierto' : 'candado'} tam={16} />
+                {ficha.bloqueada ? 'Desbloquear tarjeta' : 'Bloquear tarjeta'}
+              </button>
+            </Panel>
           </div>
 
-          <div className="panel">
-            <h2>Últimos movimientos</h2>
-            <p className="sub">Las 15 operaciones más recientes de esta tarjeta.</p>
+          <Panel titulo="Movimientos" bajada="Las 15 operaciones más recientes." pegado>
             {ficha.movimientos.length === 0 ? (
-              <p className="vacio">Todavía no hay movimientos.</p>
+              <Vacio icono="reloj" titulo="Sin movimientos">Esta tarjeta todavía no se usó.</Vacio>
             ) : (
-              <div className="tabla-scroll">
+              <div className="scroll-x">
                 <table>
                   <thead>
                     <tr><th>Cuándo</th><th>Qué</th><th className="num">Monto</th><th className="num">Saldo</th></tr>
@@ -196,56 +201,66 @@ export default function Caja() {
                   <tbody>
                     {ficha.movimientos.map(m => (
                       <tr key={m.id}>
-                        <td>{fecha(m.creado_en)}</td>
-                        <td>
-                          <span className={m.tipo === 'carga' ? 'chip ok' : 'chip neutro'}>
-                            {m.tipo === 'carga' ? 'Carga' : 'Consumo'}
-                          </span>
-                        </td>
-                        <td className="num">{pesos(m.centavos)}</td>
-                        <td className="num">{pesos(m.saldo_resultante)}</td>
+                        <td style={{ color: 'var(--ink-2)' }}>{fecha(m.creado_en)}</td>
+                        <td>{m.tipo === 'carga'
+                          ? <Chip tono="bien">Carga</Chip>
+                          : <Chip tono="dato">Consumo</Chip>}</td>
+                        <td className="num" style={{ fontWeight: 600 }}>{pesos(m.centavos)}</td>
+                        <td className="num" style={{ color: 'var(--ink-2)' }}>{pesos(m.saldo_resultante)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             )}
-          </div>
+          </Panel>
         </div>
+      )}
+
+      {modalBloqueo && (
+        <Modal titulo="Bloquear tarjeta"
+               bajada={`${uid} no va a poder servir en ninguna canilla hasta que la desbloquees. El saldo no se toca.`}
+               onCerrar={() => setModalBloqueo(false)}
+               acciones={
+                 <>
+                   <button className="btn" onClick={() => setModalBloqueo(false)}>Cancelar</button>
+                   <button className="btn grave" disabled={!motivo.trim() || ocupado}
+                           onClick={() => cambiarBloqueo(true)}>Bloquear</button>
+                 </>
+               }>
+          <label htmlFor="motivo">Motivo</label>
+          <input id="motivo" className="campo" value={motivo} autoFocus
+                 placeholder="Se perdió / la robaron / a pedido del cliente"
+                 onChange={e => setMotivo(e.target.value)} />
+        </Modal>
       )}
     </>
   )
 }
 
 function Cargador({ monto, setMonto, montoCentavos, ocupado, onCargar }: {
-  monto: string
-  setMonto: (v: string) => void
-  montoCentavos: number | null
-  ocupado: boolean
-  onCargar: (centavos: number) => void
+  monto: string; setMonto: (v: string) => void; montoCentavos: number | null
+  ocupado: boolean; onCargar: (c: number) => void
 }) {
   return (
     <>
-      <div className="montos">
-        {MONTOS_RAPIDOS.map(c => (
+      <div className="rejilla c4" style={{ gap: 8, marginBottom: 10 }}>
+        {RAPIDOS.map(c => (
           <button key={c} className="btn" disabled={ocupado} onClick={() => onCargar(c)}>
             {pesos(c)}
           </button>
         ))}
       </div>
       <div className="fila">
-        <div>
-          <label htmlFor="monto">Otro monto</label>
-          <input id="monto" className="campo" inputMode="decimal" placeholder="1500"
-                 value={monto} onChange={e => setMonto(e.target.value)} />
+        <div className="crece">
+          <input className="campo" inputMode="decimal" placeholder="Otro monto"
+                 value={monto} onChange={e => setMonto(e.target.value)}
+                 onKeyDown={e => { if (e.key === 'Enter' && montoCentavos) onCargar(montoCentavos) }} />
         </div>
-        <div className="angosto">
-          <button className="btn primario"
-                  disabled={ocupado || !montoCentavos || montoCentavos <= 0}
-                  onClick={() => montoCentavos && onCargar(montoCentavos)}>
-            Cargar
-          </button>
-        </div>
+        <button className="btn primario" disabled={ocupado || !montoCentavos}
+                onClick={() => montoCentavos && onCargar(montoCentavos)}>
+          <Icono nombre="mas" tam={16} /> Cargar
+        </button>
       </div>
     </>
   )

@@ -17,7 +17,7 @@ YF-S201C · válvula solenoide 12V vía módulo relé
 | **Última etapa aceptada** | ✅ 1 — Blink (LED parpadeando + Serial a 115200, verificado en placa) |
 | **Próxima etapa** | 2 — Lector RFID |
 | **En paralelo** | ✅ backend de Supabase verificado punta a punta sobre HTTP |
-| **App de gestión** | ✅ React + Vite + TypeScript, compila y renderiza — falta aplicar `07` y crear el primer admin |
+| **App de gestión** | ✅ React + Vite + TypeScript · caja, panel, tarjetas, canillas, reportes y personal · modo claro/oscuro |
 | **Bloqueado por hardware** | etapas 2 y 3 esperan los cables dupont · etapa 4 espera el módulo relé |
 
 ### Datos de la placa real
@@ -75,7 +75,8 @@ platformio.ini              un [env:...] por etapa
 src/
   etapa1_blink/main.cpp     etapa 1 — blink + info del chip
 app/                        app de gestión (React + Vite + TypeScript)
-  src/pantallas/            caja, tarjetas, grifos, reportes, personal
+  src/pantallas/            caja, panel, tarjetas, canillas, reportes, personal
+  src/componentes/          modal, avisos, gráficos, iconos, primitivas de UI
   src/lib/                  cliente supabase, lector RFID USB, plata en centavos
 supabase/
   01-schema.sql             tablas (con el libro mayor), índices y RLS

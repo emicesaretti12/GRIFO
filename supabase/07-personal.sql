@@ -337,6 +337,29 @@ end;
 $$;
 
 
+-- Lista del personal CON el mail. La tabla `personal` guarda solo el user_id, y
+-- el mail vive en auth.users, que un cliente no puede leer. Sin esto la app no
+-- puede ofrecer un botón de baja por fila y hay que tipear el mail a mano.
+create or replace function public.admin_listar_personal()
+returns jsonb language sql stable security definer set search_path = ''
+as $$
+  select coalesce(jsonb_agg(x order by x->>'creado_en'), '[]'::jsonb)
+    from (
+      select jsonb_build_object(
+               'user_id',   p.user_id,
+               'email',     u.email,
+               'nombre',    p.nombre,
+               'rol',       p.rol,
+               'activo',    p.activo,
+               'creado_en', p.creado_en
+             ) as x
+        from public.personal p
+        join auth.users u on u.id = p.user_id
+       where public.es_admin()
+    ) t;
+$$;
+
+
 -- Dar de baja a alguien (no borra: desactiva, así el historial sigue firmado).
 create or replace function public.admin_baja_personal(p_email text)
 returns jsonb language plpgsql security definer set search_path = ''
@@ -373,6 +396,7 @@ revoke all on function public.admin_actualizar_grifo(int, text, bigint, numeric,
 revoke all on function public.admin_rotar_token(int)                               from public, anon;
 revoke all on function public.admin_set_rol(text, text, text)                       from public, anon;
 revoke all on function public.admin_baja_personal(text)                             from public, anon;
+revoke all on function public.admin_listar_personal()                               from public, anon;
 
 grant execute on function public.mi_rol()                                          to authenticated;
 grant execute on function public.es_admin()                                        to authenticated;
@@ -384,6 +408,7 @@ grant execute on function public.admin_actualizar_grifo(int, text, bigint, numer
 grant execute on function public.admin_rotar_token(int)                            to authenticated;
 grant execute on function public.admin_set_rol(text, text, text)                    to authenticated;
 grant execute on function public.admin_baja_personal(text)                          to authenticated;
+grant execute on function public.admin_listar_personal()                            to authenticated;
 
 
 -- ═════════════════════════════════════════════════════════════════════════════

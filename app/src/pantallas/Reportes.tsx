@@ -1,186 +1,211 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { pesos, volumen, fecha } from '../lib/plata'
+import { pesos, volumen, fechaCorta } from '../lib/plata'
+import { porDia, porGrifo, diaCorto } from '../lib/agrupar'
+import { bajarCSV } from '../lib/csv'
 import type { Grifo, Sesion } from '../lib/tipos'
+import { Panel, Stat, Chip, Nota, Vacio, HuesoTabla, Hueso } from '../componentes/UI'
+import { Columnas, Barras } from '../componentes/Grafico'
+import { useAvisos } from '../componentes/Toast'
+import Icono from '../componentes/Icono'
 
-const DIAS = [
-  { etiqueta: 'Hoy', dias: 0 },
-  { etiqueta: '7 días', dias: 7 },
-  { etiqueta: '30 días', dias: 30 },
+const RANGOS = [
+  { id: 7,  texto: '7 días' },
+  { id: 14, texto: '14 días' },
+  { id: 30, texto: '30 días' },
+  { id: 90, texto: '90 días' },
 ]
 
 export default function Reportes() {
+  const { avisar } = useAvisos()
   const [sesiones, setSesiones] = useState<Sesion[]>([])
   const [grifos, setGrifos] = useState<Grifo[]>([])
-  const [rango, setRango] = useState(0)
-  const [error, setError] = useState<string | null>(null)
+  const [dias, setDias] = useState(14)
   const [cargando, setCargando] = useState(true)
 
-  useEffect(() => {
-    let vigente = true
+  const traer = useCallback(async () => {
     setCargando(true)
     const desde = new Date()
-    if (rango === 0) desde.setHours(0, 0, 0, 0)
-    else desde.setDate(desde.getDate() - rango)
+    desde.setDate(desde.getDate() - (dias - 1))
+    desde.setHours(0, 0, 0, 0)
 
-    Promise.all([
+    const [s, g] = await Promise.all([
       supabase.from('sesiones').select('*')
         .gte('abierta_en', desde.toISOString())
-        .order('abierta_en', { ascending: false }).limit(500),
+        .order('abierta_en', { ascending: false }).limit(2000),
       supabase.from('grifos').select('*').order('id'),
-    ]).then(([s, g]) => {
-      if (!vigente) return
-      if (s.error) setError(s.error.message)
-      else { setSesiones(s.data as Sesion[]); setError(null) }
-      if (!g.error) setGrifos(g.data as Grifo[])
-      setCargando(false)
-    })
-    return () => { vigente = false }
-  }, [rango])
+    ])
+    if (s.error) avisar('No pudimos leer las sesiones', { tono: 'grave', detalle: s.error.message })
+    else setSesiones(s.data as Sesion[])
+    if (!g.error) setGrifos(g.data as Grifo[])
+    setCargando(false)
+  }, [dias, avisar])
+
+  useEffect(() => { void traer() }, [traer])
 
   const nombreGrifo = useMemo(() => {
     const m = new Map(grifos.map(g => [g.id, g.nombre]))
-    return (id: number) => m.get(id) ?? `Grifo ${id}`
+    return (id: number) => m.get(id) ?? `Canilla ${id}`
   }, [grifos])
 
-  const resumen = useMemo(() => {
+  const r = useMemo(() => {
     const cerradas = sesiones.filter(s => s.estado === 'cerrada')
-    const porGrifo = new Map<number, { ml: number; centavos: number; n: number }>()
-    for (const s of cerradas) {
-      const a = porGrifo.get(s.grifo_id) ?? { ml: 0, centavos: 0, n: 0 }
-      a.ml += s.ml_servidos ?? 0
-      a.centavos += s.costo_centavos ?? 0
-      a.n += 1
-      porGrifo.set(s.grifo_id, a)
-    }
+    const total = cerradas.reduce((a, s) => a + (s.costo_centavos ?? 0), 0)
+    const ml = cerradas.reduce((a, s) => a + (s.ml_servidos ?? 0), 0)
     return {
-      total: cerradas.reduce((a, s) => a + (s.costo_centavos ?? 0), 0),
-      ml: cerradas.reduce((a, s) => a + (s.ml_servidos ?? 0), 0),
-      servidas: cerradas.length,
-      abiertas: sesiones.filter(s => s.estado === 'abierta').length,
-      pendientes: sesiones.filter(s => s.estado === 'abandonada').length,
-      recortadas: cerradas.filter(s => s.costo_recortado).length,
-      reintentos: cerradas.filter(s => s.intentos_cierre > 1).length,
-      porGrifo: [...porGrifo.entries()].sort((a, b) => b[1].centavos - a[1].centavos),
+      total, ml,
+      tiradas: cerradas.length,
+      promedio: cerradas.length ? Math.round(total / cerradas.length) : 0,
+      porLitro: ml > 0 ? Math.round((total / ml) * 1000) : 0,
+      recortadas: cerradas.filter(s => s.costo_recortado),
+      reintentos: cerradas.filter(s => s.intentos_cierre > 1),
+      sinLiquidar: sesiones.filter(s => s.estado === 'abandonada'),
     }
   }, [sesiones])
 
+  const serie = useMemo(() => porDia(sesiones, dias), [sesiones, dias])
+  const ranking = useMemo(() => porGrifo(sesiones), [sesiones])
+
   return (
     <>
-      <div className="panel">
-        <h2>Reportes</h2>
-        <p className="sub">Lo servido y lo facturado, según las sesiones ya liquidadas.</p>
-
-        <div className="fila" style={{ marginBottom: 16 }}>
-          {DIAS.map((d, i) => (
-            <div className="angosto" key={d.etiqueta}>
-              <button className={rango === d.dias && (i !== 0 || rango === 0) ? 'btn primario' : 'btn'}
-                      onClick={() => setRango(d.dias)}>{d.etiqueta}</button>
-            </div>
+      <Panel accion={
+        <button className="btn sm" disabled={sesiones.length === 0}
+                onClick={() => bajarCSV('tiradas', [
+                  ['Fecha', 'Tarjeta', 'Canilla', 'Estado', 'ml', 'Pulsos', 'Cobrado', 'Recortado', 'Reintentos'],
+                  ...sesiones.map(s => [
+                    s.cerrada_en ?? s.abierta_en, s.uid, nombreGrifo(s.grifo_id), s.estado,
+                    s.ml_servidos ?? '', s.pulsos ?? '',
+                    s.costo_centavos != null ? (s.costo_centavos / 100).toFixed(2) : '',
+                    s.costo_recortado ? 'si' : 'no', s.intentos_cierre,
+                  ]),
+                ])}>
+          <Icono nombre="descargar" tam={15} /> Exportar CSV
+        </button>
+      }>
+        <div className="grupo-btn">
+          {RANGOS.map(x => (
+            <button key={x.id} aria-pressed={dias === x.id} onClick={() => setDias(x.id)}>{x.texto}</button>
           ))}
         </div>
+      </Panel>
 
-        {error && <div className="aviso error">{error}</div>}
-        {cargando ? <p className="vacio">Cargando…</p> : (
-          <>
-            <div className="grid2">
-              <div>
-                <label>Facturado</label>
-                <div className="saldo">{pesos(resumen.total)}</div>
-              </div>
-              <div>
-                <label>Servido</label>
-                <div className="saldo">{volumen(resumen.ml)}</div>
-              </div>
-            </div>
-            <p className="sub" style={{ marginTop: 12 }}>
-              {resumen.servidas} tiradas liquidadas
-              {resumen.abiertas > 0 && ` · ${resumen.abiertas} en curso`}
-              {resumen.pendientes > 0 && ` · ${resumen.pendientes} sin liquidar`}
-            </p>
+      {cargando ? (
+        <>
+          <div className="rejilla c4">
+            {[0,1,2,3].map(i => <div className="panel" key={i}><Hueso alto={13} ancho="55%" />
+              <div style={{ height: 8 }} /><Hueso alto={28} ancho="70%" /></div>)}
+          </div>
+          <div className="panel"><Hueso alto={220} /></div>
+        </>
+      ) : (
+        <>
+          <div className="rejilla c4">
+            <div className="panel"><Stat etiqueta="Facturado" valor={pesos(r.total)}
+              pie={`${r.tiradas} tirada${r.tiradas === 1 ? '' : 's'}`} /></div>
+            <div className="panel"><Stat etiqueta="Servido" valor={volumen(r.ml)} /></div>
+            <div className="panel"><Stat etiqueta="Promedio por tirada" valor={pesos(r.promedio)} /></div>
+            <div className="panel"><Stat etiqueta="Precio medio por litro" valor={pesos(r.porLitro)}
+              pie="mezcla real de lo vendido" /></div>
+          </div>
 
-            {(resumen.recortadas > 0 || resumen.reintentos > 0) && (
-              <div className="aviso error">
-                {resumen.recortadas > 0 && (
-                  <div>
-                    <strong>{resumen.recortadas} tiradas con cobro recortado.</strong> Se sirvió
-                    más de lo que había en la tarjeta: el corte local del ESP32 falló. Revisá
-                    la calibración de esa canilla.
-                  </div>
-                )}
-                {resumen.reintentos > 0 && (
-                  <div>
-                    <strong>{resumen.reintentos} cierres reintentados.</strong> Al ESP32 no le
-                    llegó la respuesta y volvió a mandar. Unos pocos son normales; muchos
-                    indican problema de red en el bar.
-                  </div>
-                )}
+          {(r.recortadas.length > 0 || r.reintentos.length > 0 || r.sinLiquidar.length > 0) && (
+            <Panel titulo="Cosas para mirar">
+              {r.recortadas.length > 0 && (
+                <Nota tono="grave">
+                  <strong>{r.recortadas.length} tiradas con cobro recortado.</strong> Se sirvió más
+                  de lo que había en la tarjeta y solo se pudo cobrar hasta el saldo: el corte
+                  local del ESP32 no llegó a tiempo. Casi siempre es la calibración
+                  (<em>pulsos por litro</em>) mal medida en esa canilla.
+                </Nota>
+              )}
+              {r.reintentos.length > 0 && (
+                <Nota tono="ojo">
+                  <strong>{r.reintentos.length} cierres reintentados.</strong> Al ESP32 no le llegó
+                  la respuesta y volvió a mandar. La idempotencia evitó el cobro doble, pero muchos
+                  reintentos indican problema de WiFi en el bar.
+                </Nota>
+              )}
+              {r.sinLiquidar.length > 0 && (
+                <Nota tono="ojo">
+                  <strong>{r.sinLiquidar.length} sesiones sin liquidar.</strong> Quedaron colgadas
+                  (se cortó la luz o el ESP32 se reinició). La tarjeta ya está libre; el cobro
+                  entra cuando el ESP32 drene su cola.
+                </Nota>
+              )}
+            </Panel>
+          )}
+
+          <Panel titulo={`Facturación por día · últimos ${dias} días`}
+                 bajada="Solo tiradas ya liquidadas. Pasá el mouse por una barra para el detalle.">
+            <Columnas alto={230}
+                      datos={serie.map(d => ({
+                        etiqueta: diaCorto(d.fecha),
+                        valor: d.centavos,
+                        detalle: `${d.n} tirada${d.n === 1 ? '' : 's'} · ${volumen(d.ml)}`,
+                      }))}
+                      formato={n => pesos(n)} />
+          </Panel>
+
+          <div className="rejilla lado">
+            <Panel titulo="Facturado por canilla">
+              {ranking.length === 0
+                ? <Vacio icono="grifo" titulo="Sin ventas en el período" />
+                : <Barras datos={ranking.map(([id, a]) => ({
+                            etiqueta: nombreGrifo(id), valor: a.centavos, detalle: volumen(a.ml),
+                          }))} formato={n => pesos(n)} />}
+            </Panel>
+
+            <Panel titulo="Volumen por canilla">
+              {ranking.length === 0
+                ? <Vacio icono="grifo" titulo="Sin ventas en el período" />
+                : <Barras datos={[...ranking].sort((a, b) => b[1].ml - a[1].ml).map(([id, a]) => ({
+                            etiqueta: nombreGrifo(id), valor: a.ml,
+                            detalle: `${a.n} tirada${a.n === 1 ? '' : 's'}`,
+                          }))} formato={n => volumen(n)} />}
+            </Panel>
+          </div>
+
+          <Panel titulo="Últimas tiradas"
+                 bajada={sesiones.length > 50
+                   ? `Las 50 más recientes de ${sesiones.length}. Bajá el CSV para verlas todas.`
+                   : `${sesiones.length} en el período.`} pegado>
+            {sesiones.length === 0 ? (
+              <Vacio icono="reloj" titulo="No hubo actividad">
+                Probá con un rango más largo.
+              </Vacio>
+            ) : (
+              <div className="scroll-x">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Cuándo</th><th>Tarjeta</th><th>Canilla</th><th>Estado</th>
+                      <th className="num">Servido</th><th className="num">Cobrado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sesiones.slice(0, 50).map(s => (
+                      <tr key={s.id}>
+                        <td style={{ color: 'var(--ink-2)' }}>{fechaCorta(s.cerrada_en ?? s.abierta_en)}</td>
+                        <td><span className="uid">{s.uid}</span></td>
+                        <td>{nombreGrifo(s.grifo_id)}</td>
+                        <td>
+                          {s.estado === 'cerrada' ? <Chip tono="bien">Liquidada</Chip>
+                            : s.estado === 'abierta' ? <Chip tono="dato">En curso</Chip>
+                            : <Chip tono="ojo">Sin liquidar</Chip>}
+                          {s.costo_recortado && <> <Chip tono="grave">recortada</Chip></>}
+                        </td>
+                        <td className="num">{volumen(s.ml_servidos)}</td>
+                        <td className="num" style={{ fontWeight: 600 }}>{pesos(s.costo_centavos)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
-          </>
-        )}
-      </div>
-
-      {resumen.porGrifo.length > 0 && (
-        <div className="panel">
-          <h2>Por canilla</h2>
-          <div className="tabla-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Canilla</th><th className="num">Tiradas</th>
-                  <th className="num">Servido</th><th className="num">Facturado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {resumen.porGrifo.map(([id, a]) => (
-                  <tr key={id}>
-                    <td><strong>{nombreGrifo(id)}</strong></td>
-                    <td className="num">{a.n}</td>
-                    <td className="num">{volumen(a.ml)}</td>
-                    <td className="num"><strong>{pesos(a.centavos)}</strong></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+          </Panel>
+        </>
       )}
-
-      <div className="panel">
-        <h2>Últimas tiradas</h2>
-        {sesiones.length === 0 ? <p className="vacio">No hubo actividad en este período.</p> : (
-          <div className="tabla-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Cuándo</th><th>Tarjeta</th><th>Canilla</th><th>Estado</th>
-                  <th className="num">Servido</th><th className="num">Cobrado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sesiones.slice(0, 100).map(s => (
-                  <tr key={s.id}>
-                    <td>{fecha(s.abierta_en)}</td>
-                    <td><span className="uid">{s.uid}</span></td>
-                    <td>{nombreGrifo(s.grifo_id)}</td>
-                    <td>
-                      {s.estado === 'cerrada'
-                        ? <span className="chip ok">Liquidada</span>
-                        : s.estado === 'abierta'
-                          ? <span className="chip info">En curso</span>
-                          : <span className="chip alerta">Sin liquidar</span>}
-                      {s.costo_recortado && <span className="chip alerta"> recortada</span>}
-                    </td>
-                    <td className="num">{volumen(s.ml_servidos)}</td>
-                    <td className="num">{pesos(s.costo_centavos)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      {cargando && <div className="panel pegado"><HuesoTabla /></div>}
     </>
   )
 }
