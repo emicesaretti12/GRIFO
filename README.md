@@ -68,6 +68,24 @@ pio run -e etapa1_blink -t upload
 
 ---
 
+## La app de gestión
+
+Vive en [`app/`](app). Desde la **raíz del repo**:
+
+```bash
+npm install     # instala las dependencias de app/
+npm run dev     # http://localhost:5173
+```
+
+También funciona entrando a `app/` y corriendo lo mismo — el `package.json` de
+la raíz solo hace de atajo para no tener que acordarse del `cd`.
+
+Antes de la primera vez hay que copiar `app/.env.example` a `app/.env.local` y
+completar la URL y la anon key del proyecto. Detalle en
+[`docs/app-gestion.md`](docs/app-gestion.md).
+
+---
+
 ## Estructura del repo
 
 ```
