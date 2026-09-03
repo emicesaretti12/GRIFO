@@ -81,6 +81,20 @@ litro medido con probeta y se calcula. Se guarda en NVS.
 **Se acepta cuando:** sirviendo 500 ml de agua el sistema reporta 500 ml ±2%.
 
 ## Etapa 8 — Pantalla
-**Necesita:** display, todavía sin definir (probablemente TFT ILI9341 o ST7789).
-**Objetivo:** implementar los stubs `uiXXX()` y la animación del barril bajando
-según el saldo. Va en **HSPI**, no en VSPI, para no compartir bus con el MFRC522.
+**Objetivo original:** un TFT ILI9341/ST7789 en HSPI, con los stubs `uiXXX()`.
+
+🟢 **Resuelta por otro camino, y ya está hecha.** Cargar el logo de cada cerveza
+y un fondo animado interactivo no entra en un TFT de 320×240. En su lugar, cada
+canilla tiene una **tablet, celular o monitor mostrando una página web** de este
+mismo sistema en modo kiosco, que se vincula por QR con el token del grifo.
+
+Ventaja grande: **no hay firmware nuevo que mantener**, y cambiar un precio o una
+foto no implica reflashear nada.
+
+Ver [`pantalla-canilla.md`](pantalla-canilla.md). Lo único que le queda al
+firmware es llamar a `reportar_progreso()` cada ~500 ms mientras sirve, para que
+el vaso de la pantalla se llene en vivo — y es opcional: si no llega, la pantalla
+funciona igual.
+
+El TFT sigue disponible como versión mínima si alguna canilla no justifica una
+pantalla; las dos comen del mismo backend.

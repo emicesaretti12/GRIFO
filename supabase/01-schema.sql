@@ -43,6 +43,32 @@ create table if not exists public.grifos (
 alter table public.grifos add column if not exists token_hash    text;
 alter table public.grifos add column if not exists token_rotado_en timestamptz;
 
+-- COSTO por litro: lo que le sale al bar el litro de esa cerveza.
+-- Sin esto solo sabemos cuánto facturamos, que no es lo mismo que cuánto
+-- ganamos: una IPA cara puede dejar menos margen que una rubia barata.
+alter table public.grifos add column if not exists costo_litro_centavos bigint not null default 0;
+
+-- Identidad de la cerveza, para la pantalla de la canilla.
+alter table public.grifos add column if not exists estilo      text;
+alter table public.grifos add column if not exists descripcion text;
+alter table public.grifos add column if not exists abv         numeric(4,1);   -- % alcohol
+alter table public.grifos add column if not exists ibu         int;            -- amargor
+alter table public.grifos add column if not exists color       text;           -- hex, tiñe la pantalla
+alter table public.grifos add column if not exists imagen_url  text;           -- logo o foto
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'grifos_costo_no_negativo') then
+    alter table public.grifos add constraint grifos_costo_no_negativo
+      check (costo_litro_centavos >= 0);
+  end if;
+end $$;
+
+comment on column public.grifos.costo_litro_centavos is
+  'Costo del litro para el bar, en centavos. margen = precio - costo.';
+comment on column public.grifos.color is
+  'Color hex de la cerveza (#c8811f). Tiñe la pantalla de esa canilla.';
+
 comment on column public.grifos.pulsos_por_litro is
   'Calibración del caudalímetro (etapa 7). Es una constante física, no plata: numeric está bien.';
 comment on column public.grifos.ml_minimos is
@@ -96,6 +122,18 @@ comment on column public.sesiones.costo_recortado is
   'true = el costo superaba el saldo y se cobró solo el saldo. No debería pasar nunca (el ESP32 corta antes). Si aparece, hay que investigar.';
 comment on column public.sesiones.intentos_cierre is
   'Cuántas veces llegó cerrar_sesion. >1 significa que el ESP32 reintentó porque no le llegó la respuesta.';
+
+-- Snapshot del COSTO al abrir, igual que el precio: la ganancia de una tirada se
+-- calcula con el costo que regía cuando se sirvió, no con el de hoy.
+alter table public.sesiones add column if not exists costo_litro_centavos    bigint not null default 0;
+alter table public.sesiones add column if not exists costo_producto_centavos bigint;
+
+-- Avance en vivo. El ESP32 cuenta los pulsos localmente y solo liquida al final,
+-- así que sin esto el servidor no sabe nada mientras se sirve — y la pantalla de
+-- la canilla no puede mostrar el vaso llenándose. Es informativo: NO toca plata.
+alter table public.sesiones add column if not exists ml_parcial      int not null default 0;
+alter table public.sesiones add column if not exists pulsos_parcial  int not null default 0;
+alter table public.sesiones add column if not exists visto_en        timestamptz;
 
 -- ESTA es la garantía de "no podés servir en dos grifos a la vez". No es una
 -- validación en el código que se pueda ganar con una condición de carrera:

@@ -17,7 +17,8 @@ YF-S201C · válvula solenoide 12V vía módulo relé
 | **Última etapa aceptada** | ✅ 1 — Blink (LED parpadeando + Serial a 115200, verificado en placa) |
 | **Próxima etapa** | 2 — Lector RFID |
 | **En paralelo** | ✅ backend de Supabase verificado punta a punta sobre HTTP |
-| **App de gestión** | ✅ React + Vite + TypeScript · caja, panel, tarjetas, canillas, reportes y personal · modo claro/oscuro |
+| **App de gestión** | ✅ caja, panel, tarjetas, canillas, reportes y personal · costo y ganancia · modo claro/oscuro |
+| **Pantalla de canilla** | ✅ kiosco web por canilla, se vincula por QR con el token del grifo |
 | **Bloqueado por hardware** | etapas 2 y 3 esperan los cables dupont · etapa 4 espera el módulo relé |
 
 ### Datos de la placa real
@@ -74,10 +75,11 @@ platformio.ini              un [env:...] por etapa
 .mcp.json                   servidor MCP de Supabase (hay que autenticarlo local, ver docs)
 src/
   etapa1_blink/main.cpp     etapa 1 — blink + info del chip
-app/                        app de gestión (React + Vite + TypeScript)
+app/                        app de gestión + pantallas de canilla (React + Vite + TS)
   src/pantallas/            caja, panel, tarjetas, canillas, reportes, personal
-  src/componentes/          modal, avisos, gráficos, iconos, primitivas de UI
-  src/lib/                  cliente supabase, lector RFID USB, plata en centavos
+  src/pantalla/             kiosco de canilla y su fondo animado en canvas
+  src/componentes/          modal, avisos, gráficos, QR, iconos, primitivas de UI
+  src/lib/                  cliente supabase, lector RFID USB, imágenes, plata
 supabase/
   01-schema.sql             tablas (con el libro mayor), índices y RLS
   02-funciones.sql          RPC del dispositivo + caja + tokens + permisos
@@ -88,6 +90,8 @@ supabase/
   07-personal.sql           roles del personal, policies RLS y RPC de caja/admin
   08-pruebas-personal.sql   pruebas de roles y permisos
   09-primer-admin.sql       crea el primer admin (se corre una sola vez)
+  10-pantallas.sql          pantalla de canilla, avance en vivo, costo e imágenes
+  11-pruebas-pantallas.sql  pruebas de pantalla, avance en vivo y margen
 docs/
   plan-de-etapas.md         las 8 etapas, qué necesita cada una, criterio de aceptación
   pinout-y-trampas.md       pinout definitivo + trampas de hardware explicadas
@@ -96,6 +100,7 @@ docs/
   troubleshooting-flasheo.md  cuando no flashea
   backend-supabase.md       backend: aplicar, probar, decisiones de diseño
   app-gestion.md            app de gestión: puesta en marcha, roles, lector RFID
+  pantalla-canilla.md       la pantalla de cada grifo: vinculación, kiosco, animación
 ```
 
 ### Por qué un sketch por etapa

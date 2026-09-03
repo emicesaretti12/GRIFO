@@ -4,10 +4,17 @@ export type Grifo = {
   id: number
   nombre: string
   precio_litro_centavos: number
+  costo_litro_centavos: number
   pulsos_por_litro: number
   ml_minimos: number
   activo: boolean
   token_rotado_en: string | null
+  estilo: string | null
+  descripcion: string | null
+  abv: number | null
+  ibu: number | null
+  color: string | null
+  imagen_url: string | null
 }
 
 export type Movimiento = {
@@ -51,6 +58,9 @@ export type Sesion = {
   ml_servidos: number | null
   pulsos: number | null
   costo_centavos: number | null
+  /** Lo que le costó al bar el líquido servido. Facturado − esto = ganancia. */
+  costo_producto_centavos: number | null
+  ml_parcial: number
   intentos_cierre: number
   costo_recortado: boolean
   abierta_en: string
@@ -81,6 +91,8 @@ export const MOTIVOS: Record<string, string> = {
   precio_invalido: 'El precio tiene que ser mayor a cero.',
   calibracion_invalida: 'La calibración tiene que ser mayor a cero.',
   sin_token: 'El grifo no tiene token. Generá uno antes de activarlo.',
+  costo_invalido: 'El costo no puede ser negativo.',
+  color_invalido: 'El color tiene que ser hexadecimal, tipo #c8811f.',
   usuario_inexistente: 'Ese usuario no existe. Invitalo primero desde Supabase.',
   rol_invalido: 'Rol inválido.',
   no_podes_darte_de_baja_solo: 'No podés darte de baja a vos mismo.',

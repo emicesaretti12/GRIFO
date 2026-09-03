@@ -41,13 +41,14 @@ export default function Inicio() {
     const d0 = new Date(); d0.setHours(0, 0, 0, 0)
     const delDia = sesiones.filter(s => new Date(s.abierta_en) >= d0)
     const cerradas = delDia.filter(s => s.estado === 'cerrada')
+    const facturado = cerradas.reduce((a, s) => a + (s.costo_centavos ?? 0), 0)
+    const costo = cerradas.reduce((a, s) => a + (s.costo_producto_centavos ?? 0), 0)
     return {
-      facturado: cerradas.reduce((a, s) => a + (s.costo_centavos ?? 0), 0),
+      facturado, costo,
+      ganancia: facturado - costo,
+      hayCosto: cerradas.some(s => (s.costo_producto_centavos ?? 0) > 0),
       ml: cerradas.reduce((a, s) => a + (s.ml_servidos ?? 0), 0),
       tiradas: cerradas.length,
-      promedio: cerradas.length
-        ? Math.round(cerradas.reduce((a, s) => a + (s.costo_centavos ?? 0), 0) / cerradas.length)
-        : 0,
     }
   }, [sesiones])
 
@@ -104,7 +105,12 @@ export default function Inicio() {
         <div className="panel"><Stat etiqueta="Facturado hoy" valor={pesos(hoy.facturado)}
           pie={`${hoy.tiradas} tirada${hoy.tiradas === 1 ? '' : 's'}`} /></div>
         <div className="panel"><Stat etiqueta="Servido hoy" valor={volumen(hoy.ml)} /></div>
-        <div className="panel"><Stat etiqueta="Promedio por tirada" valor={pesos(hoy.promedio)} /></div>
+        <div className="panel">
+          {hoy.hayCosto
+            ? <Stat etiqueta="Ganancia hoy" valor={pesos(hoy.ganancia)}
+                    pie={`costo ${pesos(hoy.costo)}`} />
+            : <Stat etiqueta="Ganancia hoy" valor="—" pie="falta el costo por litro" />}
+        </div>
         <div className="panel"><Stat etiqueta="Sirviendo ahora" valor={String(enCurso.length)}
           pie={enCurso.length ? 'en curso' : 'ninguna canilla activa'} /></div>
       </div>

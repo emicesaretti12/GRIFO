@@ -147,10 +147,10 @@ begin
 
   insert into public.sesiones (
     uid, grifo_id, saldo_inicial_centavos, precio_litro_centavos,
-    pulsos_por_litro, ml_maximos
+    costo_litro_centavos, pulsos_por_litro, ml_maximos
   ) values (
     v_uid, p_grifo, v_tarjeta.saldo_centavos, v_grifo.precio_litro_centavos,
-    v_grifo.pulsos_por_litro, v_ml_max
+    v_grifo.costo_litro_centavos, v_grifo.pulsos_por_litro, v_ml_max
   ) returning id into v_sesion_id;
 
   return jsonb_build_object(
@@ -252,14 +252,18 @@ begin
    returning saldo_centavos into v_saldo;
 
   update public.sesiones
-     set estado               = 'cerrada',
-         ml_servidos          = p_ml,
-         pulsos               = p_pulsos,
-         costo_centavos       = v_costo,
-         saldo_final_centavos = v_saldo,
-         costo_recortado      = v_recorte,
-         intentos_cierre      = intentos_cierre + 1,
-         cerrada_en           = now()
+     set estado                  = 'cerrada',
+         ml_servidos             = p_ml,
+         pulsos                  = p_pulsos,
+         costo_centavos          = v_costo,
+         -- Lo que le costó al bar ese líquido. Redondeo hacia ABAJO: para el
+         -- costo, la asimetría prudente es la contraria a la del cobro — nunca
+         -- subestimar la ganancia inventando costo que no existió.
+         costo_producto_centavos = (p_ml::bigint * v_ses.costo_litro_centavos) / 1000,
+         saldo_final_centavos    = v_saldo,
+         costo_recortado         = v_recorte,
+         intentos_cierre         = intentos_cierre + 1,
+         cerrada_en              = now()
    where id = v_ses.id;
 
   -- Asiento en el libro mayor. La clave de idempotencia lleva el id de sesión,

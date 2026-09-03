@@ -51,9 +51,13 @@ export default function Reportes() {
   const r = useMemo(() => {
     const cerradas = sesiones.filter(s => s.estado === 'cerrada')
     const total = cerradas.reduce((a, s) => a + (s.costo_centavos ?? 0), 0)
+    const costo = cerradas.reduce((a, s) => a + (s.costo_producto_centavos ?? 0), 0)
     const ml = cerradas.reduce((a, s) => a + (s.ml_servidos ?? 0), 0)
+    // Sin costo cargado en las canillas, la ganancia seria igual a la
+    // facturacion — un numero lindo y falso. Preferimos no mostrarla.
+    const hayCosto = cerradas.some(s => (s.costo_producto_centavos ?? 0) > 0)
     return {
-      total, ml,
+      total, costo, ml, hayCosto, ganancia: total - costo,
       tiradas: cerradas.length,
       promedio: cerradas.length ? Math.round(total / cerradas.length) : 0,
       porLitro: ml > 0 ? Math.round((total / ml) * 1000) : 0,
@@ -71,11 +75,15 @@ export default function Reportes() {
       <Panel accion={
         <button className="btn sm" disabled={sesiones.length === 0}
                 onClick={() => bajarCSV('tiradas', [
-                  ['Fecha', 'Tarjeta', 'Canilla', 'Estado', 'ml', 'Pulsos', 'Cobrado', 'Recortado', 'Reintentos'],
+                  ['Fecha', 'Tarjeta', 'Canilla', 'Estado', 'ml', 'Pulsos',
+                   'Cobrado', 'Costo', 'Ganancia', 'Recortado', 'Reintentos'],
                   ...sesiones.map(s => [
                     s.cerrada_en ?? s.abierta_en, s.uid, nombreGrifo(s.grifo_id), s.estado,
                     s.ml_servidos ?? '', s.pulsos ?? '',
                     s.costo_centavos != null ? (s.costo_centavos / 100).toFixed(2) : '',
+                    s.costo_producto_centavos != null ? (s.costo_producto_centavos / 100).toFixed(2) : '',
+                    s.costo_centavos != null
+                      ? ((s.costo_centavos - (s.costo_producto_centavos ?? 0)) / 100).toFixed(2) : '',
                     s.costo_recortado ? 'si' : 'no', s.intentos_cierre,
                   ]),
                 ])}>
@@ -104,8 +112,13 @@ export default function Reportes() {
               pie={`${r.tiradas} tirada${r.tiradas === 1 ? '' : 's'}`} /></div>
             <div className="panel"><Stat etiqueta="Servido" valor={volumen(r.ml)} /></div>
             <div className="panel"><Stat etiqueta="Promedio por tirada" valor={pesos(r.promedio)} /></div>
-            <div className="panel"><Stat etiqueta="Precio medio por litro" valor={pesos(r.porLitro)}
-              pie="mezcla real de lo vendido" /></div>
+            <div className="panel">
+              {r.hayCosto
+                ? <Stat etiqueta="Ganancia" valor={pesos(r.ganancia)}
+                        pie={`${Math.round((r.ganancia / Math.max(1, r.total)) * 100)}% de lo facturado`} />
+                : <Stat etiqueta="Ganancia" valor="—"
+                        pie="cargá el costo por litro de cada canilla" />}
+            </div>
           </div>
 
           {(r.recortadas.length > 0 || r.reintentos.length > 0 || r.sinLiquidar.length > 0) && (
@@ -151,7 +164,8 @@ export default function Reportes() {
               {ranking.length === 0
                 ? <Vacio icono="grifo" titulo="Sin ventas en el período" />
                 : <Barras datos={ranking.map(([id, a]) => ({
-                            etiqueta: nombreGrifo(id), valor: a.centavos, detalle: volumen(a.ml),
+                            etiqueta: nombreGrifo(id), valor: a.centavos,
+                            detalle: a.costo > 0 ? `deja ${pesos(a.centavos - a.costo)}` : volumen(a.ml),
                           }))} formato={n => pesos(n)} />}
             </Panel>
 
