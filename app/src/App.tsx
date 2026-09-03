@@ -11,8 +11,9 @@ import Grifos from './pantallas/Grifos'
 import Tarjetas from './pantallas/Tarjetas'
 import Reportes from './pantallas/Reportes'
 import Personal from './pantallas/Personal'
+import CajaMovil from './pantallas/CajaMovil'
 
-type Id = 'inicio' | 'caja' | 'tarjetas' | 'grifos' | 'reportes' | 'personal'
+type Id = 'inicio' | 'caja' | 'movil' | 'tarjetas' | 'grifos' | 'reportes' | 'personal'
 
 type Item = {
   id: Id; texto: string; icono: Nombre; titulo: string; bajada: string
@@ -22,6 +23,8 @@ type Item = {
 const ITEMS: Item[] = [
   { id: 'caja', texto: 'Caja', icono: 'caja',
     titulo: 'Caja', bajada: 'Consultar tarjetas y cargar saldo.' },
+  { id: 'movil', texto: 'Caja móvil', icono: 'tarjeta',
+    titulo: 'Caja móvil', bajada: 'El celular del mozo como lector de tarjetas.' },
   { id: 'inicio', texto: 'Panel', icono: 'inicio', soloAdmin: true,
     titulo: 'Panel del día', bajada: 'Cómo viene la jornada, en vivo.' },
   { id: 'tarjetas', texto: 'Tarjetas', icono: 'tarjeta', soloAdmin: true, grupo: 'Administración',
@@ -139,6 +142,7 @@ function Contenido() {
 
         <main className="contenido">
           {item.id === 'caja'     && <Caja />}
+          {item.id === 'movil'    && <CajaMovil />}
           {item.id === 'inicio'   && <Inicio />}
           {item.id === 'tarjetas' && <Tarjetas />}
           {item.id === 'grifos'   && <Grifos />}

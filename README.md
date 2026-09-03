@@ -19,6 +19,7 @@ YF-S201C · válvula solenoide 12V vía módulo relé
 | **En paralelo** | ✅ backend de Supabase verificado punta a punta sobre HTTP |
 | **App de gestión** | ✅ caja, panel, tarjetas, canillas, reportes y personal · costo y ganancia · modo claro/oscuro |
 | **Pantalla de canilla** | ✅ kiosco web por canilla, se vincula por QR con el token del grifo |
+| **Caja móvil** | ✅ el celular del mozo lee tarjetas por NFC y carga saldo en la mesa |
 | **Bloqueado por hardware** | etapas 2 y 3 esperan los cables dupont · etapa 4 espera el módulo relé |
 
 ### Datos de la placa real
@@ -102,6 +103,7 @@ src/
 app/                        app de gestión + pantallas de canilla (React + Vite + TS)
   src/pantallas/            caja, panel, tarjetas, canillas, reportes, personal
   src/pantalla/             kiosco de canilla y su fondo animado en canvas
+  src/movil/                caja móvil: lectura NFC y carga de saldo desde el celular
   src/componentes/          modal, avisos, gráficos, QR, iconos, primitivas de UI
   src/lib/                  cliente supabase, lector RFID USB, imágenes, plata
 supabase/
@@ -126,6 +128,7 @@ docs/
   app-gestion.md            app de gestión: puesta en marcha, roles, lector RFID
   pantalla-canilla.md       la pantalla de cada grifo: vinculación, kiosco, animación
   deploy-vercel.md          publicar la app y regenerar los QR de las pantallas
+  caja-movil.md             el celular como lector NFC: alcances, límites y UID
 ```
 
 ### Por qué un sketch por etapa
