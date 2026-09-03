@@ -84,12 +84,18 @@ Antes de la primera vez hay que copiar `app/.env.example` a `app/.env.local` y
 completar la URL y la anon key del proyecto. Detalle en
 [`docs/app-gestion.md`](docs/app-gestion.md).
 
+**Para publicarla:** [`docs/deploy-vercel.md`](docs/deploy-vercel.md). El
+`vercel.json` de la raíz ya trae la configuración; solo hay que cargar las dos
+variables de entorno.
+
 ---
 
 ## Estructura del repo
 
 ```
 platformio.ini              un [env:...] por etapa
+package.json                atajos: npm run dev / build desde la raíz
+vercel.json                 configuración de publicación
 .mcp.json                   servidor MCP de Supabase (hay que autenticarlo local, ver docs)
 src/
   etapa1_blink/main.cpp     etapa 1 — blink + info del chip
@@ -119,6 +125,7 @@ docs/
   backend-supabase.md       backend: aplicar, probar, decisiones de diseño
   app-gestion.md            app de gestión: puesta en marcha, roles, lector RFID
   pantalla-canilla.md       la pantalla de cada grifo: vinculación, kiosco, animación
+  deploy-vercel.md          publicar la app y regenerar los QR de las pantallas
 ```
 
 ### Por qué un sketch por etapa
