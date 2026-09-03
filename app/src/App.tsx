@@ -118,6 +118,14 @@ function Contenido() {
               <Icono nombre="salir" tam={15} /> Salir
             </button>
           </div>
+          {/* Sello de version. Entre el cache del navegador, el del hosting y un
+              git pull que no se hizo, "¿estoy viendo la ultima?" es una
+              adivinanza. Con esto se responde de un vistazo. */}
+          <div style={{ fontSize: 10.5, color: 'var(--ink-3)', padding: '8px 10px 0',
+                        fontFamily: 'ui-monospace, Menlo, monospace' }}
+               title={`Compilado ${new Date(__COMPILADO__).toLocaleString('es-AR')}`}>
+            v {__VERSION__}
+          </div>
         </div>
       </aside>
 

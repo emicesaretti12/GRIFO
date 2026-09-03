@@ -221,6 +221,7 @@ function Editor({ grifo, onCerrar, onGuardado, avisar }: {
   const [abv, setAbv] = useState(grifo.abv != null ? String(grifo.abv) : '')
   const [ibu, setIbu] = useState(grifo.ibu != null ? String(grifo.ibu) : '')
   const [color, setColor] = useState(grifo.color ?? '#c8811f')
+  const [vaso, setVaso] = useState(String(grifo.ml_vaso ?? 473))
   const [imagen, setImagen] = useState(grifo.imagen_url ?? '')
   const [subiendo, setSubiendo] = useState(false)
   const [guardando, setGuardando] = useState(false)
@@ -251,6 +252,7 @@ function Editor({ grifo, onCerrar, onGuardado, avisar }: {
     })
     const b = await supabase.rpc('admin_actualizar_cerveza', {
       p_grifo: grifo.id, p_costo_litro: costoC,
+      p_ml_vaso: Number(vaso) > 0 ? Number(vaso) : null,
       p_estilo: estilo.trim() || null, p_descripcion: desc.trim() || null,
       p_abv: abv ? Number(abv.replace(',', '.')) : null,
       p_ibu: ibu ? Number(ibu) : null,
@@ -375,7 +377,7 @@ function Editor({ grifo, onCerrar, onGuardado, avisar }: {
                    placeholder="Cítrica y bien lupulada" onChange={e => setDesc(e.target.value)} />
           </div>
 
-          <div className="rejilla c2" style={{ gap: 12 }}>
+          <div className="rejilla c3" style={{ gap: 12 }}>
             <div>
               <label htmlFor="ab">Alcohol (%)</label>
               <input id="ab" className="campo" inputMode="decimal" value={abv}
@@ -386,7 +388,18 @@ function Editor({ grifo, onCerrar, onGuardado, avisar }: {
               <input id="ib" className="campo" inputMode="numeric" value={ibu}
                      placeholder="45" onChange={e => setIbu(e.target.value)} />
             </div>
+            <div>
+              <label htmlFor="vs">Vaso (ml)</label>
+              <input id="vs" className="campo" inputMode="numeric" value={vaso}
+                     onChange={e => setVaso(e.target.value)} />
+            </div>
           </div>
+
+          <Nota tono="info">
+            El <strong>vaso</strong> es contra qué se mide la puntería del cliente en la
+            pantalla: si sirve {vaso || '473'} ml exactos, le dice "pinta perfecta". Una
+            pinta americana son 473 ml.
+          </Nota>
 
           <Nota tono="info">
             Todo esto es lo que muestra la pantalla que va al lado del grifo. El

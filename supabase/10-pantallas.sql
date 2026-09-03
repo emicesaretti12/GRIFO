@@ -35,6 +35,19 @@ begin
   end if;
 end $$;
 
+-- ── Vaso de referencia ──────────────────────────────────────────────────────
+-- Contra qué se mide la "punteria" del cliente en la pantalla. Una pinta
+-- americana son 473 ml; si el bar usa otro vaso, se cambia por canilla.
+alter table public.grifos add column if not exists ml_vaso int not null default 473;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'grifos_vaso_positivo') then
+    alter table public.grifos add constraint grifos_vaso_positivo check (ml_vaso > 0);
+  end if;
+end $$;
+
+
 -- ── Estado de la canilla, para su pantalla ──────────────────────────────────
 create or replace function public.pantalla_estado(p_grifo int, p_token text)
 returns jsonb
@@ -43,10 +56,13 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_g   public.grifos%rowtype;
-  v_s   public.sesiones%rowtype;
-  v_t   public.tarjetas%rowtype;
-  v_ult public.sesiones%rowtype;
+  v_g       public.grifos%rowtype;
+  v_s       public.sesiones%rowtype;
+  v_t       public.tarjetas%rowtype;
+  v_ult     public.sesiones%rowtype;
+  v_uid_cli text;
+  v_veces   int;
+  v_ml_tot  bigint;
 begin
   select * into v_g from public.grifos where id = p_grifo;
   if not found then
@@ -74,6 +90,16 @@ begin
      order by cerrada_en desc limit 1;
   end if;
 
+  -- Historial del cliente que está en la canilla (o del que acaba de servir),
+  -- para saludarlo por su historia y no como a un desconocido.
+  v_uid_cli := coalesce(v_s.uid, v_ult.uid);
+  if v_uid_cli is not null then
+    select count(*), coalesce(sum(ml_servidos), 0)
+      into v_veces, v_ml_tot
+      from public.sesiones
+     where uid = v_uid_cli and estado = 'cerrada';
+  end if;
+
   return jsonb_build_object(
     'ok', true,
     'ahora', now(),
@@ -87,9 +113,36 @@ begin
       'color',   coalesce(v_g.color, '#c8811f'),
       'imagen_url', v_g.imagen_url,
       'precio_litro_centavos', v_g.precio_litro_centavos,
+      'ml_vaso', v_g.ml_vaso,
       'activo',  v_g.activo,
       'listo',   v_g.activo and v_g.token_hash is not null
     ),
+
+    -- Historia del cliente. Todo enmascarado: la pantalla es pública.
+    'cliente', case when v_uid_cli is null then null else jsonb_build_object(
+      'veces',      v_veces,
+      'ml_total',   v_ml_tot,
+      'es_primera', v_veces = 0
+    ) end,
+
+    -- Ranking del día EN ESTA CANILLA. Le da algo para mirar a quien espera, y
+    -- un motivo para volver a quien está segundo.
+    'ranking', coalesce((
+      select jsonb_agg(jsonb_build_object(
+               'tarjeta', '····' || right(r.uid, 4),
+               'ml',      r.ml,
+               'veces',   r.veces
+             ) order by r.ml desc)
+        from (
+          select uid, sum(ml_servidos)::int as ml, count(*)::int as veces
+            from public.sesiones
+           where grifo_id = p_grifo and estado = 'cerrada'
+             and cerrada_en >= date_trunc('day', now())
+           group by uid
+           order by sum(ml_servidos) desc
+           limit 3
+        ) r
+    ), '[]'::jsonb),
     'sesion', case when v_s.id is null then null else jsonb_build_object(
       'id',             v_s.id,
       -- UID enmascarado: la pantalla está a la vista de todo el bar.
@@ -161,10 +214,13 @@ end;
 $$;
 
 
+drop function if exists public.admin_actualizar_cerveza(int, bigint, text, text, numeric, int, text, text);
+
 -- ── Identidad de la cerveza (admin) ─────────────────────────────────────────
 create or replace function public.admin_actualizar_cerveza(
   p_grifo       int,
   p_costo_litro bigint  default null,
+  p_ml_vaso     int     default null,
   p_estilo      text    default null,
   p_descripcion text    default null,
   p_abv         numeric default null,
@@ -190,8 +246,13 @@ begin
     return jsonb_build_object('ok', false, 'motivo', 'color_invalido');
   end if;
 
+  if p_ml_vaso is not null and p_ml_vaso <= 0 then
+    return jsonb_build_object('ok', false, 'motivo', 'vaso_invalido');
+  end if;
+
   update public.grifos
      set costo_litro_centavos = coalesce(p_costo_litro, costo_litro_centavos),
+         ml_vaso     = coalesce(p_ml_vaso, ml_vaso),
          estilo      = coalesce(p_estilo, estilo),
          descripcion = coalesce(p_descripcion, descripcion),
          abv         = coalesce(p_abv, abv),
@@ -208,6 +269,7 @@ begin
   return jsonb_build_object(
     'ok', true, 'id', v_g.id,
     'costo_litro_centavos', v_g.costo_litro_centavos,
+    'ml_vaso', v_g.ml_vaso,
     'margen_litro_centavos', v_g.precio_litro_centavos - v_g.costo_litro_centavos,
     'color', v_g.color, 'imagen_url', v_g.imagen_url
   );
@@ -218,14 +280,14 @@ $$;
 -- ── Permisos ────────────────────────────────────────────────────────────────
 revoke all on function public.pantalla_estado(int, text)                    from public, anon, authenticated;
 revoke all on function public.reportar_progreso(bigint, int, int, text)     from public, anon, authenticated;
-revoke all on function public.admin_actualizar_cerveza(int, bigint, text, text, numeric, int, text, text)
+revoke all on function public.admin_actualizar_cerveza(int, bigint, int, text, text, numeric, int, text, text)
                                                                             from public, anon, authenticated;
 
 -- La pantalla y el ESP32 usan la anon key + el token del grifo.
 grant execute on function public.pantalla_estado(int, text)                to anon, authenticated;
 grant execute on function public.reportar_progreso(bigint, int, int, text) to anon;
 
-grant execute on function public.admin_actualizar_cerveza(int, bigint, text, text, numeric, int, text, text)
+grant execute on function public.admin_actualizar_cerveza(int, bigint, int, text, text, numeric, int, text, text)
                                                                            to authenticated;
 
 

@@ -7,6 +7,7 @@ export type Grifo = {
   costo_litro_centavos: number
   pulsos_por_litro: number
   ml_minimos: number
+  ml_vaso: number
   activo: boolean
   token_rotado_en: string | null
   estilo: string | null
@@ -91,6 +92,7 @@ export const MOTIVOS: Record<string, string> = {
   precio_invalido: 'El precio tiene que ser mayor a cero.',
   calibracion_invalida: 'La calibración tiene que ser mayor a cero.',
   sin_token: 'El grifo no tiene token. Generá uno antes de activarlo.',
+  vaso_invalido: 'El vaso de referencia tiene que ser mayor a cero.',
   costo_invalido: 'El costo no puede ser negativo.',
   color_invalido: 'El color tiene que ser hexadecimal, tipo #c8811f.',
   usuario_inexistente: 'Ese usuario no existe. Invitalo primero desde Supabase.',

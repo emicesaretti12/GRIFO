@@ -157,6 +157,37 @@ begin
     raise exception 'ROTO: la pantalla no puede llamar a sus propias funciones';
   end;
 
+  -- ══ 9. Vaso de referencia, historial y ranking ═══════════════════════════
+  perform set_config('request.jwt.claims', '{"sub":"44444444-4444-4444-4444-444444444444"}', true);
+  set local role authenticated;
+  v := public.admin_actualizar_cerveza(921, p_ml_vaso => 500);
+  assert (v->>'ok')::boolean and (v->>'ml_vaso')::int = 500, '9a: vaso. ' || v::text;
+  v := public.admin_actualizar_cerveza(921, p_ml_vaso => 0);
+  assert v->>'motivo' = 'vaso_invalido',                 '9b: vaso en cero. ' || v::text;
+  reset role;
+
+  v := public.pantalla_estado(921, t921);
+  assert (v->'grifo'->>'ml_vaso')::int = 500,            '9c: la pantalla ve el vaso. ' || v::text;
+
+  -- Sin nadie en la canilla no hay cliente del que contar historia
+  assert v->'cliente' = 'null'::jsonb,                   '9d: sin sesion no hay cliente. ' || v::text;
+
+  -- Con la tarjeta apoyada si: y ya sirvio una vez en el test 5
+  v := public.abrir_sesion('PANT0001', 921, t921);
+  assert (v->>'ok')::boolean,                            '9e: deberia abrir. ' || v::text;
+  v := public.pantalla_estado(921, t921);
+  assert (v->'cliente'->>'veces')::int >= 1,             '9f: historial del cliente. ' || v::text;
+  assert (v->'cliente'->>'ml_total')::int >= 500,        '9g: ml acumulados. ' || v::text;
+  assert not (v->'cliente'->>'es_primera')::boolean,     '9h: no es su primera. ' || v::text;
+
+  -- Ranking del dia, con la tarjeta enmascarada
+  assert jsonb_array_length(v->'ranking') >= 1,          '9i: deberia haber ranking. ' || v::text;
+  assert v->'ranking'->0->>'tarjeta' = '····0001',       '9j: ranking enmascarado. ' || v::text;
+
+  -- El ranking es POR CANILLA: la 922 no vio nada todavia
+  v := public.pantalla_estado(922, t922);
+  assert jsonb_array_length(v->'ranking') = 0,           '9k: el ranking no se mezcla entre canillas. ' || v::text;
+
   raise notice 'TODAS LAS PRUEBAS DE PANTALLA PASARON';
 end $$;
 

@@ -73,10 +73,35 @@ chromium-browser --kiosk --incognito=false \
 
 | Estado | Qué se ve |
 |---|---|
-| **Libre** | Nombre, estilo, ABV, IBU, descripción, precio por litro y "Apoyá tu tarjeta" |
-| **Autorizado** | Saldo del cliente y cuántos mL le alcanzan |
-| **Sirviendo** | Los mL que lleva, cuánto gastó y cuánto le queda, con el vaso llenándose |
-| **Ticket** | Durante 25 segundos: cuánto sirvió, cuánto se le cobró y con cuánto queda |
+| **Libre** | Rota cada 8 s entre "Apoyá tu tarjeta", el precio del vaso, y el podio del día |
+| **Autorizado** | Saludo según su historia, saldo y cuántos mL le alcanzan |
+| **Sirviendo** | El **medidor de puntería**: los mL que lleva contra el vaso de referencia |
+| **Ticket** | Durante 25 s: el veredicto, la puntería, lo cobrado y lo que le queda |
+
+### Lo que la hace divertida
+
+Una pantalla que solo informa se vuelve invisible en un día. Estas cuatro cosas
+son las que hacen que la gente la mire dos veces:
+
+**El medidor de puntería.** Mientras servís, un aro se llena hacia el vaso de
+referencia (473 ml por defecto, configurable por canilla) y **se pone verde
+cuando estás en la medida justa**. Convierte servirse en un pequeño desafío.
+
+**El veredicto.** Al terminar, un cartel según qué tan cerca quedaste:
+*"¡Pinta perfecta!"* con 100% de puntería, *"Generosa"*, *"¡Sed de verdad!"*,
+*"Leyenda"* si te serviste una jarra. Un número solo no genera nada; un
+veredicto sí.
+
+**El podio del día.** Con la canilla libre, rota a mostrar quiénes más tomaron
+hoy **en esa canilla**, con las tarjetas enmascaradas. Le da algo para mirar a
+quien espera y un motivo para volver a quien está segundo.
+
+**Te reconoce.** Al apoyar la tarjeta el saludo cambia según tu historia: la
+primera vez te da la bienvenida; de la quinta en adelante te dice cuántas
+cervezas y cuántos litros llevás en el bar.
+
+Y de fondo, tocar la pantalla revienta las burbujas que estén cerca, con un
+contador. Es un detalle tonto que hace que la gente juegue mientras espera.
 
 El número de tarjeta va **enmascarado** (`····C3D4`). Es una pantalla a la vista
 del público: nadie tiene por qué ver el número completo de la tarjeta ajena.
@@ -89,8 +114,13 @@ Un canvas a pantalla completa con la cerveza de **esa** canilla, en el color que
 le cargaste: el líquido sube según cuánto lleva servido, las burbujas nacen del
 fondo y suben, y arriba se forma espuma.
 
-**Es interactivo:** al tocar la pantalla salen burbujas disparadas desde el dedo
-y se dibuja una onda. Es una pantalla en una barra — la gente la va a tocar.
+**Es interactivo:** al tocar la pantalla se revientan las burbujas cercanas, salen
+chispas y se dibuja una onda. Es una pantalla en una barra — la gente la va a
+tocar, y que haga algo lindo cuando lo hacen es la diferencia entre un cartel y
+algo que se mira dos veces.
+
+Al terminar una tirada dispara un **estallido dorado**, una sola vez por
+servida.
 
 Detalles que importan:
 

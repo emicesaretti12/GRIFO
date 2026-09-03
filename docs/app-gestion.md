@@ -211,3 +211,33 @@ clásico `0.1 + 0.2 === 0.30000000000000004`.
 [`plata.ts`](../app/src/lib/plata.ts) convierte en el borde: `aCentavos()` toma
 lo que el cajero tipea (`"1.500,50"`) y devuelve enteros; `pesos()` formatea para
 mostrar. En el medio nunca hay decimales.
+
+---
+
+## "Creo que estoy viendo una versión vieja"
+
+Entre el caché del navegador, el del hosting y un `git pull` que no se hizo, hay
+demasiadas formas de estar mirando algo viejo sin enterarse. Por eso la app
+**muestra con qué commit se compiló**:
+
+- En la **app de gestión**, abajo de todo en la barra lateral: `v 6a819f2`.
+  Pasando el mouse dice también la fecha de compilación.
+- En la **pantalla de canilla**, en la esquina inferior derecha, muy tenue.
+
+Para comparar contra lo último del repo:
+
+```bash
+git log -1 --format=%h
+```
+
+Si los dos números coinciden, estás viendo lo último. Si no:
+
+```bash
+git pull
+npm install      # por si cambiaron dependencias
+npm run dev
+```
+
+Y si estás mirando la versión publicada, forzá la recarga con **Ctrl+Shift+R**:
+el navegador cachea el HTML y a veces se queda con el anterior aunque el deploy
+haya terminado.
