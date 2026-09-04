@@ -9,9 +9,9 @@ sistema. Por eso el relé va cuarto y no segundo.
 | # | Etapa | Hardware que necesita | Estado |
 |---|---|---|---|
 | 1 | Blink | solo cable USB | ✅ **aceptada** |
-| 2 | Lector RFID solo | ⏳ cables dupont | 🔵 próxima |
-| 3 | Caudalímetro solo | ⏳ cables dupont | pendiente |
-| 4 | Relé solo | ⏳ módulo relé | pendiente |
+| 2 | Lector RFID solo | ✅ cables dupont | 🔵 **en curso** |
+| 3 | Caudalímetro solo | ✅ cables dupont | pendiente |
+| 4 | Relé solo | ✅ módulo relé | pendiente |
 | 5 | Los tres juntos, sin red | — | pendiente |
 | 6 | Supabase + cola offline | — | pendiente |
 | 7 | Calibración con agua | probeta, agua | pendiente |
@@ -30,15 +30,18 @@ verificado en la placa. Lo que dejó de aprendizaje: esta placa no tolera el
 flasheo a 460800 — ver `upload_speed` en `platformio.ini`.
 
 ## Etapa 2 — Lector RFID solo
-**Necesita:** cables dupont (⏳ no llegaron).
-**Objetivo:** leer el UID de una tarjeta y mostrarlo por Serial. Incluye el
-chequeo de versión del chip (`PCD_DumpVersionToSerial`) para descartar un módulo
-muerto de fábrica, que es bastante común en los MFRC522 baratos.
-**Se acepta cuando:** la versión da `0x91` o `0x92`, y apoyando una tarjeta se ve
-el UID en hexa.
+**Necesita:** módulo MFRC522, tarjetas y 7 cables dupont.
+**Objetivo:** leer el UID de una tarjeta y mostrarlo por Serial, y detectar
+también cuándo la retiran — que es lo que en el sistema final liquida la sesión.
+Incluye el chequeo de versión del chip para descartar un módulo muerto de
+fábrica, bastante común en los MFRC522 baratos.
+**Se acepta cuando:** la versión da `0x91` o `0x92`, apoyando una tarjeta se ve
+el UID en hexa, retirándola se ve `RETIRADA`, y la misma tarjeta da siempre el
+mismo UID.
+**Detalle:** [`etapa-02-rfid.md`](etapa-02-rfid.md)
 
 ## Etapa 3 — Caudalímetro solo
-**Necesita:** cables dupont (⏳ no llegaron). Antes hay que medir con el tester
+**Necesita:** el caudalímetro y una resistencia de 10k. Antes hay que medir con el tester
 entre el cable amarillo y el rojo del sensor, desconectado, para ver si trae
 pull-up interno.
 **Objetivo:** conteo de pulsos con el periférico **PCNT** del ESP32 (no con una
@@ -48,7 +51,7 @@ Eso último es lo que confirma que el pull-up está bien puesto y que no está
 entrando ruido.
 
 ## Etapa 4 — Relé solo
-**Necesita:** módulo relé 1 canal 5V activo en LOW (⏳ no llegó).
+**Necesita:** módulo relé 1 canal 5V activo en LOW.
 **Objetivo:** solo GPIO26, un clic por segundo, con el orden de inicialización
 correcto. Sin válvula conectada todavía.
 **Se acepta cuando:** se escucha el clic, y **al resetear la placa el relé NO se

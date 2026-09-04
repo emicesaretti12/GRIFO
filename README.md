@@ -15,7 +15,7 @@ YF-S201C · válvula solenoide 12V vía módulo relé
 | | |
 |---|---|
 | **Última etapa aceptada** | ✅ 1 — Blink (LED parpadeando + Serial a 115200, verificado en placa) |
-| **Próxima etapa** | 2 — Lector RFID |
+| **Etapa en curso** | 2 — Lector RFID (a la espera de la prueba en placa) |
 | **En paralelo** | ✅ backend de Supabase verificado punta a punta sobre HTTP |
 | **App de gestión** | ✅ caja, panel, tarjetas, canillas, reportes y personal · costo y ganancia · modo claro/oscuro |
 | **Pantalla de canilla** | ✅ kiosco web por canilla, se vincula por QR con el token del grifo |
@@ -24,7 +24,7 @@ YF-S201C · válvula solenoide 12V vía módulo relé
 | **Ajuste de saldo** | ✅ el admin puede corregir una carga mal hecha, con motivo obligatorio y firma |
 | **Devolución de tarjeta** | ✅ se devuelve el saldo que sobró y la tarjeta vuelve limpia a la pila |
 | **Cierre de caja** | ✅ arqueo del turno contra lo que hay en el cajón, con el saldo en circulación aparte |
-| **Bloqueado por hardware** | etapas 2 y 3 esperan los cables dupont · etapa 4 espera el módulo relé |
+| **Hardware** | ✅ ya llegaron los cables dupont y el módulo relé |
 
 ### Datos de la placa real
 
@@ -104,6 +104,7 @@ vercel.json                 configuración de publicación
 .mcp.json                   servidor MCP de Supabase (hay que autenticarlo local, ver docs)
 src/
   etapa1_blink/main.cpp     etapa 1 — blink + info del chip
+  etapa2_rfid/main.cpp      etapa 2 — lee el UID y detecta cuando retiran la tarjeta
 app/                        app de gestión + pantallas de canilla (React + Vite + TS)
   src/pantallas/            caja, panel, tarjetas, canillas, barriles, cierre de caja, reportes, personal
   src/pantalla/             kiosco de canilla y su fondo animado en canvas
@@ -130,6 +131,7 @@ docs/
   plan-de-etapas.md         las 8 etapas, qué necesita cada una, criterio de aceptación
   pinout-y-trampas.md       pinout definitivo + trampas de hardware explicadas
   etapa-01-blink.md         cableado y qué esperar en esta etapa
+  etapa-02-rfid.md          cableado del MFRC522 y por qué el sketch hace lo que hace
   setup-linux.md            paso a paso completo en Linux, de cero a flashear
   troubleshooting-flasheo.md  cuando no flashea
   backend-supabase.md       backend: aplicar, probar, decisiones de diseño
