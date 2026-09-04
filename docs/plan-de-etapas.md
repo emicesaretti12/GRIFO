@@ -51,7 +51,8 @@ Eso último es lo que confirma que el pull-up está bien puesto y que no está
 entrando ruido.
 
 ## Etapa 4 — Relé solo
-**Necesita:** módulo relé 1 canal 5V activo en LOW.
+**Necesita:** el módulo relé (llegó un **SRD-12VDC-SL-C**, de 12V y no de
+5V: se alimenta de la fuente de 12V, no del ESP32) y la fuente de 12V.
 **Objetivo:** solo GPIO26, un clic por segundo, con el orden de inicialización
 correcto. Sin válvula conectada todavía.
 **Se acepta cuando:** se escucha el clic, y **al resetear la placa el relé NO se

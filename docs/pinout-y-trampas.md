@@ -9,7 +9,7 @@
 | MFRC522 | MOSI | 23 | |
 | MFRC522 | MISO | 19 | |
 | MFRC522 | RST | 22 | alimentación **3.3V**, no 5V |
-| Relé | IN | 26 | **activo en LOW** |
+| Relé | IN | 26 | **activo en LOW** · bobina de 12V, ver trampa 6 |
 | Caudalímetro | señal (amarillo) | 27 | pull-up 10k a 3.3V |
 | Pulsador | — | 14 | a GND, pull-up interno |
 | LED estado | — | 2 | opcional (es el LED de la placa) |
@@ -151,11 +151,23 @@ otra máquina con la CPU para eso. El ESP32 encola, la fuente de 12V hace fuerza
 
 ---
 
-### 6. El relé puede quedar zumbando o pegado
+### 6. El relé que llegó es de 12V, no de 5V
 
-Si el módulo relé tiene VCC a 5V y le mandás una señal de 3.3V desde el ESP32, el
-optoacoplador puede quedar conduciendo a medias: el relé no termina de activarse
-ni de soltarse, y queda zumbando o pegado.
+El módulo que llegó es un **SRD-12VDC-SL-C**, 1 canal, con optoacoplador y
+bornera de tornillo de 3 posiciones: `IN`, `DC-`, `DC+`. Trae además un **jumper
+de selección H/L** (*high/low level trigger*) impreso en la plaquita.
 
-**Si pasa:** sacar el jumper **JD-VCC** del módulo y alimentar el lado lógico con
-3.3V (lado de potencia sigue en 5V). Lo vemos en la etapa 4 si aparece.
+Dos consecuencias que cambian lo que estaba planificado:
+
+1. **La bobina es de 12V.** No se alimenta del pin `5V` del ESP32: `DC+` y `DC-`
+   van a la **fuente de 12V**, la misma que la válvula.
+2. **El `DC-` de la fuente de 12V tiene que unirse al `GND` del ESP32.** Si no,
+   la señal de `IN` no tiene contra qué compararse (ver la trampa 4).
+
+El jumper **H/L** define si el relé se activa con la señal en alto o en bajo. El
+firmware asume **activo en LOW**, así que el jumper va en la posición que
+corresponda a *low level trigger* — se confirma en la etapa 4 escuchando el clic.
+
+Si el relé queda **zumbando o pegado**, es que el optoacoplador está conduciendo
+a medias con los 3.3V del ESP32. Se resuelve en la etapa 4 según cómo se
+comporte; no es un problema de software.
