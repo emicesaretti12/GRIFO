@@ -20,6 +20,8 @@ YF-S201C · válvula solenoide 12V vía módulo relé
 | **App de gestión** | ✅ caja, panel, tarjetas, canillas, reportes y personal · costo y ganancia · modo claro/oscuro |
 | **Pantalla de canilla** | ✅ kiosco web por canilla, se vincula por QR con el token del grifo |
 | **Caja móvil** | ✅ el celular del mozo lee tarjetas por NFC y carga saldo en la mesa |
+| **Stock de barriles** | ✅ cuánto queda en cada barril, en vasos, con aviso cuando está por terminarse |
+| **Ajuste de saldo** | ✅ el admin puede corregir una carga mal hecha, con motivo obligatorio y firma |
 | **Bloqueado por hardware** | etapas 2 y 3 esperan los cables dupont · etapa 4 espera el módulo relé |
 
 ### Datos de la placa real
@@ -101,7 +103,7 @@ vercel.json                 configuración de publicación
 src/
   etapa1_blink/main.cpp     etapa 1 — blink + info del chip
 app/                        app de gestión + pantallas de canilla (React + Vite + TS)
-  src/pantallas/            caja, panel, tarjetas, canillas, reportes, personal
+  src/pantallas/            caja, panel, tarjetas, canillas, barriles, reportes, personal
   src/pantalla/             kiosco de canilla y su fondo animado en canvas
   src/movil/                caja móvil: lectura NFC y carga de saldo desde el celular
   src/componentes/          modal, avisos, gráficos, QR, iconos, primitivas de UI
@@ -118,6 +120,8 @@ supabase/
   09-primer-admin.sql       crea el primer admin (se corre una sola vez)
   10-pantallas.sql          pantalla de canilla, avance en vivo, costo e imágenes
   11-pruebas-pantallas.sql  pruebas de pantalla, avance en vivo y margen
+  12-barriles.sql           stock de barriles y ajustes de saldo con motivo
+  13-pruebas-barriles.sql   pruebas de stock, cambio de barril y ajustes
 docs/
   plan-de-etapas.md         las 8 etapas, qué necesita cada una, criterio de aceptación
   pinout-y-trampas.md       pinout definitivo + trampas de hardware explicadas
@@ -129,6 +133,7 @@ docs/
   pantalla-canilla.md       la pantalla de cada grifo: vinculación, kiosco, animación
   deploy-vercel.md          publicar la app y regenerar los QR de las pantallas
   caja-movil.md             el celular como lector NFC: alcances, límites y UID
+  barriles-y-ajustes.md     stock por barril y correcciones de saldo
 ```
 
 ### Por qué un sketch por etapa

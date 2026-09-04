@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useLectorRFID } from '../lib/useLectorRFID'
+import { useSesion } from '../lib/useSesion'
 import { normalizarUid, type FormatoLector } from '../lib/uid'
 import { pesos, aCentavos, volumen, fecha } from '../lib/plata'
 import { mensajeDeError, type RespuestaFicha, type FichaTarjeta } from '../lib/tipos'
@@ -13,6 +14,7 @@ const RAPIDOS = [200000, 500000, 1000000, 2000000]
 
 export default function Caja() {
   const { avisar } = useAvisos()
+  const { esAdmin } = useSesion()
   const [uid, setUid] = useState('')
   const [ficha, setFicha] = useState<FichaTarjeta | null>(null)
   const [esNueva, setEsNueva] = useState(false)
@@ -20,6 +22,7 @@ export default function Caja() {
   const [ocupado, setOcupado] = useState(false)
   const [monto, setMonto] = useState('')
   const [modalBloqueo, setModalBloqueo] = useState(false)
+  const [ajuste, setAjuste] = useState<{ monto: string; motivo: string } | null>(null)
   const [motivo, setMotivo] = useState('')
   const entrada = useRef<HTMLInputElement>(null)
 
@@ -85,6 +88,19 @@ export default function Caja() {
     if (!r.ok) { avisar('No se pudo', { tono: 'grave', detalle: mensajeDeError(r) }); return }
 
     avisar(bloquear ? 'Tarjeta bloqueada' : 'Tarjeta desbloqueada', { tono: 'bien' })
+    void buscar(uid)
+  }
+
+  async function ajustar(centavos: number, motivo: string) {
+    setOcupado(true)
+    const { data, error } = await supabase.rpc('admin_ajustar_saldo', {
+      p_uid: uid, p_centavos: centavos, p_motivo: motivo,
+    })
+    setOcupado(false); setAjuste(null)
+    if (error) { avisar('Error', { tono: 'grave', detalle: error.message }); return }
+    const r = data as { ok: boolean; motivo?: string; detalle?: string; saldo_centavos?: number }
+    if (!r.ok) { avisar('No se pudo ajustar', { tono: 'grave', detalle: mensajeDeError(r) }); return }
+    avisar('Saldo ajustado', { tono: 'bien', detalle: `Nuevo saldo: ${pesos(r.saldo_centavos!)}` })
     void buscar(uid)
   }
 
@@ -180,12 +196,23 @@ export default function Caja() {
                           ocupado={ocupado || ficha.bloqueada} onCargar={cargar} />
               </div>
 
-              <button className={ficha.bloqueada ? 'btn bloque' : 'btn grave bloque'}
-                      style={{ marginTop: 14 }} disabled={ocupado}
-                      onClick={() => ficha.bloqueada ? cambiarBloqueo(false) : setModalBloqueo(true)}>
-                <Icono nombre={ficha.bloqueada ? 'candado-abierto' : 'candado'} tam={16} />
-                {ficha.bloqueada ? 'Desbloquear tarjeta' : 'Bloquear tarjeta'}
-              </button>
+              <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
+                <button className={ficha.bloqueada ? 'btn crece' : 'btn grave crece'}
+                        disabled={ocupado}
+                        onClick={() => ficha.bloqueada ? cambiarBloqueo(false) : setModalBloqueo(true)}>
+                  <Icono nombre={ficha.bloqueada ? 'candado-abierto' : 'candado'} tam={16} />
+                  {ficha.bloqueada ? 'Desbloquear' : 'Bloquear'}
+                </button>
+                {/* Corregir un error de carga es cosa de admin y siempre con
+                    motivo: un ajuste sin explicación es un agujero por donde se
+                    va la plata sin que nadie pueda reconstruir qué pasó. */}
+                {esAdmin && (
+                  <button className="btn" disabled={ocupado}
+                          onClick={() => setAjuste({ monto: '', motivo: '' })}>
+                    <Icono nombre="lapiz" tam={16} /> Ajustar saldo
+                  </button>
+                )}
+              </div>
             </Panel>
           </div>
 
@@ -202,9 +229,11 @@ export default function Caja() {
                     {ficha.movimientos.map(m => (
                       <tr key={m.id}>
                         <td style={{ color: 'var(--ink-2)' }}>{fecha(m.creado_en)}</td>
-                        <td>{m.tipo === 'carga'
-                          ? <Chip tono="bien">Carga</Chip>
-                          : <Chip tono="dato">Consumo</Chip>}</td>
+                        <td title={m.motivo ?? undefined}>
+                          {m.tipo === 'carga'   ? <Chip tono="bien">Carga</Chip>
+                          : m.tipo === 'ajuste' ? <Chip tono="ojo">Ajuste</Chip>
+                          :                       <Chip tono="dato">Consumo</Chip>}
+                        </td>
                         <td className="num" style={{ fontWeight: 600 }}>{pesos(m.centavos)}</td>
                         <td className="num" style={{ color: 'var(--ink-2)' }}>{pesos(m.saldo_resultante)}</td>
                       </tr>
@@ -215,6 +244,11 @@ export default function Caja() {
             )}
           </Panel>
         </div>
+      )}
+
+      {ajuste && ficha && (
+        <ModalAjuste ficha={ficha} ajuste={ajuste} setAjuste={setAjuste}
+                     ocupado={ocupado} onAjustar={ajustar} />
       )}
 
       {modalBloqueo && (
@@ -263,5 +297,63 @@ function Cargador({ monto, setMonto, montoCentavos, ocupado, onCargar }: {
         </button>
       </div>
     </>
+  )
+}
+
+/** Ajuste de saldo. Se escribe la diferencia, con signo, y la pantalla muestra
+ *  en qué saldo va a quedar la tarjeta antes de confirmar — que es exactamente
+ *  la pregunta que uno se hace justo antes de apretar. */
+function ModalAjuste({ ficha, ajuste, setAjuste, ocupado, onAjustar }: {
+  ficha: FichaTarjeta
+  ajuste: { monto: string; motivo: string }
+  setAjuste: (a: { monto: string; motivo: string } | null) => void
+  ocupado: boolean
+  onAjustar: (centavos: number, motivo: string) => void
+}) {
+  const centavos = aCentavos(ajuste.monto.replace('-', ''))
+  const negativo = ajuste.monto.trim().startsWith('-')
+  const delta = centavos == null ? null : (negativo ? -centavos : centavos)
+  const resultante = delta == null ? null : ficha.saldo_centavos + delta
+  const valido = delta != null && delta !== 0 && ajuste.motivo.trim() !== '' &&
+                 resultante != null && resultante >= 0
+
+  return (
+    <Modal titulo="Ajustar saldo"
+           bajada={`${ficha.uid} · saldo actual ${pesos(ficha.saldo_centavos)}`}
+           onCerrar={() => setAjuste(null)}
+           acciones={
+             <>
+               <button className="btn" onClick={() => setAjuste(null)}>Cancelar</button>
+               <button className="btn primario" disabled={!valido || ocupado}
+                       onClick={() => delta && onAjustar(delta, ajuste.motivo.trim())}>
+                 Ajustar
+               </button>
+             </>
+           }>
+      <div style={{ display: 'grid', gap: 12 }}>
+        <div>
+          <label htmlFor="aj">Diferencia</label>
+          <input id="aj" className="campo" autoFocus value={ajuste.monto}
+                 placeholder="-1500 para quitar · 1500 para sumar"
+                 onChange={e => setAjuste({ ...ajuste, monto: e.target.value })} />
+          {resultante != null && (
+            <small style={{ color: resultante < 0 ? 'var(--grave)' : 'var(--ink-3)' }}>
+              {resultante < 0
+                ? 'El ajuste dejaría la tarjeta en negativo.'
+                : `La tarjeta queda en ${pesos(resultante)}.`}
+            </small>
+          )}
+        </div>
+        <div>
+          <label htmlFor="mot2">Motivo</label>
+          <input id="mot2" className="campo" value={ajuste.motivo}
+                 placeholder="Se cargó de más por error"
+                 onChange={e => setAjuste({ ...ajuste, motivo: e.target.value })} />
+          <small style={{ color: 'var(--ink-3)' }}>
+            Queda guardado con tu nombre en el historial de la tarjeta.
+          </small>
+        </div>
+      </div>
+    </Modal>
   )
 }

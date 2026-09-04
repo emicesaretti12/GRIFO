@@ -20,7 +20,8 @@ export type Grifo = {
 
 export type Movimiento = {
   id: number
-  tipo: 'carga' | 'consumo'
+  tipo: 'carga' | 'consumo' | 'ajuste'
+  motivo?: string | null
   centavos: number
   saldo_resultante: number
   referencia: string | null
@@ -93,6 +94,9 @@ export const MOTIVOS: Record<string, string> = {
   calibracion_invalida: 'La calibración tiene que ser mayor a cero.',
   sin_token: 'El grifo no tiene token. Generá uno antes de activarlo.',
   vaso_invalido: 'El vaso de referencia tiene que ser mayor a cero.',
+  litros_invalidos: 'Los litros del barril tienen que ser mayores a cero.',
+  falta_motivo: 'El ajuste necesita un motivo.',
+  saldo_insuficiente: 'El ajuste dejaría la tarjeta en negativo.',
   costo_invalido: 'El costo no puede ser negativo.',
   color_invalido: 'El color tiene que ser hexadecimal, tipo #c8811f.',
   usuario_inexistente: 'Ese usuario no existe. Invitalo primero desde Supabase.',

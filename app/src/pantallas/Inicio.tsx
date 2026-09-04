@@ -7,25 +7,29 @@ import type { Grifo, Sesion } from '../lib/tipos'
 import { Panel, Stat, Chip, Nota, Vacio, Hueso } from '../componentes/UI'
 import { Columnas, Barras } from '../componentes/Grafico'
 import Icono from '../componentes/Icono'
+import { UMBRAL_BAJO, type Barril } from './Barriles'
 
 const REFRESCO_MS = 20000
 
 export default function Inicio() {
   const [sesiones, setSesiones] = useState<Sesion[]>([])
   const [grifos, setGrifos] = useState<Grifo[]>([])
+  const [barriles, setBarriles] = useState<Barril[]>([])
   const [cargando, setCargando] = useState(true)
   const [actualizado, setActualizado] = useState<Date | null>(null)
 
   const traer = useCallback(async () => {
     const desde = new Date(); desde.setDate(desde.getDate() - 13); desde.setHours(0, 0, 0, 0)
-    const [s, g] = await Promise.all([
+    const [s, g, b] = await Promise.all([
       supabase.from('sesiones').select('*')
         .gte('abierta_en', desde.toISOString())
         .order('abierta_en', { ascending: false }).limit(1000),
       supabase.from('grifos').select('*').order('id'),
+      supabase.rpc('estado_barriles'),
     ])
     if (!s.error) setSesiones(s.data as Sesion[])
     if (!g.error) setGrifos(g.data as Grifo[])
+    if (!b.error) setBarriles((b.data ?? []) as Barril[])
     setCargando(false); setActualizado(new Date())
   }, [])
 
@@ -56,6 +60,7 @@ export default function Inicio() {
   const sinLiquidar = sesiones.filter(s => s.estado === 'abandonada')
   const recortadas = sesiones.filter(s => s.estado === 'cerrada' && s.costo_recortado)
   const sinToken = grifos.filter(g => g.activo && g.token_rotado_en === null)
+  const barrilesBajos = barriles.filter(b => b.restante_pct <= UMBRAL_BAJO)
 
   const dias = useMemo(() => porDia(sesiones, 14), [sesiones])
   const ranking = useMemo(() => porGrifo(sesiones), [sesiones])
@@ -77,8 +82,18 @@ export default function Inicio() {
 
   return (
     <>
-      {(sinToken.length > 0 || recortadas.length > 0 || sinLiquidar.length > 0) && (
+      {(sinToken.length > 0 || recortadas.length > 0 || sinLiquidar.length > 0 || barrilesBajos.length > 0) && (
         <div style={{ marginBottom: 16 }}>
+          {barrilesBajos.length > 0 && (
+            <Nota tono="grave">
+              <strong>
+                {barrilesBajos.length === 1
+                  ? 'Un barril está por acabarse'
+                  : `${barrilesBajos.length} barriles están por acabarse`}:
+              </strong>{' '}
+              {barrilesBajos.map(b => `${b.grifo} (${b.restante_pct}%, ~${b.vasos} vasos)`).join(' · ')}.
+            </Nota>
+          )}
           {sinToken.length > 0 && (
             <Nota tono="grave">
               <strong>{sinToken.length} canilla{sinToken.length > 1 ? 's' : ''} en servicio sin token.</strong>{' '}
@@ -111,8 +126,14 @@ export default function Inicio() {
                     pie={`costo ${pesos(hoy.costo)}`} />
             : <Stat etiqueta="Ganancia hoy" valor="—" pie="falta el costo por litro" />}
         </div>
-        <div className="panel"><Stat etiqueta="Sirviendo ahora" valor={String(enCurso.length)}
-          pie={enCurso.length ? 'en curso' : 'ninguna canilla activa'} /></div>
+        <div className="panel">
+          {barriles.length > 0
+            ? <Stat etiqueta="Queda en barriles"
+                    valor={volumen(barriles.reduce((a, b) => a + b.ml_restantes, 0))}
+                    pie={`~${barriles.reduce((a, b) => a + b.vasos, 0)} vasos · ${enCurso.length} sirviendo`} />
+            : <Stat etiqueta="Sirviendo ahora" valor={String(enCurso.length)}
+                    pie={enCurso.length ? 'en curso' : 'ninguna canilla activa'} />}
+        </div>
       </div>
 
       <div className="rejilla lado">

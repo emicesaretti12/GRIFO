@@ -374,3 +374,25 @@ tbody tr:hover { background: var(--superficie-2); }
 :root[data-tema="oscuro"] .token-caja { background: #000; color: #fff; }
 
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ── Medidor de barril ───────────────────────────────────────────────────── */
+.barril { display: flex; flex-direction: column; gap: 10px; }
+.barril-cab { display: flex; align-items: center; gap: 10px; }
+.barril-cab .pico { width: 12px; height: 12px; border-radius: 4px; flex: none; }
+.barril-cab .nom { font-weight: 650; }
+.barril-cab .pct { margin-left: auto; font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+
+.barril-tubo {
+  height: 22px; border-radius: 8px; overflow: hidden;
+  background: var(--superficie-2); border: 1px solid var(--linea);
+  position: relative;
+}
+.barril-tubo > i { display: block; height: 100%; transition: width .5s ease-out; }
+/* La marca del 15%: el umbral para ir a buscar el próximo barril. Una línea
+   fija se lee mejor que un color que cambia sin decir dónde estaba el límite. */
+.barril-tubo::after {
+  content: ''; position: absolute; top: 0; bottom: 0; left: 15%;
+  width: 2px; background: var(--ink-3); opacity: .55;
+}
+.barril-pie { display: flex; justify-content: space-between; font-size: 13px; color: var(--ink-2); }
+.barril-pie strong { color: var(--ink); }
