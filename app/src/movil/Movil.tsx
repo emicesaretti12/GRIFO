@@ -4,12 +4,13 @@ import { useSesion } from '../lib/useSesion'
 import { useNFC, porQueNoHayNFC } from '../lib/useNFC'
 import { normalizarUid, uidValido } from '../lib/uid'
 import { pesos, aCentavos, fecha, volumen } from '../lib/plata'
-import { mensajeDeError, type RespuestaFicha, type FichaTarjeta } from '../lib/tipos'
+import { mensajeDeError, type RespuestaFicha, type FichaTarjeta,
+         type RespuestaDevolucion } from '../lib/tipos'
 import { Nota } from '../componentes/UI'
 import { Modal } from '../componentes/Modal'
 import { ProveedorAvisos, useAvisos } from '../componentes/Toast'
 import { Limite } from '../componentes/Limite'
-import Icono from '../componentes/Icono'
+import Icono, { type Nombre } from '../componentes/Icono'
 import Login from '../pantallas/Login'
 import './estilos-movil.css'
 
@@ -28,6 +29,13 @@ import './estilos-movil.css'
 // ─────────────────────────────────────────────────────────────────────────────
 
 const RAPIDOS = [200000, 500000, 1000000, 2000000]
+
+const ICONO_MOV: Record<string, Nombre> = {
+  carga: 'mas', consumo: 'grifo', ajuste: 'lapiz', devolucion: 'devolver',
+}
+const NOMBRE_MOV: Record<string, string> = {
+  carga: 'Carga', consumo: 'Consumo', ajuste: 'Ajuste', devolucion: 'Devolución',
+}
 
 export default function Movil() {
   return (
@@ -51,6 +59,7 @@ function Contenido() {
   const [manual, setManual] = useState(false)
   const [otroMonto, setOtroMonto] = useState<string | null>(null)
   const [modalBloqueo, setModalBloqueo] = useState(false)
+  const [modalDevolver, setModalDevolver] = useState(false)
   const [motivo, setMotivo] = useState('')
 
   const buscar = useCallback(async (crudo: string) => {
@@ -115,6 +124,22 @@ function Contenido() {
     const r = data as { ok: boolean; motivo?: string }
     if (!r.ok) { avisar('No se pudo', { tono: 'grave', detalle: mensajeDeError(r) }); return }
     avisar(bloquear ? 'Tarjeta bloqueada' : 'Tarjeta desbloqueada', { tono: 'bien' })
+    void buscar(uid)
+  }
+
+  // El cliente se va de la mesa: se le devuelve lo que le sobró y la tarjeta
+  // vuelve limpia a la pila. Si el saldo se queda adentro, el próximo que la
+  // agarre se sirve gratis.
+  async function devolver() {
+    setOcupado(true)
+    const { data, error } = await supabase.rpc('caja_devolver_tarjeta', { p_uid: uid })
+    setOcupado(false); setModalDevolver(false)
+    if (error) { avisar('Error', { tono: 'grave', detalle: error.message }); return }
+    const r = data as RespuestaDevolucion
+    if (!r.ok) { avisar('No se pudo devolver', { tono: 'grave', detalle: mensajeDeError(r) }); return }
+    if (navigator.vibrate) navigator.vibrate([25, 60, 25])
+    avisar(r.devuelto_centavos > 0 ? `Devolvele ${pesos(r.devuelto_centavos)}` : 'Tarjeta liberada',
+           { tono: 'bien' })
     void buscar(uid)
   }
 
@@ -231,6 +256,11 @@ function Contenido() {
                   <Icono nombre={ficha.bloqueada ? 'candado-abierto' : 'candado'} tam={17} />
                   {ficha.bloqueada ? 'Desbloquear tarjeta' : 'Bloquear tarjeta'}
                 </button>
+                <button className="btn" disabled={ocupado || !!ficha.sesion_abierta}
+                        onClick={() => setModalDevolver(true)}>
+                  <Icono nombre="devolver" tam={17} />
+                  {ficha.sesion_abierta ? 'Está sirviendo ahora' : 'Devolver tarjeta'}
+                </button>
               </div>
             )}
 
@@ -239,9 +269,9 @@ function Contenido() {
                 <label>Últimos movimientos</label>
                 {ficha.movimientos.slice(0, 6).map(m => (
                   <div className="m" key={m.id}>
-                    <Icono nombre={m.tipo === 'carga' ? 'mas' : 'grifo'} tam={16} />
+                    <Icono nombre={ICONO_MOV[m.tipo] ?? 'grifo'} tam={16} />
                     <div>
-                      <div>{m.tipo === 'carga' ? 'Carga' : 'Consumo'}</div>
+                      <div>{NOMBRE_MOV[m.tipo] ?? 'Movimiento'}</div>
                       <div className="cuando">{fecha(m.creado_en)}</div>
                     </div>
                     <div className="monto">{pesos(m.centavos)}</div>
@@ -275,6 +305,38 @@ function Contenido() {
             <p className="bajada" style={{ marginTop: 8 }}>
               Se van a cargar {pesos(aCentavos(otroMonto)!)}.
             </p>
+          )}
+        </Modal>
+      )}
+
+      {modalDevolver && ficha && (
+        <Modal titulo="Devolver la tarjeta"
+               bajada={ficha.nota ? `${ficha.uid} · ${ficha.nota}` : ficha.uid}
+               onCerrar={() => setModalDevolver(false)}
+               acciones={
+                 <>
+                   <button className="btn" onClick={() => setModalDevolver(false)}>Cancelar</button>
+                   <button className="btn primario" disabled={ocupado} onClick={devolver}>
+                     Devolver
+                   </button>
+                 </>
+               }>
+          {ficha.saldo_centavos > 0 ? (
+            <>
+              <p style={{ margin: '0 0 10px' }}>Le tenés que devolver en efectivo:</p>
+              <p style={{ margin: 0, fontSize: 36, fontWeight: 800, letterSpacing: '-.03em',
+                          fontVariantNumeric: 'tabular-nums' }}>
+                {pesos(ficha.saldo_centavos)}
+              </p>
+              <Nota tono="ojo">
+                La tarjeta queda en cero y lista para el próximo. Esto no se deshace.
+              </Nota>
+            </>
+          ) : (
+            <Nota tono="info">
+              No tiene saldo. Igual conviene liberarla para borrar el nombre del
+              cliente anterior.
+            </Nota>
           )}
         </Modal>
       )}

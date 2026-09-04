@@ -25,6 +25,8 @@ del navegador.
 - **Leer la tarjeta acercándola al celular**, por NFC
 - Ver saldo, estado y últimos movimientos
 - **Cargar saldo**, con cuatro montos rápidos o uno a mano
+- **Devolver la tarjeta**: se le da en efectivo lo que le sobró y la tarjeta
+  queda limpia para el próximo, sin volver a la caja
 - Bloquear una tarjeta perdida en el momento
 
 Cada carga queda firmada con el usuario que la hizo, igual que en la caja fija.

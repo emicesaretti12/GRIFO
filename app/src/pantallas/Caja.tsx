@@ -259,9 +259,10 @@ export default function Caja() {
                       <tr key={m.id}>
                         <td style={{ color: 'var(--ink-2)' }}>{fecha(m.creado_en)}</td>
                         <td title={m.motivo ?? undefined}>
-                          {m.tipo === 'carga'   ? <Chip tono="bien">Carga</Chip>
-                          : m.tipo === 'ajuste' ? <Chip tono="ojo">Ajuste</Chip>
-                          :                       <Chip tono="dato">Consumo</Chip>}
+                          {m.tipo === 'carga'      ? <Chip tono="bien">Carga</Chip>
+                          : m.tipo === 'ajuste'     ? <Chip tono="ojo">Ajuste</Chip>
+                          : m.tipo === 'devolucion' ? <Chip tono="grave">Devolución</Chip>
+                          :                           <Chip tono="dato">Consumo</Chip>}
                         </td>
                         <td className="num" style={{ fontWeight: 600 }}>{pesos(m.centavos)}</td>
                         <td className="num" style={{ color: 'var(--ink-2)' }}>{pesos(m.saldo_resultante)}</td>
