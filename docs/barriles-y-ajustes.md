@@ -23,7 +23,7 @@ Cada grifo tiene **un barril activo**, garantizado por un índice único parcial
 
 ```sql
 create unique index if not exists barriles_uno_activo_por_grifo
-  on public.barriles (grifo_id) where (estado = 'activo');
+  on public.barriles (grifo_id) where (agotado_en is null);
 ```
 
 Es la misma idea que el índice de "una sesión abierta por tarjeta": en vez de
@@ -62,7 +62,7 @@ Por debajo del **15%** el tubo se pone en alerta y aparece además un aviso en e
 panel de inicio, para que no haya que entrar a la pantalla de barriles para
 enterarse.
 
-**Cambiar barril** cierra el activo (queda como `terminado`, con su histórico) y
+**Cambiar barril** cierra el activo (le pone `agotado_en`, y queda en el histórico) y
 abre uno nuevo con los litros que cargues. El que quedó guarda cuánto se sirvió
 realmente, así se puede comparar contra los litros nominales del proveedor.
 

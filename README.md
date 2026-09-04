@@ -22,6 +22,8 @@ YF-S201C · válvula solenoide 12V vía módulo relé
 | **Caja móvil** | ✅ el celular del mozo lee tarjetas por NFC y carga saldo en la mesa |
 | **Stock de barriles** | ✅ cuánto queda en cada barril, en vasos, con aviso cuando está por terminarse |
 | **Ajuste de saldo** | ✅ el admin puede corregir una carga mal hecha, con motivo obligatorio y firma |
+| **Devolución de tarjeta** | ✅ se devuelve el saldo que sobró y la tarjeta vuelve limpia a la pila |
+| **Cierre de caja** | ✅ arqueo del turno contra lo que hay en el cajón, con el saldo en circulación aparte |
 | **Bloqueado por hardware** | etapas 2 y 3 esperan los cables dupont · etapa 4 espera el módulo relé |
 
 ### Datos de la placa real
@@ -103,7 +105,7 @@ vercel.json                 configuración de publicación
 src/
   etapa1_blink/main.cpp     etapa 1 — blink + info del chip
 app/                        app de gestión + pantallas de canilla (React + Vite + TS)
-  src/pantallas/            caja, panel, tarjetas, canillas, barriles, reportes, personal
+  src/pantallas/            caja, panel, tarjetas, canillas, barriles, cierre de caja, reportes, personal
   src/pantalla/             kiosco de canilla y su fondo animado en canvas
   src/movil/                caja móvil: lectura NFC y carga de saldo desde el celular
   src/componentes/          modal, avisos, gráficos, QR, iconos, primitivas de UI
@@ -122,6 +124,8 @@ supabase/
   11-pruebas-pantallas.sql  pruebas de pantalla, avance en vivo y margen
   12-barriles.sql           stock de barriles y ajustes de saldo con motivo
   13-pruebas-barriles.sql   pruebas de stock, cambio de barril y ajustes
+  14-devoluciones.sql       devolucion de tarjeta y arqueo de turno
+  15-pruebas-devoluciones.sql  pruebas de devolucion, arqueo y permisos por rol
 docs/
   plan-de-etapas.md         las 8 etapas, qué necesita cada una, criterio de aceptación
   pinout-y-trampas.md       pinout definitivo + trampas de hardware explicadas
@@ -134,6 +138,7 @@ docs/
   deploy-vercel.md          publicar la app y regenerar los QR de las pantallas
   caja-movil.md             el celular como lector NFC: alcances, límites y UID
   barriles-y-ajustes.md     stock por barril y correcciones de saldo
+  devoluciones-y-arqueo.md  devolver la tarjeta y cerrar la caja del turno
 ```
 
 ### Por qué un sketch por etapa

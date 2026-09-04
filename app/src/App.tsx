@@ -13,8 +13,9 @@ import Reportes from './pantallas/Reportes'
 import Personal from './pantallas/Personal'
 import CajaMovil from './pantallas/CajaMovil'
 import Barriles from './pantallas/Barriles'
+import Arqueo from './pantallas/Arqueo'
 
-type Id = 'inicio' | 'caja' | 'movil' | 'barriles' | 'tarjetas' | 'grifos' | 'reportes' | 'personal'
+type Id = 'inicio' | 'caja' | 'movil' | 'barriles' | 'tarjetas' | 'grifos' | 'arqueo' | 'reportes' | 'personal'
 
 type Item = {
   id: Id; texto: string; icono: Nombre; titulo: string; bajada: string
@@ -34,6 +35,8 @@ const ITEMS: Item[] = [
     titulo: 'Canillas', bajada: 'Precio, calibración, estado y tokens.' },
   { id: 'barriles', texto: 'Barriles', icono: 'vacio', soloAdmin: true,
     titulo: 'Barriles', bajada: 'Cuánta cerveza queda en cada canilla.' },
+  { id: 'arqueo', texto: 'Cierre de caja', icono: 'arqueo',
+    titulo: 'Cierre de caja', bajada: 'Cuadrar el turno contra el cajón.' },
   { id: 'reportes', texto: 'Reportes', icono: 'grafico', soloAdmin: true,
     titulo: 'Reportes', bajada: 'Facturación y volumen servido.' },
   { id: 'personal', texto: 'Personal', icono: 'personas', soloAdmin: true,
@@ -150,6 +153,7 @@ function Contenido() {
           {item.id === 'tarjetas' && <Tarjetas />}
           {item.id === 'grifos'   && <Grifos />}
           {item.id === 'barriles' && <Barriles />}
+          {item.id === 'arqueo' && <Arqueo />}
           {item.id === 'reportes' && <Reportes />}
           {item.id === 'personal' && <Personal />}
         </main>

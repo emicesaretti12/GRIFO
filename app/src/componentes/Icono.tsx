@@ -5,7 +5,7 @@ export type Nombre =
   | 'caja' | 'tarjeta' | 'grifo' | 'grafico' | 'personas' | 'inicio'
   | 'buscar' | 'mas' | 'candado' | 'candado-abierto' | 'refrescar' | 'salir'
   | 'ok' | 'alerta' | 'info' | 'cerrar' | 'descargar' | 'sol' | 'luna'
-  | 'lapiz' | 'llave' | 'vacio' | 'reloj'
+  | 'lapiz' | 'llave' | 'vacio' | 'reloj' | 'devolver' | 'arqueo'
 
 const D: Record<Nombre, string> = {
   inicio:  'M3 10.5 12 3l9 7.5M5 9.5V21h14V9.5',
@@ -31,6 +31,10 @@ const D: Record<Nombre, string> = {
   llave:   'M21 2 15 8M18 5l2.5 2.5M10.5 12.5a5 5 0 1 1-7 7 5 5 0 0 1 7-7',
   vacio:   'M4 7h16v13H4zM4 7l2-3h12l2 3M9 12h6',
   reloj:   'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M12 7v5l3 2',
+  // Flecha que vuelve: la plata sale del sistema y se le devuelve al cliente.
+  devolver:'M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-5',
+  // Balanza: los dos platos del arqueo, lo que dice el sistema y lo que hay.
+  arqueo:  'M12 3v18M7 21h10M12 6 5 9m7-3 7 3M2 13a3 3 0 0 0 6 0L5 9zm14 0a3 3 0 0 0 6 0l-3-4z',
 }
 
 export default function Icono({ nombre, tam = 16, className }: Props) {

@@ -4,7 +4,8 @@ import { useLectorRFID } from '../lib/useLectorRFID'
 import { useSesion } from '../lib/useSesion'
 import { normalizarUid, type FormatoLector } from '../lib/uid'
 import { pesos, aCentavos, volumen, fecha } from '../lib/plata'
-import { mensajeDeError, type RespuestaFicha, type FichaTarjeta } from '../lib/tipos'
+import { mensajeDeError, type RespuestaFicha, type FichaTarjeta,
+         type RespuestaDevolucion } from '../lib/tipos'
 import { Panel, Stat, Chip, Nota, Vacio, Hueso } from '../componentes/UI'
 import { Modal } from '../componentes/Modal'
 import { useAvisos } from '../componentes/Toast'
@@ -23,6 +24,7 @@ export default function Caja() {
   const [monto, setMonto] = useState('')
   const [modalBloqueo, setModalBloqueo] = useState(false)
   const [ajuste, setAjuste] = useState<{ monto: string; motivo: string } | null>(null)
+  const [modalDevolver, setModalDevolver] = useState(false)
   const [motivo, setMotivo] = useState('')
   const entrada = useRef<HTMLInputElement>(null)
 
@@ -88,6 +90,26 @@ export default function Caja() {
     if (!r.ok) { avisar('No se pudo', { tono: 'grave', detalle: mensajeDeError(r) }); return }
 
     avisar(bloquear ? 'Tarjeta bloqueada' : 'Tarjeta desbloqueada', { tono: 'bien' })
+    void buscar(uid)
+  }
+
+  // Devolver la tarjeta: el cliente se va, se le da en efectivo lo que le
+  // sobró y la tarjeta vuelve limpia a la pila. Sin esto, el saldo se queda
+  // adentro y el próximo que agarre esa tarjeta se sirve gratis.
+  async function devolver() {
+    setOcupado(true)
+    const { data, error } = await supabase.rpc('caja_devolver_tarjeta', { p_uid: uid })
+    setOcupado(false); setModalDevolver(false)
+    if (error) { avisar('Error', { tono: 'grave', detalle: error.message }); return }
+    const r = data as RespuestaDevolucion
+    if (!r.ok) { avisar('No se pudo devolver', { tono: 'grave', detalle: mensajeDeError(r) }); return }
+    avisar(
+      r.devuelto_centavos > 0 ? `Devolvele ${pesos(r.devuelto_centavos)} en efectivo` : 'Tarjeta liberada',
+      { tono: 'bien',
+        detalle: r.devuelto_centavos > 0
+          ? 'La tarjeta quedó en cero y lista para el próximo cliente.'
+          : 'No tenía saldo. Ya está lista para el próximo cliente.' }
+    )
     void buscar(uid)
   }
 
@@ -212,6 +234,13 @@ export default function Caja() {
                     <Icono nombre="lapiz" tam={16} /> Ajustar saldo
                   </button>
                 )}
+                {/* Las tarjetas se reusan. Devolverla es lo que la deja en cero
+                    y borra al cliente anterior antes de que vuelva a la pila. */}
+                <button className="btn crece" disabled={ocupado || !!ficha.sesion_abierta}
+                        onClick={() => setModalDevolver(true)}
+                        title={ficha.sesion_abierta ? 'Está apoyada en un grifo. Retirala primero.' : undefined}>
+                  <Icono nombre="devolver" tam={16} /> Devolver tarjeta
+                </button>
               </div>
             </Panel>
           </div>
@@ -244,6 +273,39 @@ export default function Caja() {
             )}
           </Panel>
         </div>
+      )}
+
+      {modalDevolver && ficha && (
+        <Modal titulo="Devolver la tarjeta"
+               bajada={ficha.nota ? `${ficha.uid} · ${ficha.nota}` : ficha.uid}
+               onCerrar={() => setModalDevolver(false)}
+               acciones={
+                 <>
+                   <button className="btn" onClick={() => setModalDevolver(false)}>Cancelar</button>
+                   <button className="btn primario" disabled={ocupado} onClick={devolver}>
+                     Devolver y liberar
+                   </button>
+                 </>
+               }>
+          {ficha.saldo_centavos > 0 ? (
+            <>
+              <p style={{ margin: '0 0 12px' }}>Le tenés que devolver en efectivo:</p>
+              <p style={{ margin: 0, fontSize: 40, fontWeight: 800, letterSpacing: '-.03em',
+                          fontVariantNumeric: 'tabular-nums' }}>
+                {pesos(ficha.saldo_centavos)}
+              </p>
+              <Nota tono="ojo">
+                La tarjeta queda en cero y se borra el nombre del cliente, lista para el próximo.
+                Esto no se deshace: si te equivocaste, hay que volver a cargarle el saldo.
+              </Nota>
+            </>
+          ) : (
+            <Nota tono="info">
+              No tiene saldo, no hay nada que devolver. Igual conviene liberarla para
+              que se borre el nombre del cliente anterior.
+            </Nota>
+          )}
+        </Modal>
       )}
 
       {ajuste && ficha && (

@@ -26,17 +26,18 @@ En el proyecto de Supabase → **SQL Editor** → pegar y ejecutar **en orden**:
 | 3 | `07-personal.sql` | Roles del personal y RPC de administración |
 | 4 | `10-pantallas.sql` | Pantalla de canilla, avance en vivo y costo |
 | 5 | `12-barriles.sql` | Stock por barril y ajustes de saldo con motivo |
-| 6 | `03-seed.sql` | Datos de prueba (opcional) |
-| — | `04`, `05`, `08`, `11`, `13` | Verificaciones. No dejan rastro: corren en transacción y hacen ROLLBACK |
+| 6 | `14-devoluciones.sql` | Devolución de tarjeta y arqueo de turno |
+| 7 | `03-seed.sql` | Datos de prueba (opcional) |
+| — | `04`, `05`, `08`, `11`, `13`, `15` | Verificaciones. No dejan rastro: corren en transacción y hacen ROLLBACK |
 
 **El orden importa y no es negociable:** `01` agrega columnas que `02` y `10`
-usan, y `12` depende de las dos. Los archivos que dependen del esquema traen una guarda que corta con un
+usan; `12` depende de las dos y `14` de `12`. Los archivos que dependen del esquema traen una guarda que corta con un
 mensaje diciendo exactamente qué correr, en vez del `column ... does not exist`
 de Postgres, que no ayuda a nadie.
 
 Todos son idempotentes: se pueden correr de nuevo sin romper nada, y sobre una
 base que ya tenía una versión anterior. Esa ruta —base vieja, aplicar todo
-encima, correr las cinco suites— está probada.
+encima, correr las seis suites— está probada.
 
 Salida esperada:
 

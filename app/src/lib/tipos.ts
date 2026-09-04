@@ -20,7 +20,7 @@ export type Grifo = {
 
 export type Movimiento = {
   id: number
-  tipo: 'carga' | 'consumo' | 'ajuste'
+  tipo: 'carga' | 'consumo' | 'ajuste' | 'devolucion'
   motivo?: string | null
   centavos: number
   saldo_resultante: number
@@ -96,6 +96,8 @@ export const MOTIVOS: Record<string, string> = {
   vaso_invalido: 'El vaso de referencia tiene que ser mayor a cero.',
   litros_invalidos: 'Los litros del barril tienen que ser mayores a cero.',
   falta_motivo: 'El ajuste necesita un motivo.',
+  sesion_abierta: 'La tarjeta está apoyada en un grifo. Retirala primero.',
+  rango_invalido: 'El período está al revés: la fecha de fin es anterior a la de inicio.',
   saldo_insuficiente: 'El ajuste dejaría la tarjeta en negativo.',
   costo_invalido: 'El costo no puede ser negativo.',
   color_invalido: 'El color tiene que ser hexadecimal, tipo #c8811f.',
@@ -107,4 +109,40 @@ export const MOTIVOS: Record<string, string> = {
 export function mensajeDeError(r: { motivo?: string; detalle?: string }): string {
   if (!r.motivo) return 'Error desconocido.'
   return r.detalle ?? MOTIVOS[r.motivo] ?? r.motivo
+}
+
+export type RespuestaDevolucion =
+  | { ok: true; uid: string; devuelto_centavos: number; saldo_centavos: number
+      cliente?: string | null; nada_que_devolver?: boolean; movimiento_id?: number }
+  | { ok: false; motivo: string; detalle?: string }
+
+/** Cierre de caja de un período. Todos los montos en centavos enteros.
+ *
+ *  Los campos del bloque de abajo llegan SOLO si quien pregunta es admin: un
+ *  cajero necesita cuadrar el cajón, no saber cuánto gana el bar. El backend
+ *  los omite, así que acá van opcionales y no como algo que se pueda ocultar
+ *  desde la interfaz. */
+export type Arqueo = {
+  ok: true
+  es_admin: boolean
+  desde: string
+  hasta: string
+  cargas_centavos: number
+  cargas_cantidad: number
+  devoluciones_centavos: number
+  devoluciones_cantidad: number
+  ajustes_centavos: number
+  ajustes_cantidad: number
+  /** Lo que tiene que haber de más en el cajón por operaciones de tarjeta. */
+  neto_caja_centavos: number
+  sesiones_abiertas: number
+
+  consumo?: { sesiones: number; ml: number; centavos: number; costo_centavos: number }
+  margen_centavos?: number
+  /** Plata ya cobrada que todavía se debe en cerveza. Es un pasivo, no ganancia. */
+  saldo_en_circulacion_centavos?: number
+  por_persona?: {
+    nombre: string; cargas: number; devoluciones: number
+    ajustes: number; operaciones: number
+  }[]
 }
