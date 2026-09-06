@@ -98,6 +98,27 @@ después dar vuelta la placa para conectar.
 
 ---
 
+## Por qué el protoboard entra ya en esta etapa
+
+Las dos plaquitas terminan en **pines machos**. Unir macho con macho pide un
+cable **hembra-hembra**, y los que hay en el proyecto son macho-macho y
+macho-hembra. Así que el protoboard no entra acá como "bus compartido" —para eso
+recién hace falta en la etapa 5, cuando cuatro componentes necesiten GND— sino
+como **adaptador de género**.
+
+El montaje que resuelve eso con lo que hay:
+
+1. Los **8 pines del lector** se clavan en el protoboard, en 8 números
+   consecutivos de una misma letra. Los rótulos del lector quedan **hacia
+   arriba y legibles**, que es justo lo que se necesita.
+2. Cada cable **macho-hembra** va con el **macho al agujero de al lado** (misma
+   línea de 5, o sea el mismo número) y la **hembra directo al pin del ESP32**.
+
+El ESP32 queda suelto, sin clavar en el protoboard. A propósito: sus rótulos
+están en la cara de abajo, y enchufado al protoboard quedarían tapados.
+
+---
+
 ## Cableado
 
 Con el ESP32 **desenchufado**, 7 cables:
