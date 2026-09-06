@@ -148,6 +148,34 @@ pull-up.
 
 ---
 
+### 3b. El lector va en la canilla, y eso ata dónde va el ESP32
+
+El MFRC522 tiene que quedar montado en la canilla, contra la superficie donde el
+cliente apoya la tarjeta, al lado de la pantalla. No es un componente de caja:
+es la interfaz.
+
+Eso **no** significa que el ESP32 pueda quedar lejos, en un tablero aparte. Los
+cinco cables que los unen son **SPI**, un bus sincrónico pensado para viajar
+centímetros dentro de una placa, no metros por un cable colgando. Estirado y sin
+apantallar empieza a leer mal: lecturas intermitentes, UIDs cortados, o el
+módulo directamente no contesta.
+
+**Regla práctica: no más de 20-30 cm entre el ESP32 y el lector.** O sea que la
+caja del ESP32 vive **dentro de la columna de la canilla**, cerca del lector, y
+lo que se estira son las cosas que sí toleran distancia: la alimentación, el
+cable del relé y el del caudalímetro.
+
+**Analogía.** Es la diferencia entre una llamada a función y una request HTTP.
+SPI es una llamada a función: asume que el otro contesta en nanosegundos y no
+tiene reintentos ni checksum. Estirarlo por un cable largo es querer hacer una
+llamada a función a través de la red.
+
+Si en alguna canilla la distancia no se puede evitar, la salida no es cable más
+grueso: es poner un ESP32 por canilla —que es lo que el diseño ya hace— o pasar
+el lector a un bus pensado para distancia. No lo resolvemos estirando SPI.
+
+---
+
 ### 4. Todo comparte GND
 
 ESP32, módulo relé, sensor, fuente de 5V y fuente de 12V: **todos los negativos
