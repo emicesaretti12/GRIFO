@@ -22,33 +22,84 @@ etapa que no se arregla con software.
 
 ---
 
+## Cómo se leen los pines de ESTA placa
+
+La placa del proyecto es una **NodeMCU ESP-32S v1.1**, de 38 pines, con
+micro-USB. Dos particularidades que conviene tener anotadas:
+
+1. **Los nombres de los pines están impresos del lado de ABAJO**, no del lado
+   del módulo metálico.
+2. **El prefijo es `P`, no `D` ni `GPIO`.** El pin que en el código se llama
+   `GPIO5` acá dice **`P5`**.
+
+Las dos filas, tal como están impresas:
+
+```
+fila A:  3V3  EN  SVP  SVN  P34 P35 P32 P33 P25 P26 P27 P14 P12 GND P13 SD2 SD3 GND 5V
+fila B:  CLK  SD0 SD1  P15  P2  P0  P4  P16 P17 P5  P18 P19 GND P21 RX  TX  P22 P23 GND
+```
+
+**Los cinco pines de datos del lector caen todos en la fila B.** El único que
+cruza a la fila A es la alimentación.
+
+### Contando desde el USB
+
+Los rótulos están de un lado y los cables se enchufan del otro, así que el
+conector USB es la referencia que sirve desde ambas caras.
+
+**Fila B**, contando desde el extremo del USB:
+
+| Posición | Pin | ¿Lo usamos? |
+|---|---|---|
+| 1 | `GND` | ✅ el GND del lector |
+| 2 | `P23` | ✅ MOSI |
+| 3 | `P22` | ✅ RST |
+| 4 | `TX` | — |
+| 5 | `RX` | — |
+| 6 | `P21` | — |
+| 7 | `GND` | — |
+| 8 | `P19` | ✅ MISO |
+| 9 | `P18` | ✅ SCK |
+| 10 | `P5` | ✅ SDA |
+
+**Fila A**: solo nos interesan los dos extremos, y son opuestos.
+
+- **Pegado al USB está `5V`.** ⚠️ Ese es el que quema el lector.
+- **En la punta opuesta, lo más lejos del USB, está `3V3`.** Ese es el bueno.
+
+Que los dos estén en las puntas contrarias de la misma fila es una suerte: no
+hay que contar nada, y el peligroso es el que está al lado del USB.
+
+---
+
 ## Cableado
 
 Con el ESP32 **desenchufado**, 7 cables:
 
-| MFRC522 | → | ESP32 |
-|---|---|---|
-| `SDA` (o `SS`) | → | `D5` / `GPIO5` |
-| `SCK` | → | `D18` / `GPIO18` |
-| `MOSI` | → | `D23` / `GPIO23` |
-| `MISO` | → | `D19` / `GPIO19` |
-| `RST` | → | `D22` / `GPIO22` |
-| `3.3V` | → | `3V3` ⚠️ |
-| `GND` | → | `GND` |
-| `IRQ` | → | *(no se conecta)* |
+| MFRC522 | → | ESP32 | Cómo encontrarlo |
+|---|---|---|---|
+| `3.3V` | → | `3V3` ⚠️ | fila A, el más lejos del USB |
+| `GND` | → | `GND` | fila B, posición 1 (pegado al USB) |
+| `SDA` | → | `P5` | fila B, posición 10 |
+| `SCK` | → | `P18` | fila B, posición 9 |
+| `MISO` | → | `P19` | fila B, posición 8 |
+| `MOSI` | → | `P23` | fila B, posición 2 |
+| `RST` | → | `P22` | fila B, posición 3 |
+| `IRQ` | → | *(nada)* | queda al aire |
 
 El pin `IRQ` queda al aire a propósito: sirve para que el módulo avise por
 interrupción, y no lo usamos.
 
-### Si el módulo vino con las patas sueltas
+### Hay que soldarle la tira de pines al lector
 
-Muchos MFRC522 vienen con la tira de pines **sin soldar**, en una bolsita
-aparte. Apoyar los pines en los agujeros y esperar que hagan contacto **no
-funciona de forma confiable**: anda un rato, después no, y te vuelve loco
-buscando un problema de software que no existe. Hay que soldarlos.
+El MFRC522 viene con los 8 contactos como **agujeros pelados** y la tira de
+pines suelta en la bolsita — vienen dos, una recta y una en L. Va la **recta**:
+apoya el plástico contra la plaqueta y se queda quieta sola mientras soldás, que
+con la de 90° hay que sostenerla.
 
-Si no tenés soldador, decime y vemos — pero es mejor resolverlo ahora que
-descubrirlo en la etapa 5 con todo conectado.
+Apoyar los pines en los agujeros sin soldar **no funciona de forma confiable**:
+anda un rato, después no, y te vuelve loco buscando un bug de software que no
+existe. Son 8 puntos de soldadura, diez minutos.
 
 ---
 

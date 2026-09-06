@@ -1,5 +1,22 @@
 # Pinout y trampas de hardware
 
+## La placa
+
+**NodeMCU ESP-32S v1.1**, 38 pines, micro-USB, conversor CP2102.
+
+Los nombres de los pines están impresos **del lado de abajo** (el opuesto al
+módulo metálico) y llevan prefijo **`P`**: lo que el código llama `GPIO5`, la
+plaqueta lo rotula `P5`.
+
+Los cinco pines de datos del lector RFID (`P5 P18 P19 P22 P23`) caen todos en la
+misma fila, la que empieza en `CLK`. En esa fila, el pin pegado al USB es `GND`.
+En la otra fila, el pin pegado al USB es `5V` y el del extremo opuesto es `3V3`.
+
+Detalle con las posiciones contadas desde el USB en
+[`etapa-02-rfid.md`](etapa-02-rfid.md).
+
+---
+
 ## Pinout definitivo
 
 | Componente | Señal | GPIO | Notas |
