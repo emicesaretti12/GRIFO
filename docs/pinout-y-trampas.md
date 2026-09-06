@@ -9,8 +9,15 @@ módulo metálico) y llevan prefijo **`P`**: lo que el código llama `GPIO5`, la
 plaqueta lo rotula `P5`.
 
 Los cinco pines de datos del lector RFID (`P5 P18 P19 P22 P23`) caen todos en la
-misma fila, la que empieza en `CLK`. En esa fila, el pin pegado al USB es `GND`.
-En la otra fila, el pin pegado al USB es `5V` y el del extremo opuesto es `3V3`.
+misma fila. Verificado en la placa real, con los rótulos hacia arriba y el USB
+hacia abajo:
+
+- **Columna izquierda:** `CLK` pegado al USB, `GND` en la punta opuesta.
+- **Columna derecha:** `5V` pegado al USB ⚠️, `3V3` en la punta opuesta ✅.
+
+Que los dos pines de alimentación estén en puntas opuestas, y que el peligroso
+sea el que está junto al USB, es lo que hace difícil equivocarse en el único
+error que rompe algo.
 
 Detalle con las posiciones contadas desde el USB en
 [`etapa-02-rfid.md`](etapa-02-rfid.md).

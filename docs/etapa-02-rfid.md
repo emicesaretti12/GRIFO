@@ -42,33 +42,59 @@ fila B:  CLK  SD0 SD1  P15  P2  P0  P4  P16 P17 P5  P18 P19 GND P21 RX  TX  P22 
 **Los cinco pines de datos del lector caen todos en la fila B.** El único que
 cruza a la fila A es la alimentación.
 
-### Contando desde el USB
+### La orientación, verificada en la placa real
 
-Los rótulos están de un lado y los cables se enchufan del otro, así que el
-conector USB es la referencia que sirve desde ambas caras.
+Con los **rótulos hacia arriba** y el **USB apuntando hacia abajo**:
+
+|  | Pegado al USB | En la punta opuesta |
+|---|---|---|
+| Columna izquierda (fila B) | `CLK` | `GND` |
+| Columna derecha (fila A) | `5V` ⚠️ | `3V3` ✅ |
+
+Los dos pines de alimentación caen en **puntas opuestas de la misma columna**, y
+el peligroso es el que está pegado al USB. Es la mejor casualidad de esta placa:
+no hay que contar nada para no equivocarse en el único error caro.
+
+Ojo con la cara: **mirando los rótulos, la fila B queda a la izquierda; dando
+vuelta la placa queda a la derecha.** Es un espejo, como cualquier objeto.
+
+### Contando desde el USB
 
 **Fila B**, contando desde el extremo del USB:
 
-| Posición | Pin | ¿Lo usamos? |
+| Pos | Pin | ¿Lo usamos? |
 |---|---|---|
-| 1 | `GND` | ✅ el GND del lector |
-| 2 | `P23` | ✅ MOSI |
-| 3 | `P22` | ✅ RST |
-| 4 | `TX` | — |
-| 5 | `RX` | — |
-| 6 | `P21` | — |
-| 7 | `GND` | — |
-| 8 | `P19` | ✅ MISO |
-| 9 | `P18` | ✅ SCK |
-| 10 | `P5` | ✅ SDA |
+| 1 | `CLK` | — |
+| 2 | `SD0` | — |
+| 3 | `SD1` | — |
+| 4 | `P15` | — |
+| 5 | `P2` | — |
+| 6 | `P0` | — |
+| 7 | `P4` | — |
+| 8 | `P16` | — |
+| 9 | `P17` | — |
+| **10** | **`P5`** | ✅ SDA |
+| **11** | **`P18`** | ✅ SCK |
+| **12** | **`P19`** | ✅ MISO |
+| **13** | **`GND`** | ✅ el GND del lector |
+| 14 | `P21` | — |
+| 15 | `RX` | — |
+| 16 | `TX` | — |
+| **17** | **`P22`** | ✅ RST |
+| **18** | **`P23`** | ✅ MOSI |
+| 19 | `GND` | — |
 
-**Fila A**: solo nos interesan los dos extremos, y son opuestos.
+Dos cosas que hacen esto mucho menos propenso a error de lo que parece:
 
-- **Pegado al USB está `5V`.** ⚠️ Ese es el que quema el lector.
-- **En la punta opuesta, lo más lejos del USB, está `3V3`.** Ese es el bueno.
+- **Las posiciones 10 a 13 son cuatro pines consecutivos** — `P5 P18 P19 GND` —
+  y ahí van cuatro de los siete cables.
+- **`P22` y `P23` son vecinos**, y quedan a 3 y 2 pines del extremo opuesto al
+  USB. Contados desde esa punta son mucho más fáciles de encontrar que desde el
+  USB.
 
-Que los dos estén en las puntas contrarias de la misma fila es una suerte: no
-hay que contar nada, y el peligroso es el que está al lado del USB.
+Aun así, la forma segura de identificar un pin es **leer el rótulo**, no contar
+19 pines. Conviene marcar los siete con cinta mirando los rótulos, y recién
+después dar vuelta la placa para conectar.
 
 ---
 
@@ -78,13 +104,13 @@ Con el ESP32 **desenchufado**, 7 cables:
 
 | MFRC522 | → | ESP32 | Cómo encontrarlo |
 |---|---|---|---|
-| `3.3V` | → | `3V3` ⚠️ | fila A, el más lejos del USB |
-| `GND` | → | `GND` | fila B, posición 1 (pegado al USB) |
+| `3.3V` | → | `3V3` ⚠️ | fila A, la punta más lejos del USB |
 | `SDA` | → | `P5` | fila B, posición 10 |
-| `SCK` | → | `P18` | fila B, posición 9 |
-| `MISO` | → | `P19` | fila B, posición 8 |
-| `MOSI` | → | `P23` | fila B, posición 2 |
-| `RST` | → | `P22` | fila B, posición 3 |
+| `SCK` | → | `P18` | fila B, posición 11 |
+| `MISO` | → | `P19` | fila B, posición 12 |
+| `GND` | → | `GND` | fila B, posición 13 |
+| `RST` | → | `P22` | fila B, posición 17 |
+| `MOSI` | → | `P23` | fila B, posición 18 |
 | `IRQ` | → | *(nada)* | queda al aire |
 
 El pin `IRQ` queda al aire a propósito: sirve para que el módulo avise por
