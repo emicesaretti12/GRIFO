@@ -98,44 +98,82 @@ después dar vuelta la placa para conectar.
 
 ---
 
-## Por qué el protoboard entra ya en esta etapa
+## El protoboard entra ya en esta etapa, como adaptador de género
 
 Las dos plaquitas terminan en **pines machos**. Unir macho con macho pide un
 cable **hembra-hembra**, y los que hay en el proyecto son macho-macho y
 macho-hembra. Así que el protoboard no entra acá como "bus compartido" —para eso
 recién hace falta en la etapa 5, cuando cuatro componentes necesiten GND— sino
-como **adaptador de género**.
+para convertir un macho en agujeros hembra.
 
-El montaje que resuelve eso con lo que hay:
+Se probaron tres montajes antes de dar con el que funciona. Vale la pena dejar
+por qué fallaron los otros dos:
 
-1. Los **8 pines del lector** se clavan en el protoboard, en 8 números
-   consecutivos de una misma letra. Los rótulos del lector quedan **hacia
-   arriba y legibles**, que es justo lo que se necesita.
-2. Cada cable **macho-hembra** va con el **macho al agujero de al lado** (misma
-   línea de 5, o sea el mismo número) y la **hembra directo al pin del ESP32**.
+**Clavar el ESP32 en el protoboard: no anda con esta placa.** Sus pines vienen
+soldados de fábrica con el plástico abajo y quedan demasiado cortos: la placa no
+se hunde más y no llega a tocar los contactos internos. El síntoma es
+inconfundible —midiendo 3V3 contra GND daba 0, y apretando la placa con el dedo
+subía a 0,5 V y volvía a caer— y es contacto intermitente, no un problema de
+software. Además, aunque entrara, sus rótulos están en la cara de abajo y
+quedarían tapados.
 
-El ESP32 queda suelto, sin clavar en el protoboard. A propósito: sus rótulos
-están en la cara de abajo, y enchufado al protoboard quedarían tapados.
+**Clavar el lector: depende de cómo se soldó la tira.** Si los pines quedaron
+del lado de los rótulos, clavarlo apoya la cara rotulada contra el protoboard y
+se pierde de vista qué pin es cuál, que era justamente la ventaja.
+
+**Lo que sí funciona: nada clavado.** Las dos plaquitas quedan sueltas y el
+protoboard hace solo de punto de encuentro. Cada conexión usa **dos** cables
+macho-hembra:
+
+```
+[pin del ESP32] ←capuchón─cable─pinchito→ ┐
+                                          ├─ misma fila del protoboard
+[pin del lector] ←capuchón─cable─pinchito→ ┘
+```
+
+Los capuchones abrazan los pines (que son machos) y los pinchitos entran en los
+agujeros (que son hembras). Todo encaja, nada depende de que una placa entre a
+presión, y **los rótulos de las dos plaquitas quedan a la vista**.
+
+Cuesta 14 cables en vez de 7. Para un banco de pruebas que se desarma el mismo
+día, es un precio barato a cambio de que no haya nada que pueda quedar flojo.
 
 ---
 
 ## Cableado
 
-Con el ESP32 **desenchufado**, 7 cables:
+Con el ESP32 **desenchufado**, siete filas del protoboard, dos cables cada una:
 
-| MFRC522 | → | ESP32 | Cómo encontrarlo |
-|---|---|---|---|
-| `3.3V` | → | `3V3` ⚠️ | fila A, la punta más lejos del USB |
-| `SDA` | → | `P5` | fila B, posición 10 |
-| `SCK` | → | `P18` | fila B, posición 11 |
-| `MISO` | → | `P19` | fila B, posición 12 |
-| `GND` | → | `GND` | fila B, posición 13 |
-| `RST` | → | `P22` | fila B, posición 17 |
-| `MOSI` | → | `P23` | fila B, posición 18 |
-| `IRQ` | → | *(nada)* | queda al aire |
+| Fila | ESP32 | Lector |
+|---|---|---|
+| 1 | `P5` | `SDA` |
+| 2 | `P18` | `SCK` |
+| 3 | `P19` | `MISO` |
+| 4 | `GND` | `GND` |
+| 5 | `P22` | `RST` |
+| 6 | `P23` | `MOSI` |
+| 7 | `3V3` ⚠️ | `3.3V` |
+| — | — | `IRQ` queda al aire |
+
+**Una sola conexión por fila.** Dos conexiones distintas en la misma fila unen
+dos pines del ESP32 entre sí.
 
 El pin `IRQ` queda al aire a propósito: sirve para que el módulo avise por
 interrupción, y no lo usamos.
+
+### Verificar el 3.3V con el tester antes de conectarlo
+
+Es el único error de esta etapa que rompe algo, y se descarta en dos minutos con
+el multímetro. Con el ESP32 suelto:
+
+1. Capuchón de un cable en el pin `3V3`, capuchón de otro en cualquier `GND`
+   (los tres `GND` de la placa están unidos entre sí).
+2. Perilla del tester en **`20`**, en la zona de **voltaje continuo** (`V⎓`).
+   Nunca en la zona `A`: ahí se mide corriente y se conecta distinto.
+3. Enchufar el USB y tocar con las puntas el metal de los dos pinchitos.
+
+Tiene que dar **~3,3 V**. En la placa del proyecto dio **3,32 V**. Si diera
+cerca de 5, es el otro pin y no hay que conectar el lector.
 
 ### Hay que soldarle la tira de pines al lector
 
