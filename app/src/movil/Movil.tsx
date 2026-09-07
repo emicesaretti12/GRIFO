@@ -5,7 +5,7 @@ import { useNFC, porQueNoHayNFC } from '../lib/useNFC'
 import { normalizarUid, uidValido } from '../lib/uid'
 import { pesos, aCentavos, fecha, volumen } from '../lib/plata'
 import { mensajeDeError, type RespuestaFicha, type FichaTarjeta,
-         type RespuestaDevolucion } from '../lib/tipos'
+         type RespuestaDevolucion, type RespuestaAsignacion } from '../lib/tipos'
 import { Nota } from '../componentes/UI'
 import { Modal } from '../componentes/Modal'
 import { ProveedorAvisos, useAvisos } from '../componentes/Toast'
@@ -60,6 +60,7 @@ function Contenido() {
   const [otroMonto, setOtroMonto] = useState<string | null>(null)
   const [modalBloqueo, setModalBloqueo] = useState(false)
   const [modalDevolver, setModalDevolver] = useState(false)
+  const [nombreCliente, setNombreCliente] = useState('')
   const [motivo, setMotivo] = useState('')
 
   const buscar = useCallback(async (crudo: string) => {
@@ -127,6 +128,26 @@ function Contenido() {
     void buscar(uid)
   }
 
+  /** Entregar la tarjeta a un cliente. Las tarjetas vienen vírgenes: no existen
+   *  en la base hasta este momento. El mozo la entrega en la mesa, así que el
+   *  nombre se pone acá y no cuando la persona pase por caja. */
+  async function entregar() {
+    const limpio = nombreCliente.trim()
+    if (!limpio) { avisar('Falta el nombre del cliente', { tono: 'grave' }); return }
+    setOcupado(true)
+    const { data, error } = await supabase.rpc('caja_asignar_tarjeta', {
+      p_uid: uid, p_nombre: limpio,
+    })
+    setOcupado(false)
+    if (error) { avisar('Error', { tono: 'grave', detalle: error.message }); return }
+    const r = data as RespuestaAsignacion
+    if (!r.ok) { avisar('No se pudo entregar', { tono: 'grave', detalle: mensajeDeError(r) }); return }
+    if (navigator.vibrate) navigator.vibrate(40)
+    avisar(`Tarjeta a nombre de ${r.nombre}`, { tono: 'bien' })
+    setNombreCliente('')
+    void buscar(uid)
+  }
+
   // El cliente se va de la mesa: se le devuelve lo que le sobró y la tarjeta
   // vuelve limpia a la pila. Si el saldo se queda adentro, el próximo que la
   // agarre se sirve gratis.
@@ -143,7 +164,7 @@ function Contenido() {
     void buscar(uid)
   }
 
-  const limpiar = () => { setUid(''); setFicha(null); setEsNueva(false); setManual(false) }
+  const limpiar = () => { setUid(''); setFicha(null); setEsNueva(false); setManual(false); setNombreCliente('') }
   const hayTarjeta = ficha !== null || esNueva
 
   return (
@@ -210,9 +231,18 @@ function Contenido() {
           <div className="mov-ficha">
             <div className="uid"><span className="uid">{uid}</span></div>
             <Nota tono="info">
-              Tarjeta nueva, todavía sin registrar. Se da de alta sola con la
-              primera carga.
+              Tarjeta virgen. Poné el nombre del cliente antes de entregarla.
             </Nota>
+            <div style={{ marginTop: 12 }}>
+              <label htmlFor="cli">Nombre del cliente</label>
+              <input id="cli" className="campo" value={nombreCliente}
+                     placeholder="Juan · mesa 4"
+                     onChange={e => setNombreCliente(e.target.value)} />
+            </div>
+            <button className="btn primario bloque" style={{ marginTop: 10, padding: 15 }}
+                    disabled={ocupado || !nombreCliente.trim()} onClick={entregar}>
+              Entregar tarjeta
+            </button>
           </div>
         )}
 

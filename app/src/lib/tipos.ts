@@ -96,6 +96,8 @@ export const MOTIVOS: Record<string, string> = {
   vaso_invalido: 'El vaso de referencia tiene que ser mayor a cero.',
   litros_invalidos: 'Los litros del barril tienen que ser mayores a cero.',
   falta_motivo: 'El ajuste necesita un motivo.',
+  falta_nombre: 'Hay que poner el nombre del cliente.',
+  nombre_muy_largo: 'El nombre es demasiado largo (máximo 80 caracteres).',
   sesion_abierta: 'La tarjeta está apoyada en un grifo. Retirala primero.',
   rango_invalido: 'El período está al revés: la fecha de fin es anterior a la de inicio.',
   saldo_insuficiente: 'El ajuste dejaría la tarjeta en negativo.',
@@ -146,3 +148,8 @@ export type Arqueo = {
     ajustes: number; operaciones: number
   }[]
 }
+
+export type RespuestaAsignacion =
+  | { ok: true; uid: string; nombre: string; saldo_centavos: number
+      creada: boolean; nombre_anterior: string | null }
+  | { ok: false; motivo: string; detalle?: string }

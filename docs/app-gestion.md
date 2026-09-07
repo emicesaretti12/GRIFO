@@ -141,6 +141,49 @@ pueda arreglarlo.
 
 ---
 
+## El ciclo de vida de una tarjeta
+
+Las tarjetas son del bar, no del cliente: se entregan, se usan y vuelven a la
+pila para el siguiente. Ese ciclo es el que ordena toda la pantalla de caja.
+
+```
+   pila  ──entregar──▶  con dueño  ──cargar──▶  con saldo
+    ▲                                               │
+    │                                            servir
+    └──────────── devolver ◀───────────────────────┘
+```
+
+**1. Entregar.** La tarjeta sale de la pila y va a una persona. Se le pone el
+**nombre del cliente**, y ahí recién se da de alta en la base: hasta ese momento
+la tarjeta no existe, viene virgen de fábrica.
+
+El nombre no es decorativo. Es lo que permite decir de quién es una tarjeta que
+aparece perdida, a quién devolverle el saldo, y contra quién chequear un consumo
+discutido. Por eso el campo es obligatorio para entregarla.
+
+**2. Cargar.** La plata entra por `cargar_saldo`, que es la única puerta que
+asienta en el libro mayor. Entregar y cargar son operaciones separadas en la
+base —se puede entregar una tarjeta en cero, o recargar una ya entregada— pero
+la pantalla las encadena en un solo gesto cuando el cliente paga en el momento.
+
+**3. Servir.** El cliente apoya la tarjeta en el grifo. El ESP32 abre sesión,
+sirve y liquida.
+
+**4. Devolver.** El cliente se va. Se le da en efectivo lo que le sobró, la
+tarjeta queda en cero y **se le borra el nombre**: vuelve libre a la pila.
+
+Si ese último paso se saltea, el próximo que agarre esa tarjeta se sirve gratis
+con la plata del anterior.
+
+### Cambiar el nombre de una tarjeta ya entregada
+
+Se puede, con el botón de la ficha. Pero si la tarjeta **ya tiene dueño y tiene
+saldo**, la pantalla avisa en rojo antes de dejar: cambiar el nombre no mueve la
+plata, así que el cliente nuevo se quedaría con la del anterior. Lo correcto en
+ese caso es devolverla primero.
+
+---
+
 ## Detalles de la interfaz
 
 **Nada de `confirm()` ni `prompt()`.** Todo lo destructivo pasa por un diálogo

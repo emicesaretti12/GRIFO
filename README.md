@@ -18,6 +18,7 @@ YF-S201C · válvula solenoide 12V vía módulo relé
 | **Próxima etapa** | 3 — Caudalímetro |
 | **En paralelo** | ✅ backend de Supabase verificado punta a punta sobre HTTP |
 | **App de gestión** | ✅ caja, panel, tarjetas, canillas, reportes y personal · costo y ganancia · modo claro/oscuro |
+| **Ciclo de la tarjeta** | ✅ entregar con el nombre del cliente → cargar → servir → devolver y liberar |
 | **Pantalla de canilla** | ✅ kiosco web por canilla, se vincula por QR con el token del grifo |
 | **Caja móvil** | ✅ el celular del mozo lee tarjetas por NFC y carga saldo en la mesa |
 | **Stock de barriles** | ✅ cuánto queda en cada barril, en vasos, con aviso cuando está por terminarse |
@@ -129,6 +130,8 @@ supabase/
   13-pruebas-barriles.sql   pruebas de stock, cambio de barril y ajustes
   14-devoluciones.sql       devolucion de tarjeta y arqueo de turno
   15-pruebas-devoluciones.sql  pruebas de devolucion, arqueo y permisos por rol
+  16-clientes.sql           entregar la tarjeta a un cliente (alta + nombre)
+  17-pruebas-clientes.sql   pruebas de entrega, reentrega y ciclo completo
 docs/
   plan-de-etapas.md         las 8 etapas, qué necesita cada una, criterio de aceptación
   pinout-y-trampas.md       pinout definitivo + trampas de hardware explicadas

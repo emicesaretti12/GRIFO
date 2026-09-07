@@ -5,7 +5,7 @@ import { useSesion } from '../lib/useSesion'
 import { normalizarUid, type FormatoLector } from '../lib/uid'
 import { pesos, aCentavos, volumen, fecha } from '../lib/plata'
 import { mensajeDeError, type RespuestaFicha, type FichaTarjeta,
-         type RespuestaDevolucion } from '../lib/tipos'
+         type RespuestaDevolucion, type RespuestaAsignacion } from '../lib/tipos'
 import { Panel, Stat, Chip, Nota, Vacio, Hueso } from '../componentes/UI'
 import { Modal } from '../componentes/Modal'
 import { useAvisos } from '../componentes/Toast'
@@ -25,6 +25,8 @@ export default function Caja() {
   const [modalBloqueo, setModalBloqueo] = useState(false)
   const [ajuste, setAjuste] = useState<{ monto: string; motivo: string } | null>(null)
   const [modalDevolver, setModalDevolver] = useState(false)
+  const [nombre, setNombre] = useState('')
+  const [modalNombre, setModalNombre] = useState<string | null>(null)
   const [motivo, setMotivo] = useState('')
   const entrada = useRef<HTMLInputElement>(null)
 
@@ -36,7 +38,7 @@ export default function Caja() {
   const buscar = useCallback(async (crudo: string) => {
     const limpio = normalizarUid(crudo, 'hex')
     if (!limpio) return
-    setBuscando(true); setFicha(null); setEsNueva(false)
+    setBuscando(true); setFicha(null); setEsNueva(false); setNombre('')
 
     const { data, error } = await supabase.rpc('caja_buscar_tarjeta', { p_uid: limpio })
     setBuscando(false)
@@ -91,6 +93,41 @@ export default function Caja() {
 
     avisar(bloquear ? 'Tarjeta bloqueada' : 'Tarjeta desbloqueada', { tono: 'bien' })
     void buscar(uid)
+  }
+
+  /** Entregar la tarjeta a un cliente. Las tarjetas vienen vírgenes y no
+   *  existen en la base hasta este momento: entregarla es su alta.
+   *
+   *  Devuelve true si salió bien, para poder encadenar la carga inicial. */
+  async function asignar(nombreCliente: string, avisarOk = true): Promise<boolean> {
+    const { data, error } = await supabase.rpc('caja_asignar_tarjeta', {
+      p_uid: uid, p_nombre: nombreCliente,
+    })
+    if (error) { avisar('Error', { tono: 'grave', detalle: error.message }); return false }
+    const r = data as RespuestaAsignacion
+    if (!r.ok) { avisar('No se pudo entregar', { tono: 'grave', detalle: mensajeDeError(r) }); return false }
+    if (avisarOk) avisar(`Tarjeta a nombre de ${r.nombre}`, { tono: 'bien' })
+    return true
+  }
+
+  // Entregar y, si el cajero puso un monto, cargarlo en el mismo gesto. Son dos
+  // operaciones distintas en la base a propósito, pero para el que atiende es
+  // un solo movimiento: dar la tarjeta con la plata que el cliente pagó.
+  async function entregar(centavos: number | null) {
+    if (!nombre.trim()) { avisar('Falta el nombre del cliente', { tono: 'grave' }); return }
+    setOcupado(true)
+    const ok = await asignar(nombre.trim(), centavos == null)
+    if (!ok) { setOcupado(false); return }
+    if (centavos == null) { setOcupado(false); void buscar(uid); return }
+    setOcupado(false)
+    await cargar(centavos)
+  }
+
+  async function cambiarNombre(nuevo: string) {
+    setOcupado(true)
+    const ok = await asignar(nuevo)
+    setOcupado(false); setModalNombre(null)
+    if (ok) void buscar(uid)
   }
 
   // Devolver la tarjeta: el cliente se va, se le da en efectivo lo que le
@@ -177,12 +214,31 @@ export default function Caja() {
       )}
 
       {esNueva && (
-        <Panel titulo="Tarjeta nueva" bajada={`${uid} todavía no está registrada.`}>
+        <Panel titulo="Entregar tarjeta" bajada={`${uid} sale de la pila por primera vez.`}>
           <Nota tono="info">
-            No es un error: la tarjeta se da de alta sola con la primera carga.
+            Las tarjetas vienen vírgenes. Poné el nombre del cliente: es lo que
+            después permite saber de quién es cuando aparece perdida, cuando la
+            devuelve, o si discute un consumo.
           </Nota>
-          <Cargador monto={monto} setMonto={setMonto} montoCentavos={montoCentavos}
-                    ocupado={ocupado} onCargar={cargar} />
+
+          <div style={{ marginTop: 14 }}>
+            <label htmlFor="cli">Nombre del cliente</label>
+            <input id="cli" className="campo" autoFocus value={nombre}
+                   placeholder="Juan · mesa 4 · el de la campera roja"
+                   onChange={e => setNombre(e.target.value)} />
+          </div>
+
+          <div style={{ marginTop: 16 }}>
+            <span className="etiqueta-campo">Saldo inicial</span>
+            <Cargador monto={monto} setMonto={setMonto} montoCentavos={montoCentavos}
+                      ocupado={ocupado || !nombre.trim()} onCargar={entregar} />
+          </div>
+
+          <button className="btn bloque" style={{ marginTop: 12 }}
+                  disabled={ocupado || !nombre.trim()}
+                  onClick={() => entregar(null)}>
+            Entregar sin saldo
+          </button>
         </Panel>
       )}
 
@@ -236,6 +292,10 @@ export default function Caja() {
                 )}
                 {/* Las tarjetas se reusan. Devolverla es lo que la deja en cero
                     y borra al cliente anterior antes de que vuelva a la pila. */}
+                <button className="btn" disabled={ocupado}
+                        onClick={() => setModalNombre(ficha.nota ?? '')}>
+                  <Icono nombre="lapiz" tam={16} /> {ficha.nota ? 'Cambiar nombre' : 'Poner nombre'}
+                </button>
                 <button className="btn crece" disabled={ocupado || !!ficha.sesion_abierta}
                         onClick={() => setModalDevolver(true)}
                         title={ficha.sesion_abierta ? 'Está apoyada en un grifo. Retirala primero.' : undefined}>
@@ -274,6 +334,11 @@ export default function Caja() {
             )}
           </Panel>
         </div>
+      )}
+
+      {modalNombre !== null && ficha && (
+        <ModalNombre ficha={ficha} valor={modalNombre} setValor={setModalNombre}
+                     ocupado={ocupado} onGuardar={cambiarNombre} />
       )}
 
       {modalDevolver && ficha && (
@@ -417,6 +482,46 @@ function ModalAjuste({ ficha, ajuste, setAjuste, ocupado, onAjustar }: {
           </small>
         </div>
       </div>
+    </Modal>
+  )
+}
+
+/** Poner o corregir el nombre del cliente en una tarjeta ya entregada.
+ *  Si la tarjeta tiene plata y ya está a nombre de alguien, avisa antes: pisar
+ *  el nombre no mueve el saldo, así que el cliente nuevo se quedaría con la
+ *  plata del anterior. */
+function ModalNombre({ ficha, valor, setValor, ocupado, onGuardar }: {
+  ficha: FichaTarjeta
+  valor: string
+  setValor: (v: string | null) => void
+  ocupado: boolean
+  onGuardar: (nombre: string) => void
+}) {
+  const limpio = valor.trim()
+  const pisaOtro = !!ficha.nota && limpio !== '' && limpio !== ficha.nota
+  return (
+    <Modal titulo={ficha.nota ? 'Cambiar el nombre' : 'Poner el nombre'}
+           bajada={ficha.uid}
+           onCerrar={() => setValor(null)}
+           acciones={
+             <>
+               <button className="btn" onClick={() => setValor(null)}>Cancelar</button>
+               <button className="btn primario" disabled={!limpio || ocupado}
+                       onClick={() => onGuardar(limpio)}>Guardar</button>
+             </>
+           }>
+      <label htmlFor="nom">Nombre del cliente</label>
+      <input id="nom" className="campo" autoFocus value={valor}
+             placeholder="Juan · mesa 4"
+             onChange={e => setValor(e.target.value)} />
+      {pisaOtro && ficha.saldo_centavos > 0 && (
+        <Nota tono="grave">
+          Esta tarjeta está a nombre de <strong>{ficha.nota}</strong> y tiene{' '}
+          {pesos(ficha.saldo_centavos)}. Cambiar el nombre <strong>no mueve el saldo</strong>:
+          el cliente nuevo se queda con esa plata. Si el cliente anterior se fue,
+          devolvé la tarjeta primero.
+        </Nota>
+      )}
     </Modal>
   )
 }
