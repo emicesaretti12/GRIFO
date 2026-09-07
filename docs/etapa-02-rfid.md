@@ -296,6 +296,50 @@ significa cerveza en el piso.
 
 ---
 
+## Resultado ✅ ACEPTADA
+
+Verificado en la placa, con el montaje de dos cables por conexión:
+
+```
+[ 140139 ms] TARJETA  UID=61FB7A54  (4 bytes)  tipo=MIFARE 1KB   #1
+[ 140739 ms] RETIRADA UID=61FB7A54  estuvo 0.6 s
+
+[ 146339 ms] TARJETA  UID=61FB7A54  (4 bytes)  tipo=MIFARE 1KB   #2
+[ 149739 ms] RETIRADA UID=61FB7A54  estuvo 3.4 s
+
+[ 254139 ms] TARJETA  UID=E46D94E5  (4 bytes)  tipo=MIFARE 1KB   #3
+[ 257939 ms] RETIRADA UID=E46D94E5  estuvo 3.8 s
+```
+
+Los tres criterios que importaban:
+
+- **La misma tarjeta dio el mismo UID las dos veces.** Es el punto central: el
+  UID es la clave primaria de todo el sistema. Si bailara, no hay cuenta que
+  cierre.
+- **Dos objetos distintos dieron UIDs distintos.**
+- **Detecta apoyar y retirar**, con el tiempo que estuvo. Retirar la tarjeta es
+  lo que en el sistema final liquida la sesión y cobra.
+
+### UIDs reales del proyecto
+
+| Objeto | UID | Tipo |
+|---|---|---|
+| Tarjeta | `61FB7A54` | MIFARE 1KB, 4 bytes |
+| Llavero | `E46D94E5` | MIFARE 1KB, 4 bytes |
+
+Sirven para dar de alta tarjetas de prueba en Supabase sin inventar UIDs.
+
+### Lo que quedó confirmado además
+
+- **La placa no se resetea.** Los timestamps corren por los 140 y 254 segundos
+  sin volver a cero. La basura que aparece al abrir el monitor es el mensaje del
+  bootloader a 74880 baud, no un boot loop.
+- **No hace falta leer la versión del chip si el lector lee.** Un módulo muerto
+  no puede devolver un UID. El chequeo de versión sirve para diagnosticar cuando
+  NO anda, no para confirmar que anda.
+
+---
+
 ## Si no anda
 
 **Versión `0x00` o `0xFF`** → el módulo no contesta. Por orden de probabilidad:

@@ -14,8 +14,8 @@ YF-S201C · válvula solenoide 12V vía módulo relé
 
 | | |
 |---|---|
-| **Última etapa aceptada** | ✅ 1 — Blink (LED parpadeando + Serial a 115200, verificado en placa) |
-| **Etapa en curso** | 2 — Lector RFID (a la espera de la prueba en placa) |
+| **Última etapa aceptada** | ✅ 2 — Lector RFID (UID leído y retirada detectada, verificado en placa) |
+| **Próxima etapa** | 3 — Caudalímetro |
 | **En paralelo** | ✅ backend de Supabase verificado punta a punta sobre HTTP |
 | **App de gestión** | ✅ caja, panel, tarjetas, canillas, reportes y personal · costo y ganancia · modo claro/oscuro |
 | **Pantalla de canilla** | ✅ kiosco web por canilla, se vincula por QR con el token del grifo |
@@ -37,6 +37,8 @@ Confirmados al flashear la etapa 1:
 | Flash | 4 MB |
 | MAC | `20:50:0D:D1:CC:3C` |
 | Puerto (Debian) | `/dev/ttyUSB0` (conversor CP2102) |
+| UID de la tarjeta | `61FB7A54` (MIFARE 1KB) |
+| UID del llavero | `E46D94E5` (MIFARE 1KB) |
 
 ⚠️ **Esta placa necesita `upload_speed = 115200`.** Con el default de esptool
 (460800) el flasheo muere después del `Changing baud rate`. Ya está fijado en

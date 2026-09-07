@@ -9,9 +9,9 @@ sistema. Por eso el relé va cuarto y no segundo.
 | # | Etapa | Hardware que necesita | Estado |
 |---|---|---|---|
 | 1 | Blink | solo cable USB | ✅ **aceptada** |
-| 2 | Lector RFID solo | ✅ cables dupont | 🔵 **en curso** |
-| 3 | Caudalímetro solo | ✅ cables dupont | pendiente |
-| 4 | Relé solo | ✅ módulo relé | pendiente |
+| 2 | Lector RFID solo | ✅ | ✅ **aceptada** |
+| 3 | Caudalímetro solo | ✅ | 🔵 próxima |
+| 4 | Relé solo | ✅ | pendiente |
 | 5 | Los tres juntos, sin red | — | pendiente |
 | 6 | Supabase + cola offline | — | pendiente |
 | 7 | Calibración con agua | probeta, agua | pendiente |
@@ -39,6 +39,12 @@ fábrica, bastante común en los MFRC522 baratos.
 el UID en hexa, retirándola se ve `RETIRADA`, y la misma tarjeta da siempre el
 mismo UID.
 **Detalle:** [`etapa-02-rfid.md`](etapa-02-rfid.md)
+
+✅ **ACEPTADA.** Tarjeta `61FB7A54` y llavero `E46D94E5`, los dos MIFARE 1KB,
+leídos y retirados repetidamente en la placa. Lo que dejó de aprendizaje: este
+ESP32 **no se puede clavar en el protoboard** (sus pines vienen cortos y no
+hacen contacto), así que el banco de pruebas va con las dos plaquitas sueltas y
+dos cables macho-hembra por conexión.
 
 ## Etapa 3 — Caudalímetro solo
 **Necesita:** el caudalímetro y una resistencia de 10k. Antes hay que medir con el tester
