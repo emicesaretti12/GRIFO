@@ -201,6 +201,42 @@ circuito de potencia que nunca pasa por la placa.
 **Analogía.** Tu servidor web no procesa el video: encola un job y lo procesa
 otra máquina con la CPU para eso. El ESP32 encola, la fuente de 12V hace fuerza.
 
+### La válvula del proyecto: FPD-270A
+
+Impreso en la etiqueta: **DC 12V**, **0.02–0.8 MPa**.
+
+Lo de 12V confirma que va a la fuente de 12V junto con el relé, nunca al ESP32.
+
+Lo del rango de presión es lo que hay que tener presente, porque **no es una
+válvula que abra sola**: es asistida por presión. La bobina no levanta el
+diafragma a pulso, mueve un piloto y **es la presión del líquido la que termina
+de abrirla**. Sin presión mínima, aunque el relé haga clic, no pasa nada.
+
+| | En MPa | En bar | En psi |
+|---|---|---|---|
+| Presión **mínima** para abrir | 0.02 | 0.2 | 2.9 |
+| Presión máxima | 0.8 | 8 | 116 |
+
+- **Un barril con CO2** anda entre 0.7 y 1.0 bar. Sobra.
+- **La canilla de la pared** anda entre 2 y 4 bar. Sobra.
+- **Un balde en alto por gravedad NO alcanza.** 0.2 bar son unos **2 metros de
+  columna de agua**. Un bidón sobre la mesa da centímetros, no metros.
+
+**Consecuencia para la etapa 7:** la calibración con agua se hace conectando la
+válvula a la **canilla de agua de red**, no a un recipiente elevado. Si no, la
+válvula no abre, y el síntoma —relé que clickea y nada que sale— se confunde
+enseguida con un problema de cableado o de firmware que no existe.
+
+### Confirmar que la válvula es NC (normalmente cerrada)
+
+**NC** significa que sin corriente está **cerrada**. Es la única opción
+aceptable: si se corta la luz o se cuelga el ESP32, la cerveza tiene que dejar
+de salir, no empezar.
+
+Se verifica sin conectar nada: **soplar por la entrada de la válvula, sin
+alimentar**. Si no pasa aire, es NC. Si pasa, es NO y **no sirve para este
+proyecto**.
+
 ---
 
 ### 6. El relé que llegó es de 12V, no de 5V

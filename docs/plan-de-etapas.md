@@ -86,6 +86,10 @@ Ver [`backend-supabase.md`](backend-supabase.md). Falta la parte del firmware:
 `tareaRed`, el cliente HTTP y la cola en NVS.
 
 ## Etapa 7 — Calibración con agua
+**Necesita:** probeta y **agua de la canilla de red**, no un recipiente elevado.
+La válvula FPD-270A necesita 0.02 MPa (0.2 bar ≈ 2 m de columna de agua) para
+abrir, así que por gravedad desde un bidón no abre. Ver
+[`pinout-y-trampas.md`](pinout-y-trampas.md).
 **Objetivo:** sketch aparte para medir el factor `pulsos_por_litro`. Se sirve un
 litro medido con probeta y se calcula. Se guarda en NVS.
 **Se acepta cuando:** sirviendo 500 ml de agua el sistema reporta 500 ml ±2%.
