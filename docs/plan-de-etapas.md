@@ -10,7 +10,7 @@ sistema. Por eso el relé va cuarto y no segundo.
 |---|---|---|---|
 | 1 | Blink | solo cable USB | ✅ **aceptada** |
 | 2 | Lector RFID solo | ✅ | ✅ **aceptada** |
-| 3 | Caudalímetro solo | ✅ | 🔵 próxima |
+| 3 | Caudalímetro solo | ✅ | 🔵 **en curso** |
 | 4 | Relé solo | ✅ | pendiente |
 | 5 | Los tres juntos, sin red | — | pendiente |
 | 6 | Supabase + cola offline | — | pendiente |
@@ -55,6 +55,11 @@ ISR) y filtro de glitch. Imprime pulsos acumulados y pulsos por segundo.
 **Se acepta cuando:** soplando el sensor el contador sube, y quieto no sube nada.
 Eso último es lo que confirma que el pull-up está bien puesto y que no está
 entrando ruido.
+**Detalle:** [`etapa-03-caudalimetro.md`](etapa-03-caudalimetro.md)
+
+Medido en el sensor del proyecto: con el amarillo suelto y el sensor alimentado
+a 5 V, el amarillo da **1,28 V** — está flotando, **no trae pull-up interno**.
+Va la resistencia externa de 10k a 3,3 V.
 
 ## Etapa 4 — Relé solo
 **Necesita:** el módulo relé (llegó un **SRD-12VDC-SL-C**, de 12V y no de
