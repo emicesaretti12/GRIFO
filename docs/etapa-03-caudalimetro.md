@@ -1,7 +1,7 @@
 # Etapa 3 — Caudalímetro solo
 
-**Necesita:** el caudalímetro YF-S201C, una resistencia de **10k**, el
-protoboard y cuatro cables macho-hembra.
+**Necesita:** el caudalímetro YF-S201C y tres cables macho-hembra. **No hace
+falta ningún componente extra** — ver *De dónde sale el pull-up*.
 
 **No conectes el relé ni la válvula.** Esta etapa mide pulsos, nada más. Ni
 siquiera hace falta que pase líquido: se prueba soplando.
@@ -23,16 +23,46 @@ mucho.
 > pull-up es el `?? 1` que le falta: el valor por defecto para cuando la función
 > no devuelve nada.
 
-La resistencia de 10k conecta ese cable a **3,3 V** de forma suave. Cuando el
-sensor lo suelta, sube a 3,3 V; cuando el sensor lo agarra, gana el sensor y baja
-a 0 V. La señal deja de ser ambigua.
+El pull-up conecta ese cable a **3,3 V** de forma suave. Cuando el sensor lo
+suelta, sube a 3,3 V; cuando el sensor lo agarra, gana el sensor y baja a 0 V.
+La señal deja de ser ambigua.
 
 **Va a 3,3 V y no a 5 V a propósito:** así la señal nunca puede superar lo que
 tolera un pin del ESP32, pase lo que pase.
 
-Sin la resistencia el contador **sube solo, con el sensor quieto**. Y en este
-sistema un pulso fantasma es cerveza que le cobrás a un cliente y que nunca
-salió del barril.
+Sin pull-up el contador **sube solo, con el sensor quieto**. Y en este sistema un
+pulso fantasma es cerveza que le cobrás a un cliente y que nunca salió del
+barril.
+
+## De dónde sale el pull-up
+
+Hay dos formas, y no compiten: sirven para momentos distintos. La elige la
+constante `PULLUP_INTERNO` arriba del sketch.
+
+| | Banco de pruebas | Instalación en la canilla |
+|---|---|---|
+| **Cuál** | pull-up **interno** del ESP32 | **externo**: 10k a 3.3V, o el conversor de niveles |
+| **Fuerza** | ~45 kΩ (débil) | ~10 kΩ (firme) |
+| **Componentes** | ninguno | una resistencia, o un módulo soldado |
+| `PULLUP_INTERNO` | `true` | `false` |
+
+Para **aceptar esta etapa alcanza el interno**: son 20 cm de cable sobre una
+mesa. Va en `true`, que es como viene el sketch, y no hace falta conectar nada
+más que los tres cables del sensor.
+
+Para la **canilla** hay que pasarlo a `false` y poner el pull-up externo. Un
+metro de cable rodeado de heladeras y motores es otro problema: 45 kΩ es una
+fuerza muy débil y el ruido gana.
+
+> Cuanto más débil el pull-up, menos corriente consume, pero más fácil le
+> resulta al ruido torcer la señal. Es el mismo compromiso que elegir un timeout
+> corto o largo.
+
+**El conversor de niveles sirve para esto y es mejor que la resistencia
+suelta**: trae los 10k adentro (los componentes marcados `103`) y además impide
+que la señal supere los 3,3 V pase lo que pase. Se cablea `HV`→`5V`,
+`LV`→`3V3`, `GND`→`GND`, `HV1`→amarillo del sensor, `LV1`→`P27`, y **sin
+ninguna resistencia suelta**.
 
 ### Verificado en el sensor del proyecto
 
@@ -53,26 +83,20 @@ posiciones** con la misma separación que los dupont, así que los pinchitos
 entran directo. Para saber cuál es cuál, seguí el color del cable hasta el
 agujero por donde entra.
 
+Con `PULLUP_INTERNO = true` son **tres cables y nada más**:
+
 | Caudalímetro | → | Dónde |
 |---|---|---|
 | **rojo** | → | pin `5V` del ESP32 |
 | **negro** | → | pin `GND` del ESP32 |
-| **amarillo** | → | una fila libre del protoboard (digamos la **20**) |
-
-Y después:
-
-| Desde | → | Hasta |
-|---|---|---|
-| resistencia de 10k, una pata | → | fila **20** (con el amarillo) |
-| resistencia de 10k, otra pata | → | fila **25** (o cualquier otra libre) |
-| cable | → | de la fila **25** al pin `3V3` del ESP32 |
-| cable | → | de la fila **20** al pin `P27` del ESP32 |
+| **amarillo** | → | pin `P27` del ESP32 |
 
 El `5V` acá **sí** es el correcto: el caudalímetro se alimenta con 5 V. Es el
 lector RFID el que va a 3,3 V.
 
-**La resistencia de 10k** tiene las bandas marrón · negro · naranja, más una
-dorada al final.
+Y no hay riesgo de meterle 5 V a la pata: ya está medido que el sensor **no
+trae pull-up interno**, así que el amarillo nunca sube por encima de los 3,3 V
+que le pone el ESP32.
 
 ---
 
@@ -196,9 +220,9 @@ distingue "todo bien" de "la placa se colgó".
 
 ## Si no anda
 
-**El contador sube solo con el sensor quieto** → falta la resistencia de 10k, o
-está mal puesta. Revisá que una pata comparta fila con el cable amarillo y la
-otra llegue al `3V3`.
+**El contador sube solo con el sensor quieto** → falta el pull-up. Con
+`PULLUP_INTERNO = true` no debería pasar; si pasa igual, el cable de señal está
+tomando ruido y conviene pasar al pull-up externo.
 
 **Soplando no sube nada** → seguí el amarillo hasta el `P27`. Y probá soplar más
 fuerte: la turbina necesita un empujón para arrancar.

@@ -22,8 +22,8 @@
 //     negro  (GND)  →  GND
 //     amarillo      →  GPIO 27
 //
-//     Y una resistencia de 10k entre el AMARILLO y 3V3.
-//     Sin esa resistencia el conteo no sirve — ver abajo.
+//     Y el pull-up de la señal, que puede ser de dos formas — ver
+//     PULLUP_INTERNO acá abajo. Sin pull-up el conteo no sirve.
 // ═════════════════════════════════════════════════════════════════════════════
 
 #include <Arduino.h>
@@ -51,6 +51,25 @@ static const uint16_t FILTRO_CICLOS = 1023;
 // La calibración real se mide con probeta: dos sensores del mismo modelo pueden
 // diferir varios por ciento, y ese porcentaje es plata.
 static const float PULSOS_POR_LITRO_NOMINAL = 450.0f;
+
+// ── De dónde sale el pull-up de la señal ────────────────────────────────────
+// El caudalímetro es colector abierto: solo sabe llevar el cable a masa o
+// soltarlo. Cuando lo suelta, algo tiene que fijarlo en alto o queda flotando,
+// leyendo ruido. Hay dos formas de hacerlo y cambian según dónde esté montado.
+//
+//   true  → pull-up INTERNO del ESP32, ~45 kΩ. No necesita ningún componente.
+//           Alcanza de sobra para el banco de pruebas: 20 cm de cable sobre una
+//           mesa. Es lo que conviene para aceptar esta etapa.
+//
+//   false → pull-up EXTERNO: una resistencia de 10 kΩ a 3.3 V, o un conversor
+//           de niveles (que ya las trae adentro). Es lo que va en la canilla:
+//           45 kΩ es una fuerza muy débil para un cable de un metro rodeado de
+//           heladeras y motores, que es donde el ruido gana.
+//
+// Los 45 kΩ del interno no son un capricho del fabricante: cuanto más débil el
+// pull-up, menos corriente consume, pero más fácil le resulta al ruido torcer
+// la señal. Es el mismo compromiso que un timeout corto o largo.
+static const bool PULLUP_INTERNO = true;
 
 static volatile uint32_t desbordes = 0;
 
@@ -89,12 +108,8 @@ void setup() {
   Serial.println(" GRIFO DE CERVEZA - ETAPA 3: CAUDALIMETRO");
   Serial.println("=============================================");
 
-  // El pull-up lo pone la resistencia externa de 10k a 3.3V, NO el interno del
-  // ESP32. A propósito: el interno son ~45k, demasiado débil para un cable de
-  // un metro en un bar lleno de motores y heladeras. Y además, dejándolo
-  // apagado, si te olvidás la resistencia el contador se dispara solo — que es
-  // exactamente el síntoma que esta etapa tiene que poder detectar.
-  gpio_set_pull_mode(PIN_CAUDAL, GPIO_FLOATING);
+  gpio_set_pull_mode(PIN_CAUDAL,
+                     PULLUP_INTERNO ? GPIO_PULLUP_ONLY : GPIO_FLOATING);
 
   pcnt_config_t cfg = {};
   cfg.pulse_gpio_num = PIN_CAUDAL;
@@ -125,6 +140,14 @@ void setup() {
                 FILTRO_CICLOS, FILTRO_CICLOS / 80.0);
   Serial.printf("Factor provisional: %.0f pulsos/litro (se calibra en la etapa 7)\n",
                 PULSOS_POR_LITRO_NOMINAL);
+  if (PULLUP_INTERNO) {
+    Serial.println("Pull-up           : INTERNO (~45k) - solo banco de pruebas");
+    Serial.println("                    Para la canilla va externo: 10k a 3.3V");
+    Serial.println("                    o el conversor de niveles.");
+  } else {
+    Serial.println("Pull-up           : EXTERNO - tiene que estar la resistencia");
+    Serial.println("                    de 10k entre la senal y 3.3V.");
+  }
   Serial.println("---------------------------------------------");
   Serial.println("Con el sensor QUIETO, la columna pulsos NO se");
   Serial.println("tiene que mover. Si sube sola, falta el pull-up.");
