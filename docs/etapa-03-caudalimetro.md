@@ -46,9 +46,13 @@ constante `PULLUP_INTERNO` arriba del sketch.
 | **Componentes** | ninguno | una resistencia, o un módulo soldado |
 | `PULLUP_INTERNO` | `true` | `false` |
 
-Para **aceptar esta etapa alcanza el interno**: son 20 cm de cable sobre una
-mesa. Va en `true`, que es como viene el sketch, y no hace falta conectar nada
-más que los tres cables del sensor.
+Para **aceptar esta etapa alcanzaría el interno**: son 20 cm de cable sobre una
+mesa, y con `PULLUP_INTERNO = true` se prueba sin conectar ningún componente.
+
+**El sketch viene en `false`** porque el proyecto ya tiene el conversor de
+niveles soldado, y es preferible probar desde el principio el mismo circuito que
+va a quedar montado. Cada diferencia entre el banco y la instalación es un lugar
+donde puede aparecer un problema que en el banco no se ve.
 
 Para la **canilla** hay que pasarlo a `false` y poner el pull-up externo. Un
 metro de cable rodeado de heladeras y motores es otro problema: 45 kΩ es una
@@ -83,20 +87,31 @@ posiciones** con la misma separación que los dupont, así que los pinchitos
 entran directo. Para saber cuál es cuál, seguí el color del cable hasta el
 agujero por donde entra.
 
-Con `PULLUP_INTERNO = true` son **tres cables y nada más**:
+### Con el conversor de niveles (`PULLUP_INTERNO = false`)
 
-| Caudalímetro | → | Dónde |
-|---|---|---|
-| **rojo** | → | pin `5V` del ESP32 |
-| **negro** | → | pin `GND` del ESP32 |
-| **amarillo** | → | pin `P27` del ESP32 |
+El conversor va clavado en el protoboard, **a caballo del canal**: una fila de
+sus pines de cada lado. La fila `HV…` queda de un lado y la `LV…` del otro.
 
-El `5V` acá **sí** es el correcto: el caudalímetro se alimenta con 5 V. Es el
+Los pines de cada fila están, en orden: `1 · 2 · (H/L)V · GND · 3 · 4`. O sea que
+el tercero es la alimentación de ese lado y el cuarto es GND.
+
+| Qué se une | Con qué |
+|---|---|
+| `HV` del conversor ←→ pin `5V` del ESP32 | macho-hembra |
+| `HV` del conversor ←→ **rojo** del caudalímetro | macho-macho |
+| `LV` del conversor ←→ la fila que ya lleva 3,3 V | macho-macho |
+| `GND` del conversor ←→ una fila que ya lleva GND | macho-macho |
+| `HV1` del conversor ←→ **amarillo** del caudalímetro | macho-macho |
+| `LV1` del conversor ←→ pin `P27` del ESP32 | macho-hembra |
+| **negro** del caudalímetro ←→ pin `GND` del ESP32 | macho-hembra |
+
+La fila `HV` del conversor hace de barra de 5 V: ahí se encuentran la
+alimentación que viene del ESP32 y el cable rojo del sensor. No hace falta una
+fila aparte para eso.
+
+El `5V` acá **sí** es el correcto: el caudalímetro se alimenta con 5 V, y el
+conversor existe justamente para que esos 5 V no lleguen nunca al ESP32. Es el
 lector RFID el que va a 3,3 V.
-
-Y no hay riesgo de meterle 5 V a la pata: ya está medido que el sensor **no
-trae pull-up interno**, así que el amarillo nunca sube por encima de los 3,3 V
-que le pone el ESP32.
 
 ---
 

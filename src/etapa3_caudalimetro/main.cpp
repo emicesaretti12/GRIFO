@@ -69,7 +69,7 @@ static const float PULSOS_POR_LITRO_NOMINAL = 450.0f;
 // Los 45 kΩ del interno no son un capricho del fabricante: cuanto más débil el
 // pull-up, menos corriente consume, pero más fácil le resulta al ruido torcer
 // la señal. Es el mismo compromiso que un timeout corto o largo.
-static const bool PULLUP_INTERNO = true;
+static const bool PULLUP_INTERNO = false;
 
 static volatile uint32_t desbordes = 0;
 
