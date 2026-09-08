@@ -33,7 +33,7 @@ Detalle con las posiciones contadas desde el USB en
 | MFRC522 | MOSI | 23 | |
 | MFRC522 | MISO | 19 | |
 | MFRC522 | RST | 22 | alimentación **3.3V**, no 5V |
-| Relé | IN | 26 | **activo en LOW** · bobina de 12V, ver trampa 6 |
+| Relé | IN | 26 | **activo en ALTO** · bobina de 12V, jumper en `H`, ver trampa 6 |
 | Caudalímetro | señal (amarillo) | 27 | pull-up 10k a 3.3V |
 | Pulsador | — | 14 | a GND, pull-up interno |
 | LED estado | — | 2 | opcional (es el LED de la placa) |
@@ -66,9 +66,16 @@ girar: contás burbujas como si fueran cerveza y le cobrás espuma al cliente.
 **El problema.** Entre que la placa arranca y que tu código llega a
 `pinMode(PIN_RELE, OUTPUT)`, el GPIO26 no está manejado por nadie: está
 *flotante*. Un pin flotante no vale 0 ni 1 — vale lo que le dicte el ruido
-eléctrico del ambiente, y a menudo se queda cerca de 0V. Como el relé es activo
-en LOW, "cerca de 0V" significa **relé activado, válvula abierta**. En cada
-reset, en cada bajón de tensión del bar, chorro de cerveza al piso.
+eléctrico del ambiente, y a menudo se queda cerca de 0V.
+
+Con un relé **activo en LOW**, "cerca de 0V" significaría **relé activado,
+válvula abierta**: en cada reset, en cada bajón de tensión del bar, chorro de
+cerveza al piso. Por eso este proyecto pasó a **activo en ALTO** (trampa 2), y
+ese mismo "cerca de 0V" pasó a significar válvula cerrada.
+
+La trampa queda documentada igual, y el orden de inicialización se respeta lo
+mismo: si alguna vez hay que volver a activo en bajo, el código ya está bien
+escrito y no hay que acordarse de nada.
 
 **Analogía.** Es leer una variable antes de inicializarla. No te da `undefined`
 prolijo: te da basura de memoria. Y acá justo la basura más probable coincide con
@@ -94,10 +101,20 @@ hacer clic durante el arranque.
 
 ---
 
-### 2. Lógica invertida: el relé es activo en LOW
+### 2. El nivel activo, y por qué dejó de estar invertido
 
-`LOW` → relé activado → **válvula abierta**
-`HIGH` → relé en reposo → **válvula cerrada**
+**Este proyecto usa activo en ALTO**, con el jumper del módulo en `H`:
+
+`HIGH` → relé activado → **válvula abierta**
+`LOW` → relé en reposo → **válvula cerrada**
+
+El plan original decía activo en LOW, porque asumía un módulo de 5 V. El que
+llegó es de 12 V, y en modo activo-bajo su pin `IN` queda conectado por una
+resistencia a `DC+` —12 voltios— que rompería la pata del ESP32.
+
+Que además el estado seguro haya pasado a ser el valor por defecto de un pin
+flotante es la mejor consecuencia del cambio, y desactiva casi por completo la
+trampa 1. Detalle en [`etapa-04-rele.md`](etapa-04-rele.md).
 
 **Analogía.** Es un flag que se llama `disabled` en vez de `enabled`. Todo se lee
 al revés, y lo peor es que el valor por defecto (0 / falso / LOW) es justo el

@@ -15,7 +15,7 @@ YF-S201C · válvula solenoide 12V vía módulo relé
 | | |
 |---|---|
 | **Última etapa aceptada** | ✅ 3 — Caudalímetro (cuenta pulsos con el PCNT, verificado en placa) |
-| **Próxima etapa** | 4 — Relé |
+| **Etapa en curso** | 4 — Relé (a la espera de la prueba en placa) |
 | **En paralelo** | ✅ backend de Supabase verificado punta a punta sobre HTTP |
 | **App de gestión** | ✅ caja, panel, tarjetas, canillas, reportes y personal · costo y ganancia · modo claro/oscuro |
 | **Ciclo de la tarjeta** | ✅ entregar con el nombre del cliente → cargar → servir → devolver y liberar |
@@ -109,6 +109,7 @@ src/
   etapa1_blink/main.cpp     etapa 1 — blink + info del chip
   etapa2_rfid/main.cpp      etapa 2 — lee el UID y detecta cuando retiran la tarjeta
   etapa3_caudalimetro/main.cpp  etapa 3 — cuenta pulsos con el periferico PCNT
+  etapa4_rele/main.cpp      etapa 4 — el rele, y que no se active al arrancar
 app/                        app de gestión + pantallas de canilla (React + Vite + TS)
   src/pantallas/            caja, panel, tarjetas, canillas, barriles, cierre de caja, reportes, personal
   src/pantalla/             kiosco de canilla y su fondo animado en canvas
@@ -139,6 +140,7 @@ docs/
   etapa-01-blink.md         cableado y qué esperar en esta etapa
   etapa-02-rfid.md          cableado del MFRC522 y por qué el sketch hace lo que hace
   etapa-03-caudalimetro.md  el pull-up, el PCNT y por qué el contador no debe moverse quieto
+  etapa-04-rele.md          por qué pasamos a activo en alto y el silencio al arrancar
   setup-linux.md            paso a paso completo en Linux, de cero a flashear
   troubleshooting-flasheo.md  cuando no flashea
   backend-supabase.md       backend: aplicar, probar, decisiones de diseño
@@ -172,7 +174,9 @@ y después volvés.
 Estas no se negocian — si alguna se rompe hay cerveza en el piso o plata mal
 cobrada. Detalle completo en [`docs/pinout-y-trampas.md`](docs/pinout-y-trampas.md).
 
-- **El relé es activo en LOW.** `LOW` abre la válvula, `HIGH` la cierra.
+- **El relé es activo en ALTO.** `HIGH` abre la válvula, `LOW` la cierra. Cambió
+  respecto del plan original: el módulo que llegó es de 12 V y en modo activo-bajo
+  su pin `IN` expondría 12 V a una pata del ESP32. Ver `docs/etapa-04-rele.md`.
 - **La tirada se corta localmente.** El ESP32 calcula el techo de pulsos al abrir
   la sesión y corta comparando enteros. Ninguna decisión durante la tirada
   depende de la red.

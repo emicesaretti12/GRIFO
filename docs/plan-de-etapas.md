@@ -11,7 +11,7 @@ sistema. Por eso el relé va cuarto y no segundo.
 | 1 | Blink | solo cable USB | ✅ **aceptada** |
 | 2 | Lector RFID solo | ✅ | ✅ **aceptada** |
 | 3 | Caudalímetro solo | ✅ | ✅ **aceptada** |
-| 4 | Relé solo | ✅ | 🔵 próxima |
+| 4 | Relé solo | ✅ | 🔵 **en curso** |
 | 5 | Los tres juntos, sin red | — | pendiente |
 | 6 | Supabase + cola offline | — | pendiente |
 | 7 | Calibración con agua | probeta, agua | pendiente |
@@ -72,6 +72,13 @@ cortó el conector y se soldaron los tres cables.
 5V: se alimenta de la fuente de 12V, no del ESP32) y la fuente de 12V.
 **Objetivo:** solo GPIO26, un clic por segundo, con el orden de inicialización
 correcto. Sin válvula conectada todavía.
+**Detalle:** [`etapa-04-rele.md`](etapa-04-rele.md)
+
+⚠️ **Cambió el nivel activo respecto del plan original.** Con el módulo de 12 V
+que llegó, el jumper va en **`H` (activo en alto)**: en `L` el pin `IN` queda
+conectado por una resistencia a los 12 V de `DC+`, y un pin del ESP32 tolera
+3,3. De yapa, activo en alto hace que el estado por defecto de un pin flotante
+—cerca de 0 V— sea la válvula **cerrada**.
 **Se acepta cuando:** se escucha el clic, y **al resetear la placa el relé NO se
 activa durante el arranque**. Ese segundo punto es el que importa de verdad — ver
 la trampa del pin flotante en [`pinout-y-trampas.md`](pinout-y-trampas.md).
