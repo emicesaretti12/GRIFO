@@ -149,6 +149,58 @@ herramientas) la primera vez: son unos cientos de MB. Después queda cacheado en
 
 ---
 
+## Basura repitiéndose en loop: la placa se resetea sin parar
+
+Se reconoce porque el mismo bloque de caracteres ilegibles aparece una y otra
+vez, cada uno o dos segundos:
+
+```
+��|pppppp��
+||�||��pp
+|�pp�p�ppppp|�����p����p�
+
+��|pppppp��
+||�||��pp
+...
+```
+
+Eso es el mensaje del bootloader del ESP32 (que sale a 74880 baud, por eso se
+lee como basura a 115200). Sale **una vez por arranque**. Si se repite, la placa
+está arrancando en loop.
+
+**Cómo distinguirlo de un crash de nuestro programa.** Si el firmware se cae, el
+ESP32 imprime un panic legible a 115200 antes de reiniciar. Si no hay ni una
+línea legible, el problema está **antes** de nuestro código.
+
+### La causa más probable no es el hardware
+
+El síntoma es idéntico al de un cortocircuito —y por eso se pierde mucho tiempo
+desconectando cables— pero en este proyecto la causa real fue una **escritura de
+flash que quedó a medias**. La placa arrancaba, encontraba el firmware corrupto
+y se reiniciaba.
+
+**Se arregla volviendo a grabar.** No hace falta desconectar nada:
+
+```bash
+pio run -e etapa1_blink -t upload      # el programa mas simple, como prueba
+pio device monitor -b 115200
+```
+
+Si con el blink arranca y el LED parpadea, la placa está sana y el problema era
+el firmware anterior. Volvé a grabar la etapa que estabas probando y listo.
+
+### El orden de diagnóstico que conviene
+
+1. **Reflashear con la etapa 1.** Es lo más rápido y descarta lo más común.
+2. Si con la etapa 1 sigue en loop, **desconectar todo** y dejar la placa
+   desnuda con solo el USB.
+3. Si desnuda sigue en loop, **probar otro puerto USB y otro cable**.
+
+Se hizo al revés —desconectar todo primero— y costó una hora. El paso 1 son
+treinta segundos.
+
+---
+
 ## La placa se resetea sola o parpadea raro
 
 Si pasa **con solo el USB conectado**, suele ser alimentación insuficiente: un
