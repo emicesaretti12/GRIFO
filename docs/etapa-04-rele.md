@@ -37,7 +37,32 @@ estado seguro. Sin corriente, sin código corriendo, sin nada: válvula cerrada.
 > inicializar— es justo el peligroso. Conviene que el default sea el estado que
 > no rompe nada.
 
-**Poné el jumper en `H`.**
+**Poné el jumper en `H`** — y verificalo con el tester, no con la vista.
+
+### El módulo viene de fábrica en `L` — hay que verificarlo, no mirarlo
+
+En el módulo de este proyecto el jumper venía puesto en **`L`**, la posición
+peligrosa. Y la posición no se puede determinar mirando: el capuchón es
+diminuto, tapa dos de tres pines, y las letras están impresas al borde.
+
+**Se mide, y se mide ANTES de conectar el `IN` al ESP32.**
+
+1. Conectar **solo** el cargador de 12V a `DC+` y `DC-`. El `IN` vacío, nada al
+   ESP32.
+2. Enchufar el 12V.
+3. Tester en `20` V continuos: punta negra en el tornillo `DC-`, punta roja en
+   el tornillo `IN`.
+
+| Lectura | Posición | Qué hacer |
+|---|---|---|
+| **~0 V** | `H` ✅ | Seguro. Conectar el `IN` al `P26`. |
+| **~5 o ~12 V** | `L` ❌ | **No conectar nada al ESP32.** Desenchufar, correr el capuchón un lugar, y volver a medir. |
+
+Esa es exactamente la diferencia entre las dos posiciones: en `L` el `IN` está
+enganchado a `DC+` por una resistencia; en `H` está suelto, esperando que el
+ESP32 le meta señal.
+
+Medido en el módulo del proyecto: **12 V en `L`, 0 V en `H`**.
 
 ### El riesgo que hay que medir
 
