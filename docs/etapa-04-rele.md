@@ -64,12 +64,71 @@ ESP32 le meta señal.
 
 Medido en el módulo del proyecto: **12 V en `L`, 0 V en `H`**.
 
-### El riesgo que hay que medir
+### Y efectivamente: 3,3 V no alcanzan
 
-3,3 V puede quedar corto para el optoacoplador de un módulo pensado para 12 V.
-Si con la señal en alto el relé no llega a activarse, hay dos salidas —
-alimentar el lado lógico con 5 V, o interponer un transistor y usar `L`. Se
-decide **en esta etapa**, escuchando si el relé clickea o no.
+Medido en el módulo del proyecto. Con el jumper en `H` y el `IN` conectado al
+`P26`, el pin **alterna limpio entre 0 y 3,4 V** —la señal llega perfecta— y
+**el relé no se mueve**. Un solo clic al aparecer los 12 V, que es la bobina
+asentándose, y después nada.
+
+El optoacoplador de este módulo está dimensionado para lógica de 5 V. Con 3,3
+la corriente por el LED interno queda por debajo de lo que necesita para
+conducir.
+
+**No hay firmware que arregle esto.** Es una incompatibilidad eléctrica entre un
+módulo de 5 V y una placa de 3,3.
+
+---
+
+## La solución: un transistor, y el jumper vuelve a `L`
+
+El transistor hace de amplificador: el ESP32 le da una señal minúscula a la
+base y el transistor conmuta la corriente de verdad, tomándola de los 12 V del
+propio módulo.
+
+> Es un adaptador de interfaz. El ESP32 no puede hablar el protocolo que el
+> relé escucha; el transistor traduce, sin que ninguno de los dos cambie.
+
+```
+   P26 ──[ 1k ]── base
+                        NPN (2N2222 / BC547 / S8050)
+   colector ── IN del relé
+   emisor   ── GND
+```
+
+Y el jumper del módulo vuelve a **`L`**.
+
+### Por qué `L` ahora sí es seguro
+
+En `L` el `IN` queda enganchado a los 12 V, que es lo que antes hacía imposible
+conectarlo al ESP32. Ahora **el ESP32 no toca el `IN`**: lo toca el colector del
+transistor, que aguanta esos 12 V sin problema. La placa solo ve su resistencia
+de base.
+
+| `P26` | Transistor | `IN` | Relé |
+|---|---|---|---|
+| `HIGH` | conduce | llevado a ~0 V | **activado** |
+| `LOW` | cortado | sube a 12 V | en reposo |
+
+### El firmware no cambia
+
+`NIVEL_ACTIVO` sigue en `HIGH`: la señal alta del ESP32 sigue significando
+válvula abierta. El transistor invierte, y el jumper en `L` invierte otra vez.
+Dos inversiones se cancelan.
+
+Y la propiedad que importa se conserva: al arrancar, el `P26` flotando queda
+cerca de 0 V, el transistor no conduce, el `IN` sube a 12 V y **el relé queda
+en reposo**. Válvula cerrada sin corriente, sin código, sin nada.
+
+### Lo que hay que comprar
+
+- **Un transistor NPN de uso general**: `2N2222`, `BC547`, `S8050`, `PN2222`.
+  Cualquiera sirve, cuestan monedas.
+- **Una resistencia de 1k** (marrón · negro · rojo). Entre 330 Ω y 4,7 k
+  funciona igual.
+
+Conviene llevar también unas **10k** de repuesto, que en este proyecto aparecen
+seguido.
 
 ---
 
@@ -156,9 +215,10 @@ Probá el reset **tres o cuatro veces**. Tiene que ser silencio las cuatro.
 
 ## Si no anda
 
-**No clickea nunca** → los 3,3 V no alcanzan para el optoacoplador. No es un
-error tuyo ni de cableado: es lo que veníamos a medir. Avisame y resolvemos con
-un transistor o alimentando el lado lógico con 5 V.
+**No clickea nunca** → es lo que pasó en este proyecto: los 3,3 V no alcanzan
+para el optoacoplador. Ver *La solución: un transistor*, más arriba. Antes de
+darlo por eso, confirmá con el tester que el `IN` alterna entre 0 y 3,3: si se
+queda fijo, el problema es de cableado y no de nivel.
 
 **Clickea pero queda zumbando o pegado** → el optoacoplador está conduciendo a
 medias. Mismo caso que el anterior, misma solución.
