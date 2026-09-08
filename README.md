@@ -14,8 +14,8 @@ YF-S201C · válvula solenoide 12V vía módulo relé
 
 | | |
 |---|---|
-| **Última etapa aceptada** | ✅ 2 — Lector RFID (UID leído y retirada detectada, verificado en placa) |
-| **Etapa en curso** | 3 — Caudalímetro (a la espera de la prueba en placa) |
+| **Última etapa aceptada** | ✅ 3 — Caudalímetro (cuenta pulsos con el PCNT, verificado en placa) |
+| **Próxima etapa** | 4 — Relé |
 | **En paralelo** | ✅ backend de Supabase verificado punta a punta sobre HTTP |
 | **App de gestión** | ✅ caja, panel, tarjetas, canillas, reportes y personal · costo y ganancia · modo claro/oscuro |
 | **Ciclo de la tarjeta** | ✅ entregar con el nombre del cliente → cargar → servir → devolver y liberar |

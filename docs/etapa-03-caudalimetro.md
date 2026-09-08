@@ -233,6 +233,73 @@ distingue "todo bien" de "la placa se colgó".
 
 ---
 
+## Resultado ✅ ACEPTADA
+
+Verificado en la placa:
+
+```
+[  56000 ms] quieto      pulsos=0
+[  57000 ms] pulsos=53        +53        53.0 p/s  ~118 ml   ~7.07 L/min
+[  58000 ms] pulsos=354       +301      301.0 p/s  ~787 ml   ~40.13 L/min
+[  59000 ms] pulsos=743       +389      389.0 p/s  ~1651 ml  ~51.87 L/min
+[  62000 ms] pulsos=1634      +268      268.0 p/s  ~3631 ml  ~35.73 L/min
+[  68000 ms] pulsos=2502      +20        20.0 p/s  ~5560 ml  ~2.67 L/min
+[  70000 ms] quieto      pulsos=2505
+[  88000 ms] quieto      pulsos=4458
+```
+
+Los tres criterios:
+
+- **Quieto no cuenta.** Ni un pulso fantasma en los 56 segundos previos.
+- **Soplando cuenta.**
+- **Al parar se queda clavado** en el número al que llegó, sin seguir subiendo.
+
+El primero es el que importa: un contador que suma con la canilla cerrada le
+cobra al cliente cerveza que nunca salió, y ese error no se nota hasta que la
+caja no cierra.
+
+### El margen del contador
+
+Soplando llegó a **495 pulsos por segundo**. A caudal máximo con agua el sensor
+da ~225, así que el PCNT tiene el doble del margen que va a necesitar. Los
+mililitros y litros por minuto de esas líneas no significan nada —están
+calculados con el factor nominal y sobre aire, no agua— pero la tasa de pulsos
+sí: no se perdió ninguno.
+
+---
+
+## Lo que costó: el conector del sensor
+
+El sensor no contaba **con la turbina girando perfecto**, que es un síntoma
+confuso porque parece un problema del sensor.
+
+Los tres cables del caudalímetro venían terminados en un **conector de 3
+posiciones**, y los pinchitos dupont entraban pero **no llegaban a tocar el
+metal adentro**. Entra, parece puesto, y no hace contacto — el mismo problema
+que el ESP32 con el protoboard.
+
+**Se resolvió cortando el conector y soldando los tres cables** directo a
+cables dupont. Dos detalles del empalme que conviene repetir:
+
+- **Escalonar los tres empalmes** a largos distintos (unos 2 cm entre cada uno),
+  así los puntos soldados quedan separados a lo largo del mazo y no pueden
+  tocarse entre sí ni aunque queden pelados. Es más confiable que confiar en el
+  aislante.
+- **Soldar y aislar de a un cable por vez.** Dos empalmes pelados que se tocan
+  son un corto de 5 V a masa, y el síntoma —la placa reiniciándose en loop— se
+  confunde con un problema de firmware.
+
+### Cómo se encontró
+
+La prueba que partió el problema al medio: **tocar `HV1` contra masa a mano**,
+con un cable, salteando el sensor. El contador subió, y eso probó de una que la
+cadena completa —conversor, `P27`, PCNT, filtro— funcionaba. Con eso, el único
+sospechoso que quedaba era el sensor o su conector.
+
+Vale más que revisar cable por cable: una prueba, media hipótesis descartada.
+
+---
+
 ## Si no anda
 
 **El contador sube solo con el sensor quieto** → falta el pull-up. Con

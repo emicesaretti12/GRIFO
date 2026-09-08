@@ -10,8 +10,8 @@ sistema. Por eso el relé va cuarto y no segundo.
 |---|---|---|---|
 | 1 | Blink | solo cable USB | ✅ **aceptada** |
 | 2 | Lector RFID solo | ✅ | ✅ **aceptada** |
-| 3 | Caudalímetro solo | ✅ | 🔵 **en curso** |
-| 4 | Relé solo | ✅ | pendiente |
+| 3 | Caudalímetro solo | ✅ | ✅ **aceptada** |
+| 4 | Relé solo | ✅ | 🔵 próxima |
 | 5 | Los tres juntos, sin red | — | pendiente |
 | 6 | Supabase + cola offline | — | pendiente |
 | 7 | Calibración con agua | probeta, agua | pendiente |
@@ -59,7 +59,13 @@ entrando ruido.
 
 Medido en el sensor del proyecto: con el amarillo suelto y el sensor alimentado
 a 5 V, el amarillo da **1,28 V** — está flotando, **no trae pull-up interno**.
-Va la resistencia externa de 10k a 3,3 V.
+El pull-up lo pone el conversor de niveles, que además impide que la señal
+supere los 3,3 V.
+
+✅ **ACEPTADA.** Quieto no cuenta ni un pulso; soplando llegó a 495 pulsos por
+segundo sin perder ninguno. Lo que costó: los pinchitos dupont **no hacían
+contacto dentro del conector del sensor**, con la turbina girando perfecto. Se
+cortó el conector y se soldaron los tres cables.
 
 ## Etapa 4 — Relé solo
 **Necesita:** el módulo relé (llegó un **SRD-12VDC-SL-C**, de 12V y no de
