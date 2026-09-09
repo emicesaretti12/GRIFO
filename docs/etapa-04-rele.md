@@ -7,128 +7,107 @@ etapa solo escucha el clic.
 
 ---
 
-## El cambio de diseño: pasamos a activo en ALTO
+## Cómo se comporta este módulo (medido, no leído)
 
-El plan original decía **activo en LOW**, porque asumía un módulo relé de 5 V.
-El que llegó es un **SRD-12VDC-SL-C**, y con 12 V la cuenta cambia.
+El módulo es un **SRD-12VDC-SL-C** con optoacoplador y un jumper marcado `H`/`L`.
+Las etiquetas no alcanzan para decidir nada: hubo que medirlo.
 
-Estos módulos traen un jumper **H/L** que elige con qué nivel se disparan. La
-diferencia no es de gusto:
+### Primero, el LED que confunde
 
-**En posición `L`**, el pin `IN` queda conectado por una resistencia a `DC+`,
-que acá son **12 voltios**. Un pin del ESP32 tolera 3,3. Conectarlo directo lo
-degrada hasta romperlo. Para usar `L` habría que interponer un transistor.
+El módulo tiene **dos LEDs**. Uno es de **alimentación** y está prendido siempre
+que hay 12 V, pase lo que pase. El otro, **rojo**, es el que indica que el relé
+está activado.
 
-**En posición `H`**, `IN` solo entrega corriente hacia el optoacoplador y nunca
-ve más de lo que le pone el ESP32. Seguro.
+Mirar el equivocado cuesta media hora: parece que el relé está trabado en
+activado cuando en realidad está en reposo.
 
-### Y de yapa desaparece la trampa del pin flotante
+**El indicador que no miente es el relé mismo.** Tester en `Ω`, escala `200`,
+puntas en los tornillos `COM` y `NO`:
 
-El plan original tenía una trampa documentada: entre que la placa arranca y que
-el código configura el pin, el GPIO26 está **flotando**, y un pin flotante
-tiende a quedar cerca de 0 V. Con activo en LOW, "cerca de 0 V" significaba
-**relé activado, válvula abierta**. En cada reset, chorro de cerveza al piso.
+| Lectura | Estado |
+|---|---|
+| `1` (circuito abierto) | relé **en reposo** |
+| `0` (cerrado) | relé **activado** |
 
-Con **activo en ALTO** eso se da vuelta: el estado por defecto pasa a ser el
-estado seguro. Sin corriente, sin código corriendo, sin nada: válvula cerrada.
+Una vez identificado el LED rojo, el clic y el LED rojo alcanzan.
 
-> Es la diferencia entre un flag que se llama `enabled` y uno que se llama
-> `disabled`. Con el segundo, el valor por defecto —`false`, `0`, sin
-> inicializar— es justo el peligroso. Conviene que el default sea el estado que
-> no rompe nada.
+### La tabla de verdad del módulo
 
-**Poné el jumper en `H`** — y verificalo con el tester, no con la vista.
+En la posición correcta del jumper, con `DC+`/`DC-` a los 12 V:
 
-### El módulo viene de fábrica en `L` — hay que verificarlo, no mirarlo
+| `IN` | Relé |
+|---|---|
+| **suelto**, sin conectar | **en reposo** ✅ |
+| a **masa** (`DC-`) | **activado** |
+| a **3,3 V** | activado |
+| a **5 V** | activado |
 
-En el módulo de este proyecto el jumper venía puesto en **`L`**, la posición
-peligrosa. Y la posición no se puede determinar mirando: el capuchón es
-diminuto, tapa dos de tres pines, y las letras están impresas al borde.
+Los dos últimos renglones son el problema: con `DC+` en 12 V, poner 3,3 V en el
+`IN` **no alcanza para cortar** la corriente del optoacoplador. Quedan 8,7 V
+sobre el LED interno y sigue conduciendo. El relé se activa y **no se suelta
+nunca**.
 
-**Se mide, y se mide ANTES de conectar el `IN` al ESP32.**
+Por eso conectar el `P26` directo al `IN` deja el relé trabado en activado,
+aunque el pin alterne limpio entre 0 y 3,4 V.
 
-1. Conectar **solo** el cargador de 12V a `DC+` y `DC-`. El `IN` vacío, nada al
-   ESP32.
-2. Enchufar el 12V.
-3. Tester en `20` V continuos: punta negra en el tornillo `DC-`, punta roja en
-   el tornillo `IN`.
+### Cómo identificar la posición correcta del jumper
 
-| Lectura | Posición | Qué hacer |
-|---|---|---|
-| **~0 V** | `H` ✅ | Seguro. Conectar el `IN` al `P26`. |
-| **~5 o ~12 V** | `L` ❌ | **No conectar nada al ESP32.** Desenchufar, correr el capuchón un lugar, y volver a medir. |
+No por la letra. Así:
 
-Esa es exactamente la diferencia entre las dos posiciones: en `L` el `IN` está
-enganchado a `DC+` por una resistencia; en `H` está suelto, esperando que el
-ESP32 le meta señal.
+1. `DC+` y `DC-` al cargador de 12V. El `IN` **vacío**.
+2. Mirar el **LED rojo**.
 
-Medido en el módulo del proyecto: **12 V en `L`, 0 V en `H`**.
-
-### Y efectivamente: 3,3 V no alcanzan
-
-Medido en el módulo del proyecto. Con el jumper en `H` y el `IN` conectado al
-`P26`, el pin **alterna limpio entre 0 y 3,4 V** —la señal llega perfecta— y
-**el relé no se mueve**. Un solo clic al aparecer los 12 V, que es la bobina
-asentándose, y después nada.
-
-El optoacoplador de este módulo está dimensionado para lógica de 5 V. Con 3,3
-la corriente por el LED interno queda por debajo de lo que necesita para
-conducir.
-
-**No hay firmware que arregle esto.** Es una incompatibilidad eléctrica entre un
-módulo de 5 V y una placa de 3,3.
+- **Apagado** → posición correcta. Y tocando `IN` contra `DC-` tiene que clickear.
+- **Prendido** → posición equivocada. En la otra posición este módulo pedía
+  **12 V** en el `IN` para activarse, que es inútil para una placa de 3,3.
 
 ---
 
-## La solución: un transistor, y el jumper vuelve a `L`
+## La solución: un transistor NPN
 
-El transistor hace de amplificador: el ESP32 le da una señal minúscula a la
-base y el transistor conmuta la corriente de verdad, tomándola de los 12 V del
-propio módulo.
+El transistor hace de amplificador: el ESP32 le da una señal minúscula a la base
+y el transistor conmuta la corriente de verdad.
 
-> Es un adaptador de interfaz. El ESP32 no puede hablar el protocolo que el
-> relé escucha; el transistor traduce, sin que ninguno de los dos cambie.
+> Es un adaptador de interfaz. El ESP32 no puede hablar el protocolo que el relé
+> escucha; el transistor traduce, sin que ninguno de los dos cambie.
 
 ```
    P26 ──[ 1k ]── base
                         NPN (2N2222 / BC547 / S8050)
    colector ── IN del relé
-   emisor   ── GND
+   emisor   ── DC- del relé (que ya es el GND común)
 ```
-
-Y el jumper del módulo vuelve a **`L`**.
-
-### Por qué `L` ahora sí es seguro
-
-En `L` el `IN` queda enganchado a los 12 V, que es lo que antes hacía imposible
-conectarlo al ESP32. Ahora **el ESP32 no toca el `IN`**: lo toca el colector del
-transistor, que aguanta esos 12 V sin problema. La placa solo ve su resistencia
-de base.
 
 | `P26` | Transistor | `IN` | Relé |
 |---|---|---|---|
 | `HIGH` | conduce | llevado a ~0 V | **activado** |
-| `LOW` | cortado | sube a 12 V | en reposo |
+| `LOW` | cortado | queda suelto | en reposo |
+
+### Por qué esto sí funciona
+
+El transistor **corta de verdad**. Cuando está cortado, el `IN` queda en alta
+impedancia —igual que desconectado— y ahí el relé está en reposo, que es
+justamente el renglón bueno de la tabla de arriba. El ESP32 nunca tiene que
+"poner el `IN` en alto": solo deja de tirarlo abajo.
+
+Y el ESP32 nunca toca el `IN`: lo toca el colector. La placa solo ve su
+resistencia de base.
 
 ### El firmware no cambia
 
-`NIVEL_ACTIVO` sigue en `HIGH`: la señal alta del ESP32 sigue significando
-válvula abierta. El transistor invierte, y el jumper en `L` invierte otra vez.
-Dos inversiones se cancelan.
+`NIVEL_ACTIVO` sigue en `HIGH`: señal alta del ESP32 = válvula abierta.
 
-Y la propiedad que importa se conserva: al arrancar, el `P26` flotando queda
-cerca de 0 V, el transistor no conduce, el `IN` sube a 12 V y **el relé queda
-en reposo**. Válvula cerrada sin corriente, sin código, sin nada.
+Y se conserva lo que importa: al arrancar, el `P26` flotando queda cerca de 0 V,
+el transistor no conduce, el `IN` queda suelto y **el relé en reposo**. Válvula
+cerrada sin corriente, sin código, sin nada.
 
 ### Lo que hay que comprar
 
-- **Un transistor NPN de uso general**: `2N2222`, `BC547`, `S8050`, `PN2222`.
-  Cualquiera sirve, cuestan monedas.
-- **Una resistencia de 1k** (marrón · negro · rojo). Entre 330 Ω y 4,7 k
-  funciona igual.
-
-Conviene llevar también unas **10k** de repuesto, que en este proyecto aparecen
-seguido.
+- **Un transistor NPN de uso general**: `2N2222`, `BC547`, `S8050` o `PN2222`.
+  Cualquiera sirve, cuestan monedas. Llevá tres o cuatro.
+- **Una resistencia de 1k** (marrón · negro · rojo). Entre 330 Ω y 4,7 k anda
+  igual.
+- Unas **10k** de repuesto, que en este proyecto aparecen seguido.
 
 ---
 
