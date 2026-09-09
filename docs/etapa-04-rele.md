@@ -63,51 +63,77 @@ No por la letra. Así:
 
 ---
 
-## La solución: un transistor NPN
+## La solución: open-drain, sin comprar nada
 
-El transistor hace de amplificador: el ESP32 le da una señal minúscula a la base
-y el transistor conmuta la corriente de verdad.
+El problema es que un pin común del ESP32 solo sabe hacer dos cosas: poner 0 V o
+poner 3,3 V. Y este módulo se activa con las dos, porque del otro lado del
+optoacoplador hay 12 V y un `IN` a 3,3 V deja igual 8,7 V sobre el LED interno.
 
-> Es un adaptador de interfaz. El ESP32 no puede hablar el protocolo que el relé
-> escucha; el transistor traduce, sin que ninguno de los dos cambie.
+Pero el renglón bueno de la tabla no pide una tensión: pide **ausencia**. El
+`IN` suelto es el reposo. Y el ESP32 sabe hacer "suelto": se llama **open-drain**.
+
+En ese modo el pin deja de elegir entre dos tensiones y elige entre **"a masa"**
+y **"desconectado"**. Que es exactamente la tabla medida.
+
+> En software: un pin común devuelve `false`. En open-drain devuelve `undefined`.
+> No es lo mismo decir "no" que no decir nada — y este relé solo descansa cuando
+> nadie le dice nada.
+
+```
+   P26 ────────── IN del relé      (nada en el medio)
+   GND ────────── DC- del relé
+```
+
+| `digitalWrite` | Pin | `IN` | Relé |
+|---|---|---|---|
+| `LOW` | a masa | llevado a 0 V | **activado** |
+| `HIGH` | desconectado | queda suelto | en reposo |
+
+Es lo mismo que hacía el transistor NPN que se proponía antes, pero hecho adentro
+del chip. El transistor ya no hace falta.
+
+### Por qué se puede conectar directo
+
+Dos condiciones, y las dos se **miden**, no se suponen:
+
+**1. La corriente que absorbe el pin.** Tester en `A⎓` posición `200m`, en serie
+entre `IN` y `DC-` (el tester hace de cable, el relé tiene que activarse).
+
+- Medido en este módulo: **4,9 mA**.
+- Un GPIO del ESP32 tolera unos 20 mA. Entra con margen.
+
+**2. La tensión del `IN` cuando está suelto.** Tester en `V⎓` posición `20`,
+punta roja en `IN`, negra en `DC-`, con 12 V puestos y el `IN` desconectado.
+
+- **Menos de 3,3 V** → se puede conectar directo.
+- **12 V** → NO se conecta. Un pin en alta impedancia igual estaría expuesto a
+  12 V y se quema. Ahí sí hace falta el transistor.
+
+Esta segunda medición es obligatoria y va **antes** de acercar el cable al `P26`.
+
+### El arranque sigue siendo seguro
+
+Antes de que corra `setup()`, el `GPIO26` es una entrada: alta impedancia, o sea
+`IN` suelto, o sea **relé en reposo**.
+
+El estado seguro es el estado por defecto del silicio, no algo que dependa de que
+nuestro código llegue a ejecutarse. Un reset a mitad de una pinta cierra la
+canilla en vez de abrirla.
+
+### Si la medición 2 da 12 V
+
+Entonces sí hay que comprar, y es poco:
+
+- **Un transistor NPN**: `2N2222`, `BC547`, `S8050` o `PN2222`.
+- **Una resistencia de 1k** (marrón · negro · rojo). Entre 330 Ω y 4,7 k anda igual.
 
 ```
    P26 ──[ 1k ]── base
-                        NPN (2N2222 / BC547 / S8050)
    colector ── IN del relé
-   emisor   ── DC- del relé (que ya es el GND común)
+   emisor   ── DC- del relé
 ```
 
-| `P26` | Transistor | `IN` | Relé |
-|---|---|---|---|
-| `HIGH` | conduce | llevado a ~0 V | **activado** |
-| `LOW` | cortado | queda suelto | en reposo |
-
-### Por qué esto sí funciona
-
-El transistor **corta de verdad**. Cuando está cortado, el `IN` queda en alta
-impedancia —igual que desconectado— y ahí el relé está en reposo, que es
-justamente el renglón bueno de la tabla de arriba. El ESP32 nunca tiene que
-"poner el `IN` en alto": solo deja de tirarlo abajo.
-
-Y el ESP32 nunca toca el `IN`: lo toca el colector. La placa solo ve su
-resistencia de base.
-
-### El firmware no cambia
-
-`NIVEL_ACTIVO` sigue en `HIGH`: señal alta del ESP32 = válvula abierta.
-
-Y se conserva lo que importa: al arrancar, el `P26` flotando queda cerca de 0 V,
-el transistor no conduce, el `IN` queda suelto y **el relé en reposo**. Válvula
-cerrada sin corriente, sin código, sin nada.
-
-### Lo que hay que comprar
-
-- **Un transistor NPN de uso general**: `2N2222`, `BC547`, `S8050` o `PN2222`.
-  Cualquiera sirve, cuestan monedas. Llevá tres o cuatro.
-- **Una resistencia de 1k** (marrón · negro · rojo). Entre 330 Ω y 4,7 k anda
-  igual.
-- Unas **10k** de repuesto, que en este proyecto aparecen seguido.
+Con el transistor el firmware vuelve a ser un `OUTPUT` normal y `HIGH` = activado.
 
 ---
 
@@ -169,9 +195,9 @@ Después:
 ```
 --- Fin del silencio. Empieza el ciclo. ---
 
-[   6000 ms] ACTIVADO  - valvula ABIERTA   (GPIO26 = HIGH)
-[   7000 ms] reposo    - valvula cerrada   (GPIO26 = LOW)
-[   8000 ms] ACTIVADO  - valvula ABIERTA   (GPIO26 = HIGH)
+[   6000 ms] ACTIVADO  - valvula ABIERTA   (GPIO26 a masa)
+[   7000 ms] reposo    - valvula cerrada   (GPIO26 desconectado)
+[   8000 ms] ACTIVADO  - valvula ABIERTA   (GPIO26 a masa)
 ```
 
 Un clic por segundo, alternando. El módulo suele tener un LED que se prende
@@ -195,7 +221,7 @@ Probá el reset **tres o cuatro veces**. Tiene que ser silencio las cuatro.
 ## Si no anda
 
 **No clickea nunca** → es lo que pasó en este proyecto: los 3,3 V no alcanzan
-para el optoacoplador. Ver *La solución: un transistor*, más arriba. Antes de
+para el optoacoplador. Ver *La solución: open-drain*, más arriba. Antes de
 darlo por eso, confirmá con el tester que el `IN` alterna entre 0 y 3,3: si se
 queda fijo, el problema es de cableado y no de nivel.
 

@@ -17,7 +17,8 @@
 //     DC-          →   negativo de la fuente de 12V
 //                      Y TAMBIÉN al GND del ESP32
 //     IN           →   GPIO 26
-//     jumper       →   posición H  (ver abajo)
+//     jumper       →   la posición en la que, con IN al aire y 12V puesto,
+//                      el LED rojo queda APAGADO (medido en esta etapa)
 //
 //     Los bornes de salida del relé quedan al aire. Sin válvula.
 // ═════════════════════════════════════════════════════════════════════════════
@@ -26,28 +27,40 @@
 
 static const int PIN_RELE = 26;
 
-// ── Con qué nivel se activa este relé ───────────────────────────────────────
-// El módulo trae un jumper H/L que elige si se dispara con la señal en alto o
-// en bajo. Este proyecto usa **H (activo en alto)**, y no es indiferente:
+// ── Cómo se maneja este relé: OPEN-DRAIN ────────────────────────────────────
 //
-//   · En posición L, el pin IN queda conectado por una resistencia a DC+, que
-//     acá son 12 V. Un pin del ESP32 tolera 3.3 V. No se hace.
+// Este módulo no entiende "3.3 V" como apagado. Medido sobre la placa real:
 //
-//   · En posición H, IN solo entrega corriente hacia el optoacoplador y nunca
-//     ve más que lo que le pone el ESP32.
+//     IN al aire        → relé en REPOSO      ✅
+//     IN a masa (DC-)   → relé ACTIVADO
+//     IN a 3.3 V        → relé ACTIVADO       ✗
+//     IN a 5 V          → relé ACTIVADO       ✗
 //
-// Y trae un segundo beneficio, más importante todavía: **el estado peligroso
-// deja de ser el estado por defecto**. Entre que la placa arranca y que nuestro
-// código configura el pin, el GPIO26 está flotando, y un pin flotante tiende a
-// quedar cerca de 0 V. Con activo en alto, "cerca de 0 V" significa relé en
-// reposo, válvula CERRADA.
+// El motivo es que del otro lado del optoacoplador hay 12 V. Poner 3.3 V en el
+// IN deja igual 8.7 V sobre el LED interno: sigue conduciendo. Un pin normal
+// del ESP32, que solo sabe hacer 0 V / 3.3 V, dejaría el relé pegado para
+// siempre.
 //
-// Si con la señal en alto el relé no llega a activarse —3.3 V puede quedar
-// corto para el optoacoplador de un módulo de 12 V— se prueba en L, pero
-// entonces hay que interponer un transistor: el IN no puede tocar el ESP32
-// directo. Eso se decide en esta etapa, midiendo.
-static const int NIVEL_ACTIVO = HIGH;
-static const int NIVEL_REPOSO = (NIVEL_ACTIVO == HIGH) ? LOW : HIGH;
+// La solución no cuesta nada porque el ESP32 ya la tiene: **open-drain**.
+// En ese modo el pin deja de elegir entre dos tensiones y elige entre
+// "a masa" y "desconectado". Que es exactamente la tabla de arriba.
+//
+//     digitalWrite(LOW)   → pin a masa       → relé ACTIVADO
+//     digitalWrite(HIGH)  → pin desconectado → relé en REPOSO
+//
+// Es lo mismo que haría un transistor NPN de bajo lado, pero hecho adentro del
+// chip. La corriente medida por el IN es de 4.9 mA; un GPIO del ESP32 tolera
+// unos 20 mA, así que absorbe esa corriente sin problema.
+//
+// Analogía: un pin común devuelve `false`. Open-drain devuelve `undefined`.
+// Este relé solo descansa cuando nadie le dice nada.
+//
+// PRECONDICIÓN VERIFICADA CON EL TESTER: con IN desconectado y 12 V puestos,
+// la tensión entre IN y DC- tiene que ser MENOR a 3.3 V. Si fuera 12 V, el pin
+// en alta impedancia estaría igual expuesto a 12 V y se quema. No conectar sin
+// medir eso primero.
+static const int RELE_ACTIVADO = LOW;    // pin a masa
+static const int RELE_REPOSO   = HIGH;   // pin desconectado (alta impedancia)
 
 // Ventana de silencio al arrancar. Durante estos segundos el sketch no toca
 // nada, para que se pueda resetear la placa y escuchar si el relé hace clic
@@ -60,19 +73,24 @@ static const uint32_t PERIODO_MS = 1000;
 void setup() {
   // ── El orden de estas tres líneas no es decorativo ────────────────────────
   // digitalWrite ANTES de pinMode carga el valor en el latch de salida. Cuando
-  // pinMode convierte el pin en salida, ya sale manejando el valor correcto.
+  // pinMode habilita el pin, ya sale manejando el valor correcto.
   //
   // Al revés (pinMode primero) hay una ventana de microsegundos en la que el
-  // pin ya es salida pero todavía tiene el valor por defecto —que es LOW— y el
-  // relé alcanza a moverse. Es una race condition: el orden de dos líneas
-  // cambia el resultado.
+  // pin ya está habilitado pero todavía tiene el valor por defecto —que es
+  // LOW, o sea RELE_ACTIVADO— y el relé alcanza a hacer clic. Es una race
+  // condition: el orden de dos líneas cambia el resultado.
   //
-  // Con NIVEL_ACTIVO en HIGH ese LOW por defecto es inofensivo, pero el orden
-  // se respeta igual: si alguna vez hay que pasar a activo en bajo, esto ya
-  // está bien escrito y no hay que acordarse.
-  digitalWrite(PIN_RELE, NIVEL_REPOSO);
-  pinMode(PIN_RELE, OUTPUT);
-  digitalWrite(PIN_RELE, NIVEL_REPOSO);
+  // Acá sí importa de verdad, porque en open-drain el estado peligroso ES el
+  // valor por defecto.
+  digitalWrite(PIN_RELE, RELE_REPOSO);
+  pinMode(PIN_RELE, OUTPUT_OPEN_DRAIN);
+  digitalWrite(PIN_RELE, RELE_REPOSO);
+
+  // Nota sobre el arranque de la placa: antes de que corra esta línea, el
+  // GPIO26 es una entrada, o sea alta impedancia, o sea IN al aire, o sea relé
+  // en reposo. El estado seguro es el estado por defecto del silicio, no algo
+  // que dependa de que nuestro código llegue a ejecutarse. Eso es lo que hace
+  // que un reset a mitad de una pinta no abra la canilla.
 
   Serial.begin(115200);
   delay(300);
@@ -82,9 +100,9 @@ void setup() {
   Serial.println(" GRIFO DE CERVEZA - ETAPA 4: RELE");
   Serial.println("=============================================");
   Serial.printf("Pin de control    : GPIO %d\n", PIN_RELE);
-  Serial.printf("Nivel activo      : %s (jumper en %s)\n",
-                NIVEL_ACTIVO == HIGH ? "ALTO" : "BAJO",
-                NIVEL_ACTIVO == HIGH ? "H" : "L");
+  Serial.println("Modo              : OPEN-DRAIN");
+  Serial.println("  LOW  = pin a masa       -> relé ACTIVADO");
+  Serial.println("  HIGH = pin desconectado -> relé en reposo");
   Serial.println("---------------------------------------------");
   Serial.printf("SILENCIO por %lu segundos.\n", SILENCIO_MS / 1000);
   Serial.println("El rele NO tiene que hacer NINGUN clic ahora.");
@@ -115,11 +133,11 @@ void loop() {
   ultimoCambio = ahora;
 
   activo = !activo;
-  digitalWrite(PIN_RELE, activo ? NIVEL_ACTIVO : NIVEL_REPOSO);
+  digitalWrite(PIN_RELE, activo ? RELE_ACTIVADO : RELE_REPOSO);
 
-  Serial.printf("[%7lu ms] %s   (GPIO%d = %s)\n",
+  Serial.printf("[%7lu ms] %s   (GPIO%d %s)\n",
                 ahora,
                 activo ? "ACTIVADO  - valvula ABIERTA" : "reposo    - valvula cerrada",
                 PIN_RELE,
-                (activo ? NIVEL_ACTIVO : NIVEL_REPOSO) == HIGH ? "HIGH" : "LOW");
+                activo ? "a masa" : "desconectado");
 }
