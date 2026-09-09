@@ -148,30 +148,17 @@ Mismo firmware, salvo que el nivel se invierte: `HIGH` = activado.
 
 ---
 
-## Antes de tocar nada: el cable de masa fijo
+## Antes de tocar nada
 
-En esta etapa se quemó un ESP32. La maniobra que lo mató fue tocar un punto de
-prueba contra `DC+` en vez de `DC-`: dos tornillos vecinos, uno a 12 V y el otro
-a masa, con una punta suelta en la mano.
+Leé **[protocolo-electrico.md](protocolo-electrico.md)**. Son seis reglas y el
+checklist en frío. En esta etapa se quemó un ESP32 y esas reglas son la respuesta
+a eso.
 
-**No se prueba así.** Antes de cualquier medición o test de continuidad:
+Las dos que más importan acá:
 
-1. Atornillá un cable macho-macho **fijo** en el borne `DC-` y apretalo bien.
-2. Ese cable, con su punta libre, es **el único** que se usa para todos los
-   tests de "tocar contra masa".
-3. La mano nunca vuelve a acercarse a la bornera.
-
-> Es sacar el valor peligroso del alcance en vez de acordarse de no usarlo. Una
-> constante bien puesta en lugar de disciplina repetida.
-
-El `DC+` no se toca con nada, nunca, en ninguna prueba de esta etapa. Si un paso
-parece pedir eso, está mal escrito el paso.
-
-### Y el orden de conexión
-
-Para grabar la placa: **12 V desenchufados, solo USB.** Un intento de flasheo con
-los 12 V puestos se cortó a la mitad (`The chip stopped responding`). Grabar y
-alimentar el relé no necesitan pasar al mismo tiempo.
+- **Cable de masa fijo atornillado en `DC-`.** Es la única punta que se usa para
+  tocar contra masa. La mano no se acerca a la bornera.
+- **El `DC+` tapado con cinta.** No se toca con nada, nunca.
 
 ---
 
@@ -225,44 +212,121 @@ Sin ese cable el circuito no anda, o anda a veces, que es peor.
 
 ---
 
-## Flashear
+## Procedimiento por fases
+
+Cada fase tiene **una sola cosa energizada a la vez**, y termina en un dato
+concreto. No se pasa a la siguiente sin ese dato.
+
+El principio: **el ESP32 y los 12 V nunca están los dos vivos mientras haya
+manos en el circuito.**
+
+### Fase 0 — en frío
+
+Nada enchufado: sin USB, sin 12 V.
+
+1. Correr el **checklist en frío** del protocolo (continuidad entre rieles).
+2. Atornillar el **cable de masa fijo** en `DC-`.
+3. **Tapar el `DC+`** con cinta.
+4. Jumper del relé en **`L`**.
+5. Cablear: `IN` del relé → `C35` (`HV4`). **El `P26` todavía no.**
+
+→ Todo abierto en el checklist. Si algo da unido, no se sigue.
+
+### Fase 1 — solo el relé
+
+Enchufar **los 12 V**. El USB **no**.
+
+1. ¿El relé queda quieto? (sin zumbar ni clickear solo)
+2. Con el **cable de masa fijo**, tocar la punta libre contra `B35`.
+
+→ Tiene que **clickear al tocar y volver a clickear al soltar**.
+
+Esto prueba el relé, el jumper y el cable del `IN`, sin que el ESP32 exista
+todavía. Si acá no clickea, el problema no es del ESP32 y no tiene sentido
+seguir.
+
+### Fase 2 — verificar la barrera
+
+Con los 12 V puestos, enchufar **el USB**. El `P26` sigue **sin conectar**.
+
+Tester en `V⎓` escala `20`. Punta negra en el **cable de masa fijo**, punta roja
+en **`G35`**.
+
+| Lectura | |
+|---|---|
+| **≤ 3,3 V** | ✅ el MOSFET está aislando. Seguir. |
+| **más de 3,5** | ❌ parar. El conversor está al revés o el hueco está mal. |
+
+Este es el número que decide si el ESP32 puede tocar ese cable. Con el lado HV en
+11 V, acá tiene que haber 3,3.
+
+### Fase 3 — grabar
+
+**Desenchufar los 12 V.** Dejar solo el USB.
 
 ```bash
 pio run -e etapa4_rele -t upload
-pio device monitor -b 115200
 ```
+
+Con los 12 V puestos el flasheo se corta a la mitad. Van separados.
+
+### Fase 4 — conectar y probar
+
+1. Desenchufar el USB.
+2. Conectar **`P26` → `G35`**.
+3. Enchufar los **12 V**, después el **USB**.
+4. Abrir el monitor: `pio device monitor -b 115200`
+
+**De acá en adelante no se toca nada con las manos.** El sketch maneja el pin y
+el autotest informa solo.
 
 ---
 
 ## Qué tenés que ver
+
+Al arrancar:
 
 ```
 =============================================
  GRIFO DE CERVEZA - ETAPA 4: RELE
 =============================================
 Pin de control    : GPIO 26
-Nivel activo      : ALTO (jumper en H)
----------------------------------------------
-SILENCIO por 5 segundos.
-El rele NO tiene que hacer NINGUN clic ahora.
+Modo              : OPEN-DRAIN
 ...
----------------------------------------------
+SILENCIO por 5 segundos.
 ```
 
-**Durante esos 5 segundos, silencio absoluto.** El sketch no toca el pin.
+**Durante esos 5 segundos, silencio absoluto.** El sketch no maneja el pin.
 
-Después:
+Después, el autotest:
 
 ```
---- Fin del silencio. Empieza el ciclo. ---
+--- AUTOTEST DE LA LINEA ---
+  cable llega al conversor : SI
+  el pin la tira abajo     : SI
+  => La linea electrica esta bien.
+----------------------------
+```
+
+El autotest reemplaza los tests con la mano. Contesta la pregunta de si el
+problema está del lado del ESP32 o del lado del relé, **sin tocar nada**:
+
+| `conectado` | `tiraAbajo` | Qué significa |
+|---|---|---|
+| SI | SI | La línea está bien. Si no clickea, es del lado del relé. |
+| NO | SI | El cable no llega al conversor, o no está en `P26`. |
+| SI | NO | Algo mantiene la línea arriba. Revisar que no toque `3V3`. |
+
+Y después el ciclo:
+
+```
+--- Empieza el ciclo. ---
 
 [   6000 ms] ACTIVADO  - valvula ABIERTA   (GPIO26 a masa)
 [   7000 ms] reposo    - valvula cerrada   (GPIO26 desconectado)
-[   8000 ms] ACTIVADO  - valvula ABIERTA   (GPIO26 a masa)
 ```
 
-Un clic por segundo, alternando. El módulo suele tener un LED que se prende
-cuando el relé está activado.
+Un clic por segundo, alternando.
 
 ---
 
@@ -281,18 +345,37 @@ Probá el reset **tres o cuatro veces**. Tiene que ser silencio las cuatro.
 
 ## Si no anda
 
-**No clickea nunca** → es lo que pasó en este proyecto: los 3,3 V no alcanzan
-para el optoacoplador. Ver *La solución: open-drain*, más arriba. Antes de
-darlo por eso, confirmá con el tester que el `IN` alterna entre 0 y 3,3: si se
-queda fijo, el problema es de cableado y no de nivel.
+**Mirá primero el autotest.** Para eso está: te dice de qué lado buscar sin que
+tengas que tocar nada.
 
-**Clickea pero queda zumbando o pegado** → el optoacoplador está conduciendo a
-medias. Mismo caso que el anterior, misma solución.
+**Autotest `SI`/`SI` pero no clickea** → la línea del ESP32 está bien. El
+problema es del lado del relé:
 
-**Clickea durante los 5 segundos de silencio** → algo está manejando el GPIO26
-antes que nuestro código. Avisame: es el problema más importante de esta etapa y
-no se pasa por alto.
+1. ¿El jumper está en `L`? (medio + izquierda)
+2. Con los 12 V puestos y el USB afuera, tocá `B35` con el cable de masa fijo.
+   Si ahí clickea, el canal del conversor no está conduciendo.
+3. Si tampoco clickea, revisá el cable entre `C35` y el tornillo `IN`, y que el
+   tornillo esté apretado sobre el cobre y no sobre el plástico.
 
-**Clickea al revés** (activado cuando dice reposo) → el jumper quedó en `L`.
-Desenchufá todo antes de moverlo: en `L` el `IN` tiene 12 V y no puede estar
-conectado al ESP32.
+**Autotest `NO`/`SI`** → el cable no llega al conversor. O la punta hembra no
+está sobre `P26`, o el otro extremo no está en `G35`.
+
+**Clickea durante los 5 segundos de silencio** → algo maneja el GPIO26 antes que
+nuestro código. Avisame: es el problema más importante de esta etapa y no se pasa
+por alto.
+
+**Queda zumbando o pegado** → el optoacoplador conduce a medias. Medí `G35`
+contra el cable de masa fijo: si no alterna entre ~0 y ~3,3, el pin no está
+manejando la línea.
+
+---
+
+## Lo que se aprendió acá, a los golpes
+
+- El módulo no se caracteriza leyendo las etiquetas. Se mide.
+- El LED de alimentación está siempre prendido y no dice nada.
+- La posición útil del jumper es **`L`**, y en `L` el `IN` está a 11 V: **no
+  puede tocar el ESP32**.
+- Los 3,3 V no apagan este optoacoplador. Hace falta cortar, no bajar.
+- **Un procedimiento que pide acertarle con una punta suelta al lado de un borne
+  de 12 V es un procedimiento roto.** Costó un ESP32 aprenderlo.

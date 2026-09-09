@@ -70,6 +70,71 @@ static const uint32_t SILENCIO_MS = 5000;
 static const uint32_t PERIODO_MS = 1000;
 
 
+// ── Autotest de la línea ────────────────────────────────────────────────────
+// Sin esto, cuando el relé no clickea no se sabe si el problema está del lado
+// del ESP32 o del lado del relé, y la única forma de averiguarlo es andar
+// tocando cables con la mano cerca de los 12 V. Así se quemó la primera placa.
+//
+// El ESP32 puede averiguarlo solo, porque un pin de salida en esta familia
+// **también se puede leer**: `digitalRead` devuelve el nivel real de la patita,
+// no lo que nosotros escribimos.
+//
+// Son dos preguntas:
+//
+//   1. ¿Hay algo del otro lado del cable?
+//      Se pone un pull-down interno (~45k) y se lee. Si el cable llega al
+//      conversor, su pull-up de 10k gana la pulseada y se lee ALTO. Si el cable
+//      no llega a ningún lado, gana el pull-down y se lee BAJO.
+//
+//   2. ¿El pin logra tirar la línea abajo?
+//      Se maneja en bajo medio milisegundo y se relee. Un relé mecánico tarda
+//      entre 5 y 10 ms en moverse, así que no llega a activarse.
+//
+// > Es un health check al arrancar. Barato, y contesta la pregunta que si no
+// > habría que ir a responder con las manos.
+struct Autotest {
+  bool conectado;    // hay un pull-up externo, o sea el cable llega al conversor
+  bool tiraAbajo;    // el pin consigue llevar la línea a masa
+};
+
+static Autotest correrAutotest() {
+  Autotest r;
+
+  pinMode(PIN_RELE, INPUT_PULLDOWN);
+  delayMicroseconds(500);
+  r.conectado = (digitalRead(PIN_RELE) == HIGH);
+
+  digitalWrite(PIN_RELE, RELE_ACTIVADO);
+  pinMode(PIN_RELE, OUTPUT_OPEN_DRAIN);
+  delayMicroseconds(500);
+  r.tiraAbajo = (digitalRead(PIN_RELE) == LOW);
+
+  digitalWrite(PIN_RELE, RELE_REPOSO);   // de vuelta a reposo enseguida
+  return r;
+}
+
+static void informarAutotest(const Autotest &r) {
+  Serial.println("--- AUTOTEST DE LA LINEA ---");
+  Serial.printf("  cable llega al conversor : %s\n", r.conectado ? "SI" : "NO");
+  Serial.printf("  el pin la tira abajo     : %s\n", r.tiraAbajo ? "SI" : "NO");
+
+  if (r.conectado && r.tiraAbajo) {
+    Serial.println("  => La linea electrica esta bien.");
+    Serial.println("     Si igual no clickea, el problema es del lado del rele:");
+    Serial.println("     jumper, cable IN, o borne flojo. NO del ESP32.");
+  } else if (!r.conectado) {
+    Serial.println("  => No hay nada del otro lado del cable.");
+    Serial.println("     O la punta no esta en el pin que creemos, o el otro");
+    Serial.println("     extremo no llega al hueco LV del conversor.");
+  } else {
+    Serial.println("  => Algo mantiene la linea arriba y el pin no la baja.");
+    Serial.println("     Revisar que el cable no este tocando 3V3.");
+  }
+  Serial.println("----------------------------");
+  Serial.println();
+}
+
+
 void setup() {
   // ── El orden de estas tres líneas no es decorativo ────────────────────────
   // digitalWrite ANTES de pinMode carga el valor en el latch de salida. Cuando
@@ -124,7 +189,14 @@ void loop() {
     if (ahora < SILENCIO_MS) return;
     arrancado = true;
     ultimoCambio = ahora;
-    Serial.println("--- Fin del silencio. Empieza el ciclo. ---");
+    Serial.println("--- Fin del silencio. ---");
+    Serial.println();
+
+    // El autotest recién acá: durante la ventana de silencio el sketch no
+    // maneja el pin, porque justamente eso es lo que se está probando.
+    informarAutotest(correrAutotest());
+
+    Serial.println("--- Empieza el ciclo. ---");
     Serial.println();
     return;
   }
