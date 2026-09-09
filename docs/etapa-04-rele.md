@@ -31,35 +31,42 @@ puntas en los tornillos `COM` y `NO`:
 
 Una vez identificado el LED rojo, el clic y el LED rojo alcanzan.
 
-### La tabla de verdad del módulo
+### El jumper `H`/`L`: qué hace cada posición
 
-En la posición correcta del jumper, con `DC+`/`DC-` a los 12 V:
+El conector tiene **tres patitas**. El jumper puentea la del medio con una de las
+dos puntas, y eso elige por dónde entra la corriente al optoacoplador.
 
-| `IN` | Relé |
-|---|---|
-| **suelto**, sin conectar | **en reposo** ✅ |
-| a **masa** (`DC-`) | **activado** |
-| a **3,3 V** | activado |
-| a **5 V** | activado |
+Medido sobre este módulo, con `DC+`/`DC-` a 12 V y el `IN` **sin ningún cable**:
 
-Los dos últimos renglones son el problema: con `DC+` en 12 V, poner 3,3 V en el
-`IN` **no alcanza para cortar** la corriente del optoacoplador. Quedan 8,7 V
-sobre el LED interno y sigue conduciendo. El relé se activa y **no se suelta
-nunca**.
+| Jumper | `IN` suelto mide | Se activa cuando el `IN` va a | Sirve |
+|---|---|---|---|
+| medio + derecha (`H`) | **0 V** | **`DC+`** (12 V) | ✗ |
+| medio + izquierda (`L`) | **11,3 V** | **`DC-`** (masa) | ✅ |
+| sin jumper | 0 V | nada | ✗ |
 
-Por eso conectar el `P26` directo al `IN` deja el relé trabado en activado,
-aunque el pin alterne limpio entre 0 y 3,4 V.
+**La posición de este proyecto es `L`.**
 
-### Cómo identificar la posición correcta del jumper
+En `L` el `IN` queda colgado arriba, cerca de los 12 V, y el relé se activa
+**tirándolo abajo**. El estado de reposo es "no hacer nada", que es justo lo que
+queremos que pase mientras el ESP32 arranca.
 
-No por la letra. Así:
+En `H` haría falta poner 12 V en el `IN` para activarlo, y eso el ESP32 no lo
+puede dar de ninguna manera.
 
-1. `DC+` y `DC-` al cargador de 12V. El `IN` **vacío**.
-2. Mirar el **LED rojo**.
+### Lo que esto obliga
 
-- **Apagado** → posición correcta. Y tocando `IN` contra `DC-` tiene que clickear.
-- **Prendido** → posición equivocada. En la otra posición este módulo pedía
-  **12 V** en el `IN` para activarse, que es inútil para una placa de 3,3.
+En `L`, el `IN` es un cable que está a **11,3 V**. Un pin del ESP32 tolera 3,3.
+**No se pueden conectar directo**, ni siquiera con el pin en alta impedancia.
+
+Y tampoco alcanza con "poner el pin en alto": el ESP32 llega a 3,3 V, y con el
+otro lado en 12 V quedan varios volts sobre el LED del optoacoplador, que sigue
+conduciendo. El relé quedaría trabado en activado.
+
+La corriente que hay que manejar es chica: medida en serie entre `IN` y `DC-`,
+**4,9 mA**, que a 12 V corresponde a una resistencia interna de 2,2 k. Lo que
+falta no es fuerza, es **aislación**.
+
+De ahí sale la solución de la sección siguiente.
 
 ---
 
@@ -70,10 +77,10 @@ Dos mediciones sobre el módulo real definen el problema:
 | Medición | Valor | Qué implica |
 |---|---|---|
 | Corriente que absorbe el `IN` (en serie contra `DC-`) | **4,9 mA** | Un GPIO tolera ~20 mA. Entra sobrado. |
-| Tensión del `IN` al aire contra `DC-` | **4,88 V** | Más de 3,3. **No se conecta directo.** |
+| Tensión del `IN` al aire contra `DC-` (jumper en `L`) | **11,3 V** | Muy arriba de 3,3. **No se conecta directo.** |
 
 La primera dice que el ESP32 tiene fuerza de sobra. La segunda dice que no puede
-tocar ese cable: un pin en alta impedancia quedaría expuesto a casi 5 V, arriba
+tocar ese cable: un pin en alta impedancia quedaría expuesto a 11 V, muy arriba
 de su máximo absoluto (3,6 V).
 
 ### La parte que no hay que comprar
@@ -90,9 +97,9 @@ el transistor que hacía falta.
 | `P26` (open-drain) | MOSFET | `IN` | Relé |
 |---|---|---|---|
 | `LOW` (a masa) | conduce | llevado a ~0 V | **activado** |
-| `HIGH` (desconectado) | cortado | queda en 4,88 V | en reposo |
+| `HIGH` (desconectado) | cortado | queda en ~11 V | en reposo |
 
-Los 4,88 V **nunca llegan al ESP32**: se quedan del lado HV. El ESP32 solo ve su
+Los 11 V **nunca llegan al ESP32**: se quedan del lado HV. El ESP32 solo ve su
 propio lado, que está a 3,3 V por la resistencia de pull-up del conversor.
 
 > Es un adaptador de tipos en el borde del sistema. Adentro trabajás con tu tipo;
