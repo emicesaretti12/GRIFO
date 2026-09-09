@@ -148,6 +148,33 @@ Mismo firmware, salvo que el nivel se invierte: `HIGH` = activado.
 
 ---
 
+## Antes de tocar nada: el cable de masa fijo
+
+En esta etapa se quemó un ESP32. La maniobra que lo mató fue tocar un punto de
+prueba contra `DC+` en vez de `DC-`: dos tornillos vecinos, uno a 12 V y el otro
+a masa, con una punta suelta en la mano.
+
+**No se prueba así.** Antes de cualquier medición o test de continuidad:
+
+1. Atornillá un cable macho-macho **fijo** en el borne `DC-` y apretalo bien.
+2. Ese cable, con su punta libre, es **el único** que se usa para todos los
+   tests de "tocar contra masa".
+3. La mano nunca vuelve a acercarse a la bornera.
+
+> Es sacar el valor peligroso del alcance en vez de acordarse de no usarlo. Una
+> constante bien puesta en lugar de disciplina repetida.
+
+El `DC+` no se toca con nada, nunca, en ninguna prueba de esta etapa. Si un paso
+parece pedir eso, está mal escrito el paso.
+
+### Y el orden de conexión
+
+Para grabar la placa: **12 V desenchufados, solo USB.** Un intento de flasheo con
+los 12 V puestos se cortó a la mitad (`The chip stopped responding`). Grabar y
+alimentar el relé no necesitan pasar al mismo tiempo.
+
+---
+
 ## Cableado
 
 Con el ESP32 **desenchufado** y la fuente de 12V **desenchufada**:
