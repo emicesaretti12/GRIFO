@@ -63,77 +63,81 @@ No por la letra. Así:
 
 ---
 
-## La solución: open-drain, sin comprar nada
+## La solución: open-drain + un canal libre del conversor
 
-El problema es que un pin común del ESP32 solo sabe hacer dos cosas: poner 0 V o
-poner 3,3 V. Y este módulo se activa con las dos, porque del otro lado del
-optoacoplador hay 12 V y un `IN` a 3,3 V deja igual 8,7 V sobre el LED interno.
+Dos mediciones sobre el módulo real definen el problema:
 
-Pero el renglón bueno de la tabla no pide una tensión: pide **ausencia**. El
-`IN` suelto es el reposo. Y el ESP32 sabe hacer "suelto": se llama **open-drain**.
+| Medición | Valor | Qué implica |
+|---|---|---|
+| Corriente que absorbe el `IN` (en serie contra `DC-`) | **4,9 mA** | Un GPIO tolera ~20 mA. Entra sobrado. |
+| Tensión del `IN` al aire contra `DC-` | **4,88 V** | Más de 3,3. **No se conecta directo.** |
 
-En ese modo el pin deja de elegir entre dos tensiones y elige entre **"a masa"**
-y **"desconectado"**. Que es exactamente la tabla medida.
+La primera dice que el ESP32 tiene fuerza de sobra. La segunda dice que no puede
+tocar ese cable: un pin en alta impedancia quedaría expuesto a casi 5 V, arriba
+de su máximo absoluto (3,6 V).
+
+### La parte que no hay que comprar
+
+El **conversor de niveles** que ya está en el protoboard para el caudalímetro
+tiene **4 canales** y usa uno solo. Cada canal es un MOSFET, que es exactamente
+el transistor que hacía falta.
+
+```
+   P26 ── LV4 ─┤MOSFET├─ HV4 ── IN del relé
+   GND ─────────────────────────  DC- del relé
+```
+
+| `P26` (open-drain) | MOSFET | `IN` | Relé |
+|---|---|---|---|
+| `LOW` (a masa) | conduce | llevado a ~0 V | **activado** |
+| `HIGH` (desconectado) | cortado | queda en 4,88 V | en reposo |
+
+Los 4,88 V **nunca llegan al ESP32**: se quedan del lado HV. El ESP32 solo ve su
+propio lado, que está a 3,3 V por la resistencia de pull-up del conversor.
+
+> Es un adaptador de tipos en el borde del sistema. Adentro trabajás con tu tipo;
+> el borde traduce. El tipo de afuera no se te mete nunca en la lógica.
+
+### Por qué open-drain y no un `OUTPUT` normal
+
+El módulo no se apaga con 3,3 V: con `DC+` en 12 V quedan varios volts sobre el
+LED del optoacoplador y sigue conduciendo. El renglón bueno de la tabla no pide
+una tensión, pide **ausencia**.
+
+Open-drain es justo eso: el pin deja de elegir entre 0 V y 3,3 V y elige entre
+**"a masa"** y **"desconectado"**.
 
 > En software: un pin común devuelve `false`. En open-drain devuelve `undefined`.
 > No es lo mismo decir "no" que no decir nada — y este relé solo descansa cuando
 > nadie le dice nada.
 
-```
-   P26 ────────── IN del relé      (nada en el medio)
-   GND ────────── DC- del relé
-```
-
-| `digitalWrite` | Pin | `IN` | Relé |
-|---|---|---|---|
-| `LOW` | a masa | llevado a 0 V | **activado** |
-| `HIGH` | desconectado | queda suelto | en reposo |
-
-Es lo mismo que hacía el transistor NPN que se proponía antes, pero hecho adentro
-del chip. El transistor ya no hace falta.
-
-### Por qué se puede conectar directo
-
-Dos condiciones, y las dos se **miden**, no se suponen:
-
-**1. La corriente que absorbe el pin.** Tester en `A⎓` posición `200m`, en serie
-entre `IN` y `DC-` (el tester hace de cable, el relé tiene que activarse).
-
-- Medido en este módulo: **4,9 mA**.
-- Un GPIO del ESP32 tolera unos 20 mA. Entra con margen.
-
-**2. La tensión del `IN` cuando está suelto.** Tester en `V⎓` posición `20`,
-punta roja en `IN`, negra en `DC-`, con 12 V puestos y el `IN` desconectado.
-
-- **Menos de 3,3 V** → se puede conectar directo.
-- **12 V** → NO se conecta. Un pin en alta impedancia igual estaría expuesto a
-  12 V y se quema. Ahí sí hace falta el transistor.
-
-Esta segunda medición es obligatoria y va **antes** de acercar el cable al `P26`.
+Y es el modo que estos conversores esperan: están pensados para I2C, que es
+open-drain.
 
 ### El arranque sigue siendo seguro
 
-Antes de que corra `setup()`, el `GPIO26` es una entrada: alta impedancia, o sea
-`IN` suelto, o sea **relé en reposo**.
+Antes de que corra `setup()`, el `GPIO26` es una entrada: alta impedancia. El
+lado LV queda en 3,3 V por su pull-up, el MOSFET no conduce, el `IN` queda
+arriba → **relé en reposo, válvula cerrada**.
 
 El estado seguro es el estado por defecto del silicio, no algo que dependa de que
 nuestro código llegue a ejecutarse. Un reset a mitad de una pinta cierra la
 canilla en vez de abrirla.
 
-### Si la medición 2 da 12 V
+Con la placa apagada del todo pasa lo mismo: sin `LV`, el MOSFET está cortado y
+el `IN` queda arriba.
 
-Entonces sí hay que comprar, y es poco:
+### Si algún día no hay conversor libre
 
-- **Un transistor NPN**: `2N2222`, `BC547`, `S8050` o `PN2222`.
-- **Una resistencia de 1k** (marrón · negro · rojo). Entre 330 Ω y 4,7 k anda igual.
+Un NPN de bajo lado hace lo mismo por monedas:
 
 ```
-   P26 ──[ 1k ]── base
+   P26 ──[ 1k ]── base       NPN (2N2222 / BC547 / S8050)
    colector ── IN del relé
    emisor   ── DC- del relé
 ```
 
-Con el transistor el firmware vuelve a ser un `OUTPUT` normal y `HIGH` = activado.
+Mismo firmware, salvo que el nivel se invierte: `HIGH` = activado.
 
 ---
 
@@ -141,14 +145,37 @@ Con el transistor el firmware vuelve a ser un `OUTPUT` normal y `HIGH` = activad
 
 Con el ESP32 **desenchufado** y la fuente de 12V **desenchufada**:
 
-| Módulo relé | → | Adónde |
+| Desde | → | Adónde |
 |---|---|---|
-| `DC+` | → | positivo de la fuente de 12V |
-| `DC-` | → | negativo de la fuente de 12V **y también al `GND` del ESP32** |
-| `IN` | → | `P26` del ESP32 |
+| `DC+` del relé | → | positivo de la fuente de 12V |
+| `DC-` del relé | → | negativo de la fuente de 12V **y también al `GND` del ESP32** |
+| `IN` del relé | → | **`HV4`** del conversor de niveles |
+| **`HV4`** del conversor | → | (es el mismo punto de arriba) |
+| `P26` del ESP32 | → | **`LV4`** del conversor |
 
-Los bornes de salida (los tres tornillos del otro lado, junto al cubo azul)
-**quedan vacíos**.
+El `IN` **no va al ESP32**. Va al conversor, y el conversor va al ESP32.
+
+Los bornes de salida del relé (los tres tornillos del otro lado, junto al cubo
+azul) **quedan vacíos** en esta etapa.
+
+### Cómo quedó en este protoboard
+
+El conversor está pinchado en las filas **30 a 35**, con los pines del lado HV en
+la columna `e` y los del lado LV en la columna `f`. El orden de las patitas es:
+
+| Fila | Lado HV (a-e) | Lado LV (f-j) | Uso |
+|---|---|---|---|
+| 30 | `HV1` | `LV1` | caudalímetro (etapa 3) |
+| 31 | `HV2` | `LV2` | libre |
+| 32 | `HV` = 5 V | `LV` = 3,3 V | alimentación |
+| 33 | `GND` | `GND` | masa común |
+| 34 | `HV3` | `LV3` | libre |
+| 35 | `HV4` | `LV4` | **relé (esta etapa)** |
+
+Entonces, en concreto: `IN` del relé → `C35`, y `P26` del ESP32 → `G35`.
+
+El `GND` del lado LV puede quedar vacío: en estas plaquitas los dos `GND` son el
+mismo nodo. Si el canal no responde, ese es el primer lugar donde mirar.
 
 ### El `DC-` va a los dos lados, y no es opcional
 
