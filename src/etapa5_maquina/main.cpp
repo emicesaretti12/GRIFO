@@ -17,9 +17,13 @@
 //       SDA/SS → GPIO 5      SCK  → GPIO 18
 //       MOSI   → GPIO 23     MISO → GPIO 19     RST → GPIO 22
 //
-//     Caudalímetro
-//       amarillo → GPIO 27 (por el conversor de niveles)
-//       rojo → 5V    negro → GND
+//     Caudalímetro — alimentado a 3.3V, NO a 5V
+//       rojo → 3V3    negro → GND    amarillo → GPIO 27 directo
+//
+//       A 3.3V su señal no puede superar los 3.3V, así que no necesita
+//       conversor. Eso libera el conversor para el relé solo, y evita que los
+//       11 V del relé se filtren al canal del sensor por el riel HV compartido.
+//       Ver docs/cableado-completo.md.
 //
 //     Relé
 //       IN → canal 4 del conversor (HV4);  LV4 → GPIO 26
@@ -202,9 +206,10 @@ void setup() {
   Serial.println(" GRIFO DE CERVEZA - ETAPA 5: MAQUINA DE ESTADOS");
   Serial.println("=============================================");
 
-  // El riel HV del conversor quedó desconectado en la etapa 4 (su pull-up de
-  // 10k dejaba el relé pegado), así que el pull-up del caudalímetro lo pone el
-  // ESP32. Si quieto cuenta pulsos, hay que volver a un pull-up externo.
+  // El caudalímetro ya no pasa por el conversor: se alimenta a 3.3V y va directo
+  // al GPIO27, así que el pull-up lo pone el ESP32. Si quieto cuenta pulsos, el
+  // pull-up interno (~45k) es muy débil para este cable y hay que poner uno
+  // externo.
   caudalIniciar(true);
 
   if (!tarjetaIniciar()) {
