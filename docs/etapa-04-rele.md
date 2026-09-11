@@ -386,6 +386,33 @@ medir `HV4` (`C35`) contra masa en reposo y en activado sin adivinar.
 
 ---
 
+## El riel `HV` va desconectado
+
+Con el riel `HV` del conversor alimentado a 5 V, **el relé queda pegado en
+activado y no suelta nunca**. Medido:
+
+| Riel `HV` | `IN` en reposo | Corriente por el opto | Relé |
+|---|---|---|---|
+| a 5 V | **9,9 V** | ~0,45 mA | **queda pegado** ✗ |
+| desconectado | **11,3 V** | ~0 | suelta bien ✅ |
+
+El pull-up de 10k del conversor forma divisor con los 2,2k internos del módulo y
+baja el `IN` de 11,3 a 9,9 V. Esos 2,1 V que quedan contra los 12 V dejan pasar
+corriente suficiente para **sostener** el relé, aunque no para activarlo. Un relé
+necesita bastante menos corriente para mantenerse que para engancharse.
+
+> El recurso nunca se libera del todo. Poco para notarlo mirando, suficiente para
+> que nunca vuelva al estado inicial.
+
+Cómo se diagnosticó, sin tocar nada peligroso: midiendo `COM`–`NO` con el tester
+en `Ω`. Daba `0,8` en los dos estados del ciclo. El oído no alcanzaba porque el
+relé simplemente nunca conmutaba.
+
+**Ojo:** el caudalímetro de la etapa 3 usaba ese mismo riel en 5 V. Ver el
+pendiente anotado en [`plan-de-etapas.md`](plan-de-etapas.md).
+
+---
+
 ## Criterio de aceptación
 
 - ✅ Se escucha el clic, un cambio por segundo.

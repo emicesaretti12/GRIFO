@@ -74,14 +74,50 @@ cortó el conector y se soldaron los tres cables.
 correcto. Sin válvula conectada todavía.
 **Detalle:** [`etapa-04-rele.md`](etapa-04-rele.md)
 
-⚠️ **Cambió el nivel activo respecto del plan original.** Con el módulo de 12 V
-que llegó, el jumper va en **`H` (activo en alto)**: en `L` el pin `IN` queda
-conectado por una resistencia a los 12 V de `DC+`, y un pin del ESP32 tolera
-3,3. De yapa, activo en alto hace que el estado por defecto de un pin flotante
-—cerca de 0 V— sea la válvula **cerrada**.
+⚠️ **Cambió todo el esquema de manejo respecto del plan original.** Medido sobre
+el módulo que llegó, el jumper va en **`L`**: en `H` haría falta poner 12 V en el
+`IN` para activarlo, cosa que el ESP32 no puede hacer. En `L` el `IN` queda
+colgado en **11,3 V** y el relé se activa tirándolo a masa — que es lo que
+queremos, porque entonces el reposo es "no hacer nada".
+
+Pero 11,3 V no pueden tocar un pin que tolera 3,3. La solución salió sin comprar
+nada: **un canal libre del conversor de niveles** (canal 4) hace de transistor y
+de aislación a la vez, y el GPIO26 se maneja en **open-drain**, que elige entre
+"a masa" y "desconectado" en vez de entre 0 y 3,3 V.
+
 **Se acepta cuando:** se escucha el clic, y **al resetear la placa el relé NO se
 activa durante el arranque**. Ese segundo punto es el que importa de verdad — ver
 la trampa del pin flotante en [`pinout-y-trampas.md`](pinout-y-trampas.md).
+
+✅ **ACEPTADA.** Conmuta (`COM`–`NO` pasa de `1` a `0,12`) y hace silencio en los
+cuatro resets.
+
+Lo que costó: **un ESP32 quemado.** Un test manual tocó `DC+` (12 V) en vez de
+`DC-`; los dos tornillos están a un centímetro. El `3V3` quedó en corto con masa.
+De ahí salió [`protocolo-electrico.md`](protocolo-electrico.md) y el autotest de
+la línea en el firmware, que contesta por serie lo que antes se averiguaba
+tocando cables.
+
+### ⚠️ Pendiente para la etapa 5: el conflicto del riel HV
+
+El relé anduvo recién cuando se **desconectó el riel `HV` del conversor** de los
+5 V. Con el riel en 5 V, su pull-up de 10k arrastraba el `IN` de 11,3 V a
+**9,9 V**, y esos 2,1 V de diferencia dejaban pasar ~0,45 mA por el
+optoacoplador: poco para activar el relé, suficiente para **mantenerlo pegado**
+una vez activado. Nunca soltaba.
+
+Pero el caudalímetro (etapa 3) usaba ese mismo riel en 5 V para su pull-up. Los
+dos no pueden convivir así. Opciones a evaluar cuando se integren:
+
+1. Dejar el riel `HV` desconectado y que el caudalímetro tome el pull-up del
+   **pull-up interno del ESP32** por el lado LV (`PULLUP_INTERNO = true` en la
+   etapa 3). Hay que verificar que el sensor siga contando.
+2. Alimentar el sensor de caudal a **3,3 V** en vez de 5 V. Si cuenta igual, no
+   necesita conversor y el canal 4 queda solo, sin conflicto.
+3. Un segundo conversor. Cuesta plata y es la última opción.
+
+**No llevar el riel `HV` a 12 V**: eso mete 12 V sobre la protoboard, al lado de
+los cables del ESP32, que es exactamente el riesgo que costó la primera placa.
 
 ## Etapa 5 — Los tres juntos, sin red
 **Objetivo:** máquina de estados completa con saldo y precio hardcodeados. Sin
