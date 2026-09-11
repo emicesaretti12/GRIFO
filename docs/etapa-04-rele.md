@@ -232,6 +232,36 @@ Nada enchufado: sin USB, sin 12 V.
 
 → Todo abierto en el checklist. Si algo da unido, no se sigue.
 
+### Fase 0b — placa nueva después de una quemada
+
+Si la placa anterior se quemó con los 12 V entrando por el lado LV, **ese canal
+del conversor puede haber quedado dañado**. Un MOSFET en corto pasaría los 11 V
+derecho al `P26` y mataría la placa nueva en el primer segundo.
+
+Dos cosas antes de conectar nada nuevo:
+
+**1. Sacar la placa quemada del circuito, completa.**
+
+No alcanza con desenchufarle el USB. Su `3V3` quedó en corto con masa: si sigue
+cableada a los rieles, pone el riel de 3,3 V a tierra y la placa nueva no va a
+arrancar nunca. Desconectala de todo, apartala lejos y marcala con cinta para no
+confundirla.
+
+**2. Test de integridad del canal** (el importante).
+
+Con el relé alimentado y **el ESP32 completamente afuera** — sin USB, así los
+rieles del conversor quedan muertos y el MOSFET cortado:
+
+| Medición | Sano | Dañado |
+|---|---|---|
+| hueco `LV` del canal contra el cable de masa fijo | **menos de 1 V** | **9 a 11 V** |
+
+Con el MOSFET cortado, el lado LV tiene que quedar abajo. Si aparecen 10 V ahí,
+el canal está en corto y **no se conecta el ESP32**: se pasa a otro canal libre
+(fila 34, `HV3`/`LV3`) y se repite el test. No hay que cambiar el firmware.
+
+---
+
 ### Fase 1 — solo el relé
 
 Enchufar **los 12 V**. El USB **no**.
