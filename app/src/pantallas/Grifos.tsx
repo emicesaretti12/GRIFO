@@ -18,7 +18,9 @@ export default function Grifos() {
   const [tokenNuevo, setTokenNuevo] = useState<{ grifo: Grifo; token: string } | null>(null)
 
   const traer = useCallback(async () => {
-    const { data, error } = await supabase.from('grifos').select('*').order('id')
+    // Por la RPC y no por la tabla: esta pantalla necesita el costo para
+    // mostrar el margen, y el costo esta detras de es_admin().
+    const { data, error } = await supabase.rpc('admin_listar_grifos')
     if (error) avisar('No pudimos leer las canillas', { tono: 'grave', detalle: error.message })
     else setGrifos(data as Grifo[])
     setCargando(false)
@@ -87,7 +89,7 @@ export default function Grifos() {
               </thead>
               <tbody>
                 {grifos.map(g => {
-                  const margen = g.precio_litro_centavos - g.costo_litro_centavos
+                  const margen = g.precio_litro_centavos - (g.costo_litro_centavos ?? 0)
                   const pct = g.precio_litro_centavos > 0
                     ? Math.round((margen / g.precio_litro_centavos) * 100) : 0
                   const conToken = g.token_rotado_en !== null
@@ -114,11 +116,11 @@ export default function Grifos() {
                       </td>
                       <td className="num" style={{ fontWeight: 650 }}>{pesos(g.precio_litro_centavos)}</td>
                       <td className="num" style={{ color: 'var(--ink-2)' }}>
-                        {g.costo_litro_centavos > 0 ? pesos(g.costo_litro_centavos)
+                        {(g.costo_litro_centavos ?? 0) > 0 ? pesos(g.costo_litro_centavos!)
                           : <span title="Sin costo cargado no podemos calcular la ganancia">— </span>}
                       </td>
                       <td className="num">
-                        {g.costo_litro_centavos > 0
+                        {(g.costo_litro_centavos ?? 0) > 0
                           ? <><strong>{pesos(margen)}</strong>
                               <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>{pct}%</div></>
                           : <Chip tono="ojo">falta costo</Chip>}
@@ -213,7 +215,7 @@ function Editor({ grifo, onCerrar, onGuardado, avisar }: {
   const [tab, setTab] = useState<'venta' | 'cerveza'>('venta')
   const [nombre, setNombre] = useState(grifo.nombre)
   const [precio, setPrecio] = useState(String(grifo.precio_litro_centavos / 100))
-  const [costo, setCosto] = useState(String(grifo.costo_litro_centavos / 100))
+  const [costo, setCosto] = useState(String((grifo.costo_litro_centavos ?? 0) / 100))
   const [pulsos, setPulsos] = useState(String(grifo.pulsos_por_litro))
   const [minimo, setMinimo] = useState(String(grifo.ml_minimos))
   const [estilo, setEstilo] = useState(grifo.estilo ?? '')

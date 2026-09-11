@@ -375,3 +375,62 @@ del cliente sigue visible e intacto.
 
 Nada del lado servidor. Lo que falta de la etapa 6 es firmware: `tareaRed`, el
 cliente HTTP y la cola offline en NVS.
+
+
+---
+
+## El permiso de `grifos` es por columna, y eso tiene consecuencias
+
+`public.grifos` es la única tabla del proyecto cuyo `grant select` no es sobre la
+tabla entera sino **sobre una lista de columnas**. El motivo es `token_hash`: con
+él, cualquiera podría hacerse pasar por la canilla ante el backend.
+
+Eso trae dos cosas que hay que tener presentes.
+
+### 1. `select('*')` sobre `grifos` NO funciona
+
+Postgres rechaza la consulta entera:
+
+```
+permission denied for table grifos
+```
+
+Aunque seas admin, aunque las filas existan, aunque la policy RLS te deje pasar.
+`*` pide todas las columnas, y una de ellas no está en la lista.
+
+En el front hay una constante para esto:
+
+```ts
+import { COLUMNAS_GRIFO } from '../lib/tipos'
+supabase.from('grifos').select(COLUMNAS_GRIFO).order('id')
+```
+
+Va en **una sola línea y con `as const`**: `supabase-js` deriva el tipo de la
+fila parseando ese string en tiempo de compilación, y partido con `+` deja de ser
+un literal.
+
+### 2. Una columna nueva nace sin permiso
+
+Una lista blanca no se actualiza sola. Las migraciones `10` y `12` agregaron
+`costo_litro_centavos`, `ml_vaso`, `estilo`, `descripcion`, `abv`, `ibu`, `color`
+e `imagen_url` sin extender el `grant`, y la pantalla de Canillas quedó
+mostrando "No hay canillas cargadas" con la tabla llena.
+
+> Es agregar un campo al modelo y olvidarse del serializer. El campo existe, la
+> consulta lo pide, y la respuesta dice que no.
+
+**Cada vez que se agregue una columna a `grifos` hay que decidir explícitamente
+quién la lee.** El default —que nadie la lea— es el correcto, pero hay que
+acordarse de cambiarlo cuando corresponde.
+
+### Quién ve qué
+
+| Columna | Quién |
+|---|---|
+| presentación (nombre, precio, estilo, abv…) | todo el personal, por `grant` |
+| `costo_litro_centavos` | **solo admin**, por `admin_listar_grifos()` |
+| `token_hash` | **nadie**, nunca |
+
+El costo está aparte por el mismo motivo que el margen en el arqueo: con el costo
+y el precio se saca la ganancia, y eso no es información de cajero. Esconderlo en
+el front no sería una medida de seguridad.

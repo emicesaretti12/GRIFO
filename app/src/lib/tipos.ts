@@ -1,10 +1,28 @@
 export type Rol = 'cajero' | 'admin'
 
+/**
+ * Las columnas de `grifos` que el personal puede leer por la tabla.
+ *
+ * **No usar `select('*')` sobre `grifos`.** El permiso de lectura es por
+ * columna —para que `token_hash` no lo vea nadie— y `*` lo pide igual, así que
+ * Postgres rechaza la consulta entera con `permission denied for table grifos`.
+ *
+ * La lista tampoco incluye `costo_litro_centavos`: eso sale solo por
+ * `admin_listar_grifos()`.
+ */
+// Va en una sola linea y con `as const` a proposito: supabase-js deriva el tipo
+// de la fila parseando este string en tiempo de compilacion. Partido en dos con
+// `+` deja de ser un literal y el tipo degenera en `GenericStringError[]`.
+export const COLUMNAS_GRIFO = 'id, nombre, precio_litro_centavos, pulsos_por_litro, ml_minimos, ml_vaso, activo, token_rotado_en, estilo, descripcion, abv, ibu, color, imagen_url' as const
+
 export type Grifo = {
   id: number
   nombre: string
   precio_litro_centavos: number
-  costo_litro_centavos: number
+  /** Solo lo devuelve `admin_listar_grifos()`. Por la tabla no sale:
+   *  con el costo y el precio se calcula el margen, y el margen no es
+   *  informacion de cajero. */
+  costo_litro_centavos?: number
   pulsos_por_litro: number
   ml_minimos: number
   ml_vaso: number

@@ -1,3 +1,4 @@
+import { COLUMNAS_GRIFO } from '../lib/tipos'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { pesos, volumen, fechaCorta } from '../lib/plata'
@@ -33,7 +34,7 @@ export default function Reportes() {
       supabase.from('sesiones').select('*')
         .gte('abierta_en', desde.toISOString())
         .order('abierta_en', { ascending: false }).limit(2000),
-      supabase.from('grifos').select('*').order('id'),
+      supabase.from('grifos').select(COLUMNAS_GRIFO).order('id'),
     ])
     if (s.error) avisar('No pudimos leer las sesiones', { tono: 'grave', detalle: s.error.message })
     else setSesiones(s.data as Sesion[])

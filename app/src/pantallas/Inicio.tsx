@@ -1,3 +1,4 @@
+import { COLUMNAS_GRIFO } from '../lib/tipos'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { pesos, volumen, fecha } from '../lib/plata'
@@ -24,7 +25,7 @@ export default function Inicio() {
       supabase.from('sesiones').select('*')
         .gte('abierta_en', desde.toISOString())
         .order('abierta_en', { ascending: false }).limit(1000),
-      supabase.from('grifos').select('*').order('id'),
+      supabase.from('grifos').select(COLUMNAS_GRIFO).order('id'),
       supabase.rpc('estado_barriles'),
     ])
     if (!s.error) setSesiones(s.data as Sesion[])
