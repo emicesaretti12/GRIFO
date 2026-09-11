@@ -9,6 +9,27 @@ mañana cambian el router no hay nada que reconfigurar.
 
 ---
 
+## Estado actual
+
+**Desplegado y andando:** https://grifo-phi.vercel.app
+
+Vercel sigue la rama `claude/grifo-cerveza-esp32-qndb2h`, así que cada push
+publica solo. No hay nada que correr a mano.
+
+### Cómo verificar que las variables quedaron cargadas
+
+Abrí la URL.
+
+- **Se ve la pantalla normal** → las dos variables están bien.
+- **Página en blanco** → falta alguna. `src/lib/supabase.ts` tira un error al
+  cargar el módulo si no están, y eso mata la app entera. El mensaje sale en la
+  consola del navegador (F12).
+
+Es a propósito que falle fuerte: una app a medio configurar que *parece* andar
+es peor que una que no arranca.
+
+---
+
 ## Los pasos
 
 1. **[vercel.com](https://vercel.com) → Add New → Project** → importá el repo
@@ -84,3 +105,30 @@ configuración equivalente es *build command* `npm --prefix app install && npm
 También se puede servir desde una PC del bar con `npm run preview` o cualquier
 servidor estático, pero ahí las tablets quedan atadas a esa máquina y a esa red
 — que es justo lo que evitás publicándolo.
+
+
+---
+
+## Los QR no hay que regenerarlos
+
+Se arman en vivo con el origen desde donde se está sirviendo la app:
+
+```ts
+const link = `${location.origin}${location.pathname}#/pantalla?grifo=${id}&token=${token}`
+```
+
+Así que abriendo la app desde la URL de Vercel, los QR ya salen apuntando ahí.
+Y si mañana se le pone un dominio propio, siguen saliendo bien sin tocar nada.
+
+> Es no hardcodear el `baseURL`. El link se deriva de dónde está corriendo, no
+> de una constante que hay que acordarse de actualizar.
+
+---
+
+## Por qué el NFC necesita esto sí o sí
+
+La Web NFC API **solo funciona sobre HTTPS**. Abriendo la app por IP local
+(`http://192.168.x.x`) el navegador no la habilita, y la caja móvil no puede
+leer tarjetas.
+
+Vercel da HTTPS de fábrica, así que con el deploy hecho eso queda resuelto.
