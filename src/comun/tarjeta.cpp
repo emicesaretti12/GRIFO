@@ -21,9 +21,15 @@ static const uint32_t PERIODO_MS = 100;
 //
 //   Es un reintento antes de dar la conexión por caída. Un timeout de 300 ms
 //   para un evento que factura.
-static const uint8_t AUSENTE_TRAS = 3;         // 3 × 100 ms = 300 ms
+// Subido de 3 a 5 después de ver falsos negativos en la etapa 5. El costo de
+// esperar de más son 200 ms para liquidar; el costo de equivocarse es cortarle
+// la cerveza a un cliente a mitad de la pinta y cobrarle media.
+//
+//   Cuando los dos errores no cuestan lo mismo, el umbral no va en el medio.
+static const uint8_t AUSENTE_TRAS = 5;         // 5 × 100 ms = 500 ms
 
 static char     uidActual[21] = "";
+static uint32_t apoyadaEn = 0;
 static uint8_t  fallosSeguidos = 0;
 static uint32_t ultimoChequeo = 0;
 
@@ -40,15 +46,37 @@ static void uidATexto(const MFRC522::Uid &uid, char *salida, size_t largo) {
 }
 
 /** ¿Sigue apoyada la misma tarjeta?
- *  `PICC_WakeupA` despierta una tarjeta ya seleccionada, que es lo que hace
- *  falta acá: no queremos leerla de nuevo, queremos saber si todavía está. */
+ *
+ *  ── El detalle que hace que esto funcione ─────────────────────────────────
+ *
+ *  Una tarjeta MIFARE tiene su propia máquina de estados, y `WUPA` (despertar)
+ *  **solo lo contesta si está dormida**. Al contestarlo queda despierta.
+ *
+ *  Entonces hay que volver a dormirla antes del próximo chequeo, o el siguiente
+ *  `WUPA` no obtiene respuesta y el firmware cree que la retiraron.
+ *
+ *  Y dormirla tiene su propio requisito: `PICC_HaltA` solo funciona sobre una
+ *  tarjeta **seleccionada**. Después del `WUPA` está despierta pero todavía no
+ *  seleccionada, así que hay que completar la selección con `PICC_ReadCardSerial`
+ *  antes del `HaltA`.
+ *
+ *  Sin ese paso del medio, el `HaltA` no hace nada, la tarjeta queda despierta,
+ *  y a los ~300 ms el sistema liquida una sesión que nadie cerró.
+ *
+ *    Es mandarle al otro sistema el evento correcto desde el estado equivocado.
+ *    No te da error: te ignora.
+ */
 static bool sigueAhi() {
   byte buffer[2];
   byte largo = sizeof(buffer);
   MFRC522::StatusCode estado = lector.PICC_WakeupA(buffer, &largo);
   bool presente = (estado == MFRC522::STATUS_OK ||
                    estado == MFRC522::STATUS_COLLISION);
-  lector.PICC_HaltA();
+
+  if (presente) {
+    lector.PICC_ReadCardSerial();   // completa el select, para que el halt valga
+    lector.PICC_HaltA();            // la duerme de nuevo para el próximo chequeo
+  }
   return presente;
 }
 
@@ -72,6 +100,7 @@ void tarjetaActualizar(uint32_t ahora) {
     if (!lector.PICC_ReadCardSerial())   return;
     uidATexto(lector.uid, uidActual, sizeof(uidActual));
     fallosSeguidos = 0;
+    apoyadaEn = ahora;
     lector.PICC_HaltA();
     return;
   }
@@ -79,6 +108,14 @@ void tarjetaActualizar(uint32_t ahora) {
   // Ya hay una: solo nos interesa si se fue, con el debounce de arriba.
   if (sigueAhi()) { fallosSeguidos = 0; return; }
   if (++fallosSeguidos < AUSENTE_TRAS) return;
+
+  // Cuánto duró la lectura. Si acá aparecen tiempos de medio segundo con la
+  // tarjeta quieta sobre el lector, el chequeo de presencia está fallando y hay
+  // que mirarlo: una sesión no se liquida sola.
+  uint32_t decimas = (ahora - apoyadaEn) / 100;
+  Serial.printf("[tarjeta] %s retirada tras %lu.%lu s\n",
+                uidActual, (unsigned long)(decimas / 10),
+                (unsigned long)(decimas % 10));
 
   fallosSeguidos = 0;
   uidActual[0] = '\0';
