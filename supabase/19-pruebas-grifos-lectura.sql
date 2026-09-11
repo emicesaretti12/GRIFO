@@ -56,43 +56,71 @@ begin
   reset role;
 end $$;
 
--- ── 5. Un cajero NO puede usar admin_listar_grifos() ────────────────────────
--- Se prueba aparte porque necesita crear un cajero, y eso ensucia la
--- transacción de arriba.
+-- ── 5. Quien no es admin NO puede usar admin_listar_grifos() ───────────────
+--
+-- La primera versión de esta prueba creaba un cajero de mentira insertando en
+-- `auth.users`. Dos cosas mal:
+--
+--   · Escribir en la tabla de autenticación real para correr un test es una
+--     idea pésima, aunque después se borre. Un test no ensucia el sistema que
+--     está probando.
+--
+--   · Andaba en el Postgres local y fallaba en Supabase, porque el stub de
+--     pruebas tiene `email text unique` y el `auth.users` de verdad no: ahí la
+--     unicidad va junto con el proveedor. El `on conflict (email)` no encontraba
+--     a qué agarrarse.
+--
+--     Un doble de prueba que no se parece al original te da confianza falsa.
+--
+-- Esta versión no crea nada. Le pone al JWT un `sub` que no está en `personal`
+-- —o sea alguien logueado que no es del bar— y verifica que la función lo
+-- rechace. Eso es exactamente la propiedad que importa.
+do $$
+declare
+  v_desconocido uuid := gen_random_uuid();
+begin
+  perform set_config('request.jwt.claims',
+                     json_build_object('sub', v_desconocido)::text, true);
+  set local role authenticated;
+
+  assert not public.es_admin(), '5: un uuid desconocido no deberia ser admin';
+
+  begin
+    perform * from public.admin_listar_grifos();
+    raise exception '5: alguien que no es admin pudo ver el costo de las canillas';
+  exception
+    when insufficient_privilege then null;   -- errcode 42501, el que levanta la funcion
+  end;
+
+  reset role;
+end $$;
+
+
+-- ── 6. Un cajero de verdad sí puede leer nombre y precio ───────────────────
+-- Corre solo si ya hay un cajero cargado. Los necesita para laburar: si esto
+-- fallara, nos habríamos pasado de restrictivos al cerrar el permiso.
 do $$
 declare
   v_cajero uuid;
-  v_admin  uuid;
 begin
-  select p.user_id into v_admin from public.personal p where p.rol = 'admin' limit 1;
+  select p.user_id into v_cajero
+    from public.personal p
+   where p.rol = 'cajero' and p.activo
+   limit 1;
 
-  insert into auth.users (email) values ('cajero-prueba-19@ejemplo.local')
-    on conflict (email) do nothing;
-  select u.id into v_cajero from auth.users u
-   where u.email = 'cajero-prueba-19@ejemplo.local';
-
-  insert into public.personal (user_id, nombre, rol, activo)
-  values (v_cajero, 'Cajero de prueba', 'cajero', true)
-  on conflict (user_id) do update set rol = 'cajero', activo = true;
+  if v_cajero is null then
+    raise notice '6: omitida, no hay ningun cajero cargado todavia';
+    return;
+  end if;
 
   perform set_config('request.jwt.claims',
                      json_build_object('sub', v_cajero)::text, true);
   set local role authenticated;
 
-  begin
-    perform * from public.admin_listar_grifos();
-    raise exception '5: un cajero pudo ver el costo de las canillas';
-  exception
-    when insufficient_privilege then null;   -- errcode 42501, el que levanta la funcion
-  end;
-
-  -- Pero el cajero SÍ tiene que poder leer nombre y precio: los necesita para
-  -- laburar. Si esto falla, nos pasamos de restrictivos.
   perform id, nombre, precio_litro_centavos, activo from public.grifos;
 
   reset role;
-  delete from public.personal where user_id = v_cajero;
-  delete from auth.users where id = v_cajero;
 end $$;
+
 
 select '✅ TODAS LAS PRUEBAS DE LECTURA DE CANILLAS PASARON' as resultado;

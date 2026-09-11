@@ -89,3 +89,35 @@ set local role authenticated;
 
 Si te olvidás, el assert falla con un valor nulo y parece un bug de la función
 cuando en realidad la policy estaba haciendo bien su trabajo.
+
+
+---
+
+## El stub no es Supabase, y eso te puede morder
+
+Un doble de prueba que no se parece al original da confianza falsa. Ya pasó una
+vez acá:
+
+`00-stub-auth.sql` declara `auth.users.email` como `unique`. El `auth.users` de
+Supabase **no** tiene esa constraint sola — la unicidad va junto con el proveedor
+y el `instance_id`. Una prueba con `on conflict (email)` pasaba en local y
+explotaba en la nube con:
+
+```
+42P10: there is no unique or exclusion constraint matching the ON CONFLICT specification
+```
+
+**Regla que salió de eso: una prueba no escribe en `auth.users`.**
+
+Si necesitás probar qué puede hacer alguien que no es admin, no hace falta crear
+un usuario: alcanza con ponerle al JWT un `sub` que no esté en `personal`.
+
+```sql
+perform set_config('request.jwt.claims',
+                   json_build_object('sub', gen_random_uuid())::text, true);
+set local role authenticated;
+```
+
+Y si una prueba **tiene** que crear datos, va envuelta en `begin; … rollback;`
+como hace [`08-pruebas-personal.sql`](../08-pruebas-personal.sql). Una prueba no
+ensucia el sistema que está probando.
