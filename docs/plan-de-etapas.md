@@ -126,6 +126,57 @@ Estados: `ESPERANDO` → `AUTORIZANDO` → `LISTO` ⇄ `SIRVIENDO` → `LIQUIDAN
 `ESPERANDO`, más `RECHAZADO` para saldo insuficiente.
 **Se acepta cuando:** se apoya la tarjeta, se aprieta el botón, cuenta pulsos,
 corta al llegar al límite, y al retirar la tarjeta imprime el ticket por Serial.
+**Detalle:** [`etapa-05-maquina.md`](etapa-05-maquina.md)
+
+✅ **ACEPTADA.** El ciclo completo anduvo y el corte dio exacto:
+
+```
+ Servido   : 1111 ml  (500 pulsos)
+ Cobrado   : $5000,00
+ Saldo     : $0,00
+```
+
+500 pulsos sobre un límite de 500, y el cobro igual al saldo al centavo. También
+se vieron funcionar el failsafe de "abierta sin pulsos", el rechazo por saldo
+insuficiente, y el arranque con la válvula cerrada tras cuatro resets.
+
+### Lo que costó
+
+**1. El caudalímetro anda a 3,3 V.** Era la incógnita que decidía si había que
+comprar un transistor para el relé. Anda: contó 500 pulsos soplando. El conversor
+de niveles queda para el relé solo y **no hubo que comprar nada**.
+
+**2. Un falso "tarjeta retirada" cada 300 ms**, que liquidaba la sesión sola. La
+tarjeta tiene su propia máquina de estados: `WUPA` solo lo contesta una tarjeta
+dormida, y al contestarlo queda despierta. Había que volver a dormirla, y
+`PICC_HaltA` solo funciona sobre una tarjeta **seleccionada** — faltaba el
+`PICC_ReadCardSerial` del medio. Sin él el halt no hacía nada y el chequeo
+siguiente no obtenía respuesta.
+
+El mismo bug estaba en el sketch de la etapa 2 desde el principio, y no se notó
+porque ahí solo se apoyaba y se sacaba la tarjeta sin dejarla quieta.
+
+**3. El corte llegaba tarde: 515 pulsos sobre 500**, o sea 33 ml regalados. El
+`if` del límite estaba después de hablar con el lector, y esa charla por SPI toma
+milisegundos que a caudal de servicio son pulsos que ya salieron. Moviéndolo al
+principio del loop el exceso pasó de 15 pulsos a cero.
+
+> Es poner el guard al principio del handler. Lo que va después puede tardar; la
+> decisión de cortar, no.
+
+### ⚠️ Anotado para la instalación
+
+Durante las pruebas apareció cinco veces en 35 segundos:
+
+```
+[tarjeta] se recupero reiniciando el lector
+```
+
+El MFRC522 se cuelga cada tanto y el último recurso lo levanta. La sesión se
+salva, pero **esa frecuencia es demasiada**. Es ruido en el SPI por la longitud
+del recorrido (ESP32 → protoboard → lector). En la canilla el lector va a 20 cm,
+con cable corto y directo. **Si sigue apareciendo con cables cortos, hay un
+problema de fondo y hay que mirarlo.**
 
 ## Etapa 6 — Supabase + cola offline
 **Objetivo:** sumar `tareaRed` (core 0, prioridad baja), las dos RPC
