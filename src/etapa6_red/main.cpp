@@ -177,6 +177,12 @@ static void imprimirTicket(uint32_t ml, uint32_t pulsos) {
   Serial.printf(" Servido   : %lu ml  (%lu pulsos)\n",
                 (unsigned long)ml, (unsigned long)pulsos);
   Serial.printf(" Estimado  : %s   (lo definitivo lo calcula Supabase)\n", s);
+  if (pulsosMax > 0 && pulsos > pulsosMax) {
+    Serial.printf(" !! EXCESO : %lu pulsos de mas sobre %lu autorizados\n",
+                  (unsigned long)(pulsos - pulsosMax), (unsigned long)pulsosMax);
+    Serial.println("              El servidor recorta el cobro al saldo, asi");
+    Serial.println("              que esa diferencia la regala el bar.");
+  }
   if (!redConectada()) {
     Serial.println(" Sin red   : el cobro quedo en cola, se envia solo");
   }
@@ -187,6 +193,20 @@ static void imprimirTicket(uint32_t ml, uint32_t pulsos) {
 static void tareaControl(void *) {
   for (;;) {
     uint32_t ahora = millis();
+
+    // ── EL CORTE POR LÍMITE VA PRIMERO ──────────────────────────────────────
+    // Antes que el lector, antes que cualquier otra cosa. Hablar con el
+    // MFRC522 por SPI toma varios milisegundos, y a caudal de servicio cada
+    // milisegundo son pulsos que ya salieron por el pico.
+    if (estado == SIRVIENDO) {
+      pulsosServidos = caudalPulsos() - pulsosBase;
+      if (pulsosServidos >= pulsosMax) {
+        valvulaCerrar();
+        Serial.println(">> Limite de saldo alcanzado. Corta.");
+        irA(LISTO);
+      }
+    }
+
     tarjetaActualizar(ahora);
 
     // ── EL INVARIANTE ─────────────────────────────────────────────────────
@@ -291,13 +311,7 @@ static void tareaControl(void *) {
         pulsosServidos = pulsos;
         if (pulsos != pulsosPrevios) { pulsosPrevios = pulsos; ultimoPulsoMs = ahora; }
 
-        // El corte local. Sin red, sin consultas, sin esperar a nadie.
-        if (pulsos >= pulsosMax) {
-          valvulaCerrar();
-          Serial.println(">> Limite de saldo alcanzado. Corta.");
-          irA(LISTO);
-          break;
-        }
+        // El corte local ya se evaluó arriba, al principio de la vuelta.
         if (!botonApretado())   { valvulaCerrar(); irA(LISTO);      break; }
         if (!tarjetaPresente()) { valvulaCerrar(); irA(LIQUIDANDO); break; }
 
@@ -345,7 +359,7 @@ static void tareaControl(void *) {
       }
     }
 
-    vTaskDelay(pdMS_TO_TICKS(10));
+    vTaskDelay(pdMS_TO_TICKS(5));
   }
 }
 

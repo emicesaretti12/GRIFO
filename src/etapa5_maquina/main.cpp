@@ -184,6 +184,13 @@ static void imprimirTicket(const char *uid, uint32_t pulsos,
                 (unsigned long)pulsos);
   Serial.printf(" Cobrado   : %s\n", sCobrado);
   Serial.printf(" Saldo     : %s\n", sSaldo);
+  if (pulsosMax > 0 && pulsos > pulsosMax) {
+    // Salió más de lo autorizado. El saldo lo absorbe porque se recorta, pero
+    // esa diferencia es cerveza que el bar regaló, y tiene que quedar a la
+    // vista: si aparece seguido, el corte está llegando tarde.
+    Serial.printf(" !! EXCESO : %lu pulsos de mas sobre %lu autorizados\n",
+                  (unsigned long)(pulsos - pulsosMax), (unsigned long)pulsosMax);
+  }
   Serial.println("========================================");
   Serial.println();
 }
@@ -241,6 +248,25 @@ void setup() {
 
 void loop() {
   uint32_t ahora = millis();
+
+  // ── EL CORTE POR LÍMITE VA PRIMERO ────────────────────────────────────────
+  // Antes que el lector, antes que cualquier otra cosa.
+  //
+  // Hablar con el MFRC522 por SPI toma varios milisegundos, y a caudal de
+  // servicio cada milisegundo son pulsos que ya salieron por el pico. Con el
+  // corte al final del loop se midió un exceso de 15 pulsos —33 ml de cerveza
+  // regalada— sobre un límite de 500.
+  //
+  //   Es poner el guard al principio del handler. Lo que va después puede
+  //   tardar; la decisión de cortar, no.
+  if (estado == SIRVIENDO) {
+    pulsosServidos = caudalPulsos() - pulsosBase;
+    if (pulsosServidos >= pulsosMax) {
+      valvulaCerrar();
+      Serial.println(">> Limite de saldo alcanzado. Corta.");
+      irA(LISTO);
+    }
+  }
 
   tarjetaActualizar(ahora);
 
@@ -320,16 +346,9 @@ void loop() {
         ultimoPulsoMs = ahora;
       }
 
-      // 1) El corte por saldo. Comparación de enteros, acá adentro, sin
-      //    preguntarle a nadie. Aunque el WiFi esté caído y Supabase no exista,
-      //    este `if` corta igual. Es la razón por la que el límite se calcula en
-      //    pulsos al autorizar y no se consulta durante la tirada.
-      if (pulsos >= pulsosMax) {
-        valvulaCerrar();
-        Serial.println(">> Limite de saldo alcanzado. Corta.");
-        irA(LISTO);
-        break;
-      }
+      // El corte por saldo ya se evaluó arriba, al principio del loop, para que
+      // no lo demore nada. Es una comparación de enteros hecha acá adentro: sin
+      // red, sin consultas, sin esperar a nadie.
 
       // 2) Soltó el botón.
       if (!botonApretado()) {
