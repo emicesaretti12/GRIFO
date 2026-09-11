@@ -181,19 +181,27 @@ azul) **quedan vacíos** en esta etapa.
 
 ### Cómo quedó en este protoboard
 
-El conversor está pinchado en las filas **30 a 35**, con los pines del lado HV en
-la columna `e` y los del lado LV en la columna `f`. El orden de las patitas es:
+El conversor está pinchado en las filas **30 a 35**, con las patitas del lado HV
+en la columna **`d`** y las del lado LV en la columna **`f`**:
 
-| Fila | Lado HV (a-e) | Lado LV (f-j) | Uso |
+| Fila | Patita HV | Patita LV | Uso |
 |---|---|---|---|
-| 30 | `HV1` | `LV1` | caudalímetro (etapa 3) |
-| 31 | `HV2` | `LV2` | libre |
-| 32 | `HV` = 5 V | `LV` = 3,3 V | alimentación |
-| 33 | `GND` | `GND` | masa común |
-| 34 | `HV3` | `LV3` | libre |
-| 35 | `HV4` | `LV4` | **relé (esta etapa)** |
+| 30 | `HV1` → `D30` | `LV1` → `F30` | caudalímetro (etapa 3) |
+| 31 | `HV2` → `D31` | `LV2` → `F31` | libre |
+| 32 | `HV` → `D32` (5 V) | `LV` → `F32` (3,3 V) | alimentación |
+| 33 | `GND` → `D33` | `GND` → `F33` | masa común |
+| 34 | `HV3` → `D34` | `LV3` → `F34` | libre |
+| 35 | `HV4` → `D35` | `LV4` → `F35` | **relé (esta etapa)** |
 
-Entonces, en concreto: `IN` del relé → `C35`, y `P26` del ESP32 → `G35`.
+**Los huecos libres de cada fila** son los que quedan a los costados del cuerpo
+de la plaquita:
+
+| Lado | Ocupado | Libres |
+|---|---|---|
+| HV (`a`-`e`) | `d` (patita), `e` (tapado por el cuerpo) | **`a`, `b`, `c`** |
+| LV (`f`-`j`) | `f` (patita) | **`g`, `h`, `i`, `j`** |
+
+Entonces, en concreto: `IN` del relé → **`C35`**, y `P26` del ESP32 → **`G35`**.
 
 El `GND` del lado LV puede quedar vacío: en estas plaquitas los dos `GND` son el
 mismo nodo. Si el canal no responde, ese es el primer lugar donde mirar.
@@ -249,16 +257,32 @@ confundirla.
 
 **2. Test de integridad del canal** (el importante).
 
-Con el relé alimentado y **el ESP32 completamente afuera** — sin USB, así los
-rieles del conversor quedan muertos y el MOSFET cortado:
+Sin ESP32 conectado, y con el relé alimentado.
+
+Ojo con un detalle que arruina el test si se pasa por alto: **no alcanza con
+sacar el ESP32**. La compuerta del MOSFET está atada al riel `LV`, y sin ESP32
+ese riel no queda en 0, queda **flotando**. Un nodo flotando toma cualquier
+valor y la medición no dice nada.
+
+> "Sin inicializar" no es lo mismo que "en cero". Uno tiene un valor definido;
+> el otro tiene el que quedó.
+
+Hay que **forzar el riel `LV` a masa** con un cable (`H32` → `C33` en este
+protoboard). Es seguro justamente porque no hay ningún ESP32 conectado.
+
+Recién entonces:
 
 | Medición | Sano | Dañado |
 |---|---|---|
-| hueco `LV` del canal contra el cable de masa fijo | **menos de 1 V** | **9 a 11 V** |
+| hueco `LV` del canal contra masa | **menos de 1 V** | **9 a 11 V** |
 
-Con el MOSFET cortado, el lado LV tiene que quedar abajo. Si aparecen 10 V ahí,
+Con la compuerta en 0 el MOSFET corta, y el lado LV tiene que quedar abajo por
+su pull-up de 10k hacia el riel que acabamos de aterrar. Si aparecen 10 V ahí,
 el canal está en corto y **no se conecta el ESP32**: se pasa a otro canal libre
 (fila 34, `HV3`/`LV3`) y se repite el test. No hay que cambiar el firmware.
+
+**Sacar ese cable antes de conectar el ESP32.** Si queda puesto, pone la salida
+de 3,3 V de la placa en cortocircuito.
 
 ---
 
