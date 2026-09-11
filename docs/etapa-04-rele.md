@@ -377,10 +377,12 @@ Y después el ciclo:
 --- Empieza el ciclo. ---
 
 [   6000 ms] ACTIVADO  - valvula ABIERTA   (GPIO26 a masa)
-[   7000 ms] reposo    - valvula cerrada   (GPIO26 desconectado)
+[  11000 ms] reposo    - valvula cerrada   (GPIO26 desconectado)
 ```
 
-Un clic por segundo, alternando.
+Un clic cada 5 segundos, alternando. El período es largo a propósito: 5 segundos
+por estado alcanzan para que un multímetro barato se estabilice, así se puede
+medir `HV4` (`C35`) contra masa en reposo y en activado sin adivinar.
 
 ---
 

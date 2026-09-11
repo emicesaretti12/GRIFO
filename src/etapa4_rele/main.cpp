@@ -67,7 +67,10 @@ static const int RELE_REPOSO   = HIGH;   // pin desconectado (alta impedancia)
 // solo. Ese es el criterio de aceptación de esta etapa.
 static const uint32_t SILENCIO_MS = 5000;
 
-static const uint32_t PERIODO_MS = 1000;
+// Cada estado dura lo suficiente para que un multímetro barato se estabilice.
+// Con un cambio por segundo la aguja (o el display) nunca termina de asentarse y
+// no se puede medir la línea en reposo ni en activado.
+static const uint32_t PERIODO_MS = 5000;
 
 
 // ── Autotest de la línea ────────────────────────────────────────────────────
@@ -173,6 +176,11 @@ void setup() {
   Serial.println("El rele NO tiene que hacer NINGUN clic ahora.");
   Serial.println("Si lo hace, se activa solo al arrancar: eso es");
   Serial.println("lo que abriria la canilla en cada corte de luz.");
+  Serial.println("---------------------------------------------");
+  Serial.println("Cada estado dura 5 s: alcanza para medir con el");
+  Serial.println("tester en HV4 (hueco C35) contra masa (C33).");
+  Serial.println("  reposo   -> deberia dar ~11 V");
+  Serial.println("  ACTIVADO -> deberia dar ~0 V");
   Serial.println("---------------------------------------------");
   Serial.println();
 }
