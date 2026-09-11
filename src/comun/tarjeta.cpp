@@ -45,39 +45,78 @@ static void uidATexto(const MFRC522::Uid &uid, char *salida, size_t largo) {
   salida[i] = '\0';
 }
 
-/** ¿Sigue apoyada la misma tarjeta?
- *
- *  ── El detalle que hace que esto funcione ─────────────────────────────────
- *
- *  Una tarjeta MIFARE tiene su propia máquina de estados, y `WUPA` (despertar)
- *  **solo lo contesta si está dormida**. Al contestarlo queda despierta.
- *
- *  Entonces hay que volver a dormirla antes del próximo chequeo, o el siguiente
- *  `WUPA` no obtiene respuesta y el firmware cree que la retiraron.
- *
- *  Y dormirla tiene su propio requisito: `PICC_HaltA` solo funciona sobre una
- *  tarjeta **seleccionada**. Después del `WUPA` está despierta pero todavía no
- *  seleccionada, así que hay que completar la selección con `PICC_ReadCardSerial`
- *  antes del `HaltA`.
- *
- *  Sin ese paso del medio, el `HaltA` no hace nada, la tarjeta queda despierta,
- *  y a los ~300 ms el sistema liquida una sesión que nadie cerró.
- *
- *    Es mandarle al otro sistema el evento correcto desde el estado equivocado.
- *    No te da error: te ignora.
- */
-static bool sigueAhi() {
+/** Un intento de WUPA. Solo lo contesta una tarjeta **dormida**. */
+static bool intentarWupa() {
   byte buffer[2];
   byte largo = sizeof(buffer);
-  MFRC522::StatusCode estado = lector.PICC_WakeupA(buffer, &largo);
-  bool presente = (estado == MFRC522::STATUS_OK ||
-                   estado == MFRC522::STATUS_COLLISION);
+  MFRC522::StatusCode e = lector.PICC_WakeupA(buffer, &largo);
+  return (e == MFRC522::STATUS_OK || e == MFRC522::STATUS_COLLISION);
+}
+
+/** Un intento de REQA. Solo lo contesta una tarjeta **en reposo**.
+ *
+ *  Se prueban los dos porque no sabemos con certeza en qué estado quedó la
+ *  tarjeta: un pico de ruido, un reset del lector o un halt que no llegó la
+ *  dejan en cualquiera de los dos. Preguntar por las dos puertas cuesta un
+ *  milisegundo y cubre el doble de casos. */
+static bool intentarReqa() {
+  byte buffer[2];
+  byte largo = sizeof(buffer);
+  MFRC522::StatusCode e = lector.PICC_RequestA(buffer, &largo);
+  return (e == MFRC522::STATUS_OK || e == MFRC522::STATUS_COLLISION);
+}
+
+/** ¿Sigue apoyada la misma tarjeta?
+ *
+ *  ── Por qué esto es tan insistente ────────────────────────────────────────
+ *
+ *  Declarar "retirada" **liquida la sesión y cobra**. Equivocarse le corta la
+ *  cerveza a un cliente a mitad de la pinta y le cobra media pinta. Así que
+ *  antes de dar ese paso se agotan todos los intentos razonables.
+ *
+ *  Tres rondas de (WUPA + REQA) por chequeo, y cinco chequeos fallidos
+ *  seguidos para declararla ausente: 30 preguntas en medio segundo.
+ *
+ *  ── El detalle que lo hacía fallar ────────────────────────────────────────
+ *
+ *  `WUPA` solo lo contesta una tarjeta dormida, y al contestarlo queda
+ *  despierta. Hay que volver a dormirla antes del próximo chequeo, y `HaltA`
+ *  solo funciona sobre una tarjeta **seleccionada**. Por eso el
+ *  `PICC_ReadCardSerial()` del medio: sin él el halt no hace nada, la tarjeta
+ *  queda despierta y el WUPA siguiente no obtiene respuesta.
+ *
+ *    Es mandarle al otro sistema el evento correcto desde el estado
+ *    equivocado. No te da error: te ignora.
+ */
+static bool sigueAhi() {
+  bool presente = false;
+  for (uint8_t intento = 0; intento < 3 && !presente; intento++) {
+    presente = intentarWupa() || intentarReqa();
+  }
 
   if (presente) {
     lector.PICC_ReadCardSerial();   // completa el select, para que el halt valga
     lector.PICC_HaltA();            // la duerme de nuevo para el próximo chequeo
   }
   return presente;
+}
+
+/** Último recurso antes de dar la tarjeta por retirada.
+ *
+ *  Reinicia el lector y vuelve a preguntar. Si el que se colgó fue el MFRC522
+ *  —un pico de ruido en el SPI, la antena que quedó en un estado raro— esto lo
+ *  levanta y la sesión se salva.
+ *
+ *  Cuesta unos milisegundos y solo corre en el chequeo número cinco, o sea casi
+ *  nunca. Es barato en el caso normal y caro solo cuando ya estábamos por
+ *  cobrarle de más a alguien.
+ */
+static bool ultimaChance() {
+  lector.PCD_Init();
+  delay(5);
+  lector.PCD_SetAntennaGain(MFRC522::RxGain_max);
+  lector.PCD_AntennaOn();
+  return sigueAhi();
 }
 
 bool tarjetaIniciar() {
@@ -108,6 +147,13 @@ void tarjetaActualizar(uint32_t ahora) {
   // Ya hay una: solo nos interesa si se fue, con el debounce de arriba.
   if (sigueAhi()) { fallosSeguidos = 0; return; }
   if (++fallosSeguidos < AUSENTE_TRAS) return;
+
+  // Antes de cobrar, un reinicio del lector y una pregunta más.
+  if (ultimaChance()) {
+    Serial.println("[tarjeta] se recupero reiniciando el lector");
+    fallosSeguidos = 0;
+    return;
+  }
 
   // Cuánto duró la lectura. Si acá aparecen tiempos de medio segundo con la
   // tarjeta quieta sobre el lector, el chequeo de presencia está fallando y hay
