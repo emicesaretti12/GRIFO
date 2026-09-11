@@ -78,3 +78,40 @@ inline void formatearPesos(Centavos c, char *salida, size_t largo) {
   snprintf(salida, largo, "$%lu,%02lu",
            (unsigned long)(c / 100), (unsigned long)(c % 100));
 }
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Calibración con decimales, sin float
+//
+// `grifos.pulsos_por_litro` es un `numeric` con tres decimales: 452.700. Esa
+// precisión importa —un 0,1 % sobre miles de litros es plata— pero un float no
+// entra en este archivo.
+//
+// La solución es la misma que con la plata: se guarda **multiplicado por mil**,
+// como entero. 452.700 pulsos/litro viaja como 452700.
+//
+//   Es lo mismo que guardar centavos en vez de pesos. La unidad chica es la que
+//   se puede representar exacto.
+// ═════════════════════════════════════════════════════════════════════════════
+
+/** Cuántos pulsos son estos mililitros. Truncado hacia abajo.
+ *
+ *  Se usa para convertir el `ml_maximos` que autoriza el servidor en el límite
+ *  de pulsos que compara el corte local. Truncar hacia abajo hace que el corte
+ *  llegue un pelo antes del máximo autorizado, nunca después.
+ */
+inline uint32_t pulsosDeMl(uint32_t ml, uint32_t pulsosPorLitroMili) {
+  return (uint32_t)(((uint64_t)ml * (uint64_t)pulsosPorLitroMili) / 1000000ULL);
+}
+
+/** Cuántos mililitros son estos pulsos. Truncado hacia abajo.
+ *
+ *  Es lo que se le informa al servidor al cerrar la sesión, y sobre lo que él
+ *  cobra. Truncar hacia abajo acá **favorece al cliente**, y es la única
+ *  asimetría del sistema que va para ese lado: preferimos regalar una fracción
+ *  de mililitro antes que cobrar cerveza que no salió.
+ */
+inline uint32_t mlDePulsos(uint32_t pulsos, uint32_t pulsosPorLitroMili) {
+  if (pulsosPorLitroMili == 0) return 0;
+  return (uint32_t)(((uint64_t)pulsos * 1000000ULL) / (uint64_t)pulsosPorLitroMili);
+}

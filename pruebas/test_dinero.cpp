@@ -1,4 +1,4 @@
-#include "../src/etapa5_maquina/dinero.h"
+#include "../src/comun/dinero.h"
 #include <cassert>
 #include <cstdio>
 #include <cstring>
@@ -62,6 +62,29 @@ fin:
   formatearPesos(5, s, sizeof(s));      CHECK(strcmp(s, "$0,05") == 0, "formato 5");
   formatearPesos(100, s, sizeof(s));    CHECK(strcmp(s, "$1,00") == 0, "formato 100");
   formatearPesos(0, s, sizeof(s));      CHECK(strcmp(s, "$0,00") == 0, "formato 0");
+
+  // ── Calibracion con tres decimales, sin float ─────────────────────────────
+  const uint32_t KM = 452700;   // 452,700 pulsos por litro
+
+  CHECK(pulsosDeMl(1000, KM) == 452, "1 litro = 452 pulsos (truncado de 452,7)");
+  CHECK(pulsosDeMl(0, KM) == 0, "0 ml = 0 pulsos");
+  CHECK(mlDePulsos(452700, KM) == 1000000, "452700 pulsos = 1000 litros");
+  CHECK(mlDePulsos(0, KM) == 0, "0 pulsos = 0 ml");
+  CHECK(mlDePulsos(100, 0) == 0, "divisor 0 defendido");
+
+  // La ida y vuelta nunca puede inflar: los ml que informamos por los pulsos
+  // autorizados no pueden superar los ml que nos autorizaron.
+  for (uint32_t ml = 0; ml < 5000; ml += 7) {
+    uint32_t p = pulsosDeMl(ml, KM);
+    if (mlDePulsos(p, KM) > ml) {
+      printf("FALLA: ml=%u -> pulsos=%u -> ml=%u\n", ml, p, mlDePulsos(p, KM));
+      fallos++;
+      break;
+    }
+  }
+
+  // Sin desborde con un barril entero.
+  CHECK(pulsosDeMl(50000, KM) == 22635, "50 litros = 22635 pulsos");
 
   if (fallos == 0) printf("OK - todas las pruebas de dinero pasaron\n");
   return fallos != 0;

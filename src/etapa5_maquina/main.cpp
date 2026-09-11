@@ -50,10 +50,10 @@
 
 #include <Arduino.h>
 #include <string.h>
-#include "dinero.h"
-#include "valvula.h"
-#include "caudal.h"
-#include "tarjeta.h"
+#include "../comun/dinero.h"
+#include "../comun/valvula.h"
+#include "../comun/caudal.h"
+#include "../comun/tarjeta.h"
 
 // ── Reglas de negocio, hardcodeadas en esta etapa ───────────────────────────
 
