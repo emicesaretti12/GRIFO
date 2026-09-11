@@ -217,3 +217,69 @@ funciona igual.
 
 El TFT sigue disponible como versión mínima si alguna canilla no justifica una
 pantalla; las dos comen del mismo backend.
+
+
+## Etapa 9 — De la protoboard a la canilla
+
+**La protoboard no va al bar.** Sirve para el banco: cambiar cosas rápido
+mientras descubrimos cómo se porta cada módulo. En una barra —con vibración,
+humedad y gente moviendo cosas— un cable que se sale a mitad de una pinta es una
+sesión que no cierra y un cliente enojado.
+
+Los contactos de una protoboard son láminas de metal que aprietan por presión.
+Con el uso pierden fuerza, y cada inserción las gasta un poco más.
+
+> Es como dejar un `console.log` de debug en producción porque *por ahora
+> funciona*. El problema no es que no funcione: es que no fue hecho para eso.
+
+### La opción que conviene: plaqueta perforada
+
+Una **placa perforada** (perfboard) del tamaño de media protoboard. Se suelda
+cada conexión, y queda para siempre.
+
+Lo que **no** se suelda directo:
+
+| Pieza | Cómo va | Por qué |
+|---|---|---|
+| ESP32 | sobre **tiras hembra** | para poder cambiarlo sin desoldar nada |
+| Conversor de niveles | sobre tiras hembra | igual |
+| Todo lo que sale de la caja | por **bornera a tornillo** | un cable que se tironea no arranca una pista |
+
+El ESP32 sobre zócalo no es un lujo: ya quemamos uno en este proyecto. El día que
+pase de nuevo en el bar, se cambia en dos minutos en vez de rehacer la placa.
+
+### Reglas del montaje
+
+**1. Los 12 V lejos de las señales.** El cable del lector y el del caudalímetro
+son señales chicas; los 12 V de la válvula conmutan corriente. Que corran
+separados, y si se cruzan, que se crucen en ángulo recto.
+
+**2. Sujeción mecánica en cada cable que sale.** Un precinto o una grampa cerca
+del borde de la caja, para que el tirón lo aguante el plástico y no la soldadura.
+
+**3. El lector, a 20-30 cm como máximo.** El SPI no tolera más. Por eso la caja
+vive **dentro de la columna de la canilla**, no en un tablero aparte.
+
+**4. Fusible en los 12 V.** Uno de 1 A en serie con el positivo. Si la válvula se
+traba con la bobina alimentada o un cable se pela, el fusible corta antes que
+algo se caliente.
+
+**5. La caja cerrada.** Cerveza, agua y condensación. Cualquier caja plástica con
+tapa sirve; los cables entran por abajo, así lo que gotee no entra.
+
+### Lo que hace falta comprar
+
+Poco, y nada caro:
+
+- **Plaqueta perforada** — una del tamaño de media protoboard
+- **Tiras de pines hembra** — para el ESP32 (2 × 19) y el conversor (2 × 6)
+- **Borneras a tornillo** de 2 y 3 vías
+- **Fusible de 1 A** con su portafusible
+- **Cable polarizado** para los 12 V (el fino de dupont no va para potencia)
+- **Caja plástica** con tapa
+- Estaño, si no queda
+
+**Se acepta cuando:** el sistema hace el ciclo completo montado en la caja, y
+después de **sacudir la caja y tironear cada cable** sigue haciéndolo.
+
+Ese test de sacudir no es un chiste: es el que la protoboard no pasa.
