@@ -275,6 +275,7 @@ Poco, y nada caro:
 - **Tiras de pines hembra** — para el ESP32 (2 × 19) y el conversor (2 × 6)
 - **Borneras a tornillo** de 2 y 3 vías
 - **Fusible de 1 A** con su portafusible
+- **Diodo `1N4007`** para la válvula (ver trampa 7 en `pinout-y-trampas.md`)
 - **Cable polarizado** para los 12 V (el fino de dupont no va para potencia)
 - **Caja plástica** con tapa
 - Estaño, si no queda

@@ -276,3 +276,58 @@ corresponda a *low level trigger* — se confirma en la etapa 4 escuchando el cl
 Si el relé queda **zumbando o pegado**, es que el optoacoplador está conduciendo
 a medias con los 3.3V del ESP32. Se resuelve en la etapa 4 según cómo se
 comporte; no es un problema de software.
+
+
+---
+
+## 7. La bobina no se deja apagar: hace falta un diodo
+
+**Síntoma medido:** con la válvula conectada, tocarla con la mano tiraba abajo el
+puerto USB del ESP32 (`Disconnected ([Errno 5] Input/output error)`).
+
+**Causa:** cuando el relé corta la corriente de la válvula, el campo magnético de
+la bobina colapsa y genera un pico de tensión **en sentido contrario** —cientos
+de volts durante microsegundos—. Ese pico salta entre los contactos del relé y se
+irradia por los cables.
+
+> Es un `finally` que no existe. Cortás la ejecución de golpe y el recurso libera
+> de cualquier manera.
+
+**La solución:** un diodo **`1N4007`** en paralelo con la válvula, **al revés**:
+
+```
+   NO ───┬──── válvula ────┬─── DC-
+         │                 │
+         └──[◄|]───────────┘
+            raya
+```
+
+La **raya** del diodo va del lado del `NO`, o sea del positivo.
+
+Mientras la válvula está alimentada el diodo no conduce y no hace nada. Cuando el
+relé corta, le da a esa corriente un camino cerrado y el pico se disipa adentro
+de la bobina en vez de salir afuera.
+
+Cuesta monedas. **Sin él el sistema anda igual**, pero cada corte castiga los
+contactos del relé y mete ruido. En una canilla que abre cien veces por noche,
+eso se paga en contactos picados y en resets que nadie puede explicar.
+
+### El otro efecto, más sutil
+
+Las fuentes switching baratas dejan el negativo flotando a un centenar de volts
+respecto de tierra, con microamperes. No es peligroso —no se siente— pero al
+tocar el metal de la válvula la persona se vuelve camino a tierra y le mete ruido
+a toda la masa del circuito.
+
+Por eso el problema empeoraba justo al tocarla. **Regla de banco: no se toca la
+válvula con la mano mientras el sistema está funcionando.**
+
+### Lo que sí quedó validado
+
+| Medición | Valor |
+|---|---|
+| Bobina, entre lengüetas | **24 Ω** → 0,5 A a 12 V |
+| Lengüeta contra cuerpo metálico | **abierto** → el aislante no pierde |
+| Camino completo `NO` → bobina → `DC-` | **24,6 Ω** |
+| Tensión en `NO` con el relé activado | **12 V** |
+| Prueba en seco | **golpea** ✅ |
