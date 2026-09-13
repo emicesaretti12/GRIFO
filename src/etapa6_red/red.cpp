@@ -12,6 +12,7 @@ static const uint32_t REINTENTO_WIFI_MS = 5000;
 static WiFiClientSecure cliente;
 
 void redIniciar() {
+  Serial.printf("[red] Conectando a \"%s\"...\n", WIFI_SSID);
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
@@ -33,10 +34,32 @@ bool redConectada() { return WiFi.status() == WL_CONNECTED; }
 
 void redMantener() {
   static uint32_t ultimoIntento = 0;
-  if (redConectada()) return;
+  static bool     anunciado = false;
+
+  // ── Avisar los cambios de estado, no el estado ──────────────────────────
+  // Imprimir "conectado" en cada vuelta llenaría la consola y escondería lo
+  // que importa. Se avisa cuando CAMBIA, que es cuando hay algo que saber.
+  //
+  //   Es loguear las transiciones, no el polling.
+  if (redConectada()) {
+    if (!anunciado) {
+      Serial.printf("[red] WiFi conectado. IP %s  (senal %d dBm)\n",
+                    WiFi.localIP().toString().c_str(), (int)WiFi.RSSI());
+      anunciado = true;
+    }
+    return;
+  }
+
+  if (anunciado) {
+    Serial.println("[red] WiFi CAIDO. La canilla sigue cortando sola;");
+    Serial.println("[red] los cierres se guardan y se envian al volver.");
+    anunciado = false;
+  }
+
   uint32_t ahora = millis();
   if (ahora - ultimoIntento < REINTENTO_WIFI_MS) return;
   ultimoIntento = ahora;
+  Serial.println("[red] reintentando conectar...");
   WiFi.disconnect();
   WiFi.begin(WIFI_SSID, WIFI_PASS);
 }
