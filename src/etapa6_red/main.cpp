@@ -38,6 +38,7 @@
 
 #include <Arduino.h>
 #include <string.h>
+#include <esp_task_wdt.h>
 #include "../comun/dinero.h"
 #include "../comun/valvula.h"
 #include "../comun/caudal.h"
@@ -49,6 +50,28 @@
 static const uint32_t MAX_APERTURA_MS   = 90000;
 static const uint32_t SIN_PULSOS_MS     = 3000;
 static const uint32_t TIMEOUT_AUTORIZAR = 10000;
+
+// ── Watchdog ────────────────────────────────────────────────────────────────
+// Un perro guardián: si una tarea deja de avisar que está viva durante este
+// tiempo, el chip se reinicia solo.
+//
+// Sin esto, una tarea trabada deja la canilla muerta hasta que alguien nota que
+// no funciona y va a desenchufarla. En un bar eso puede ser toda una noche.
+//
+//   Es el proceso que se reinicia solo cuando deja de responder al health
+//   check. No arregla la causa, pero evita que una falla dure horas.
+//
+// Y el reinicio es seguro por construcción: al arrancar, el GPIO del relé es
+// una entrada en alta impedancia, o sea válvula cerrada. Un watchdog que
+// reiniciara con la canilla abierta sería peor que no tenerlo.
+//
+// 30 s es holgado a propósito: una petición HTTPS puede tardar 8 s, y la tarea
+// de red puede encadenar dos en una vuelta. El watchdog tiene que disparar por
+// algo trabado de verdad, no por una red lenta.
+static const uint32_t WATCHDOG_S = 30;
+
+// Cada cuánto la canilla le avisa al servidor que está viva.
+static const uint32_t LATIDO_MS = 60000;
 
 static const int PIN_BOTON = 14;
 static const int PIN_LED   = 2;
@@ -65,10 +88,23 @@ struct PedidoAbrir { char uid[21]; };
 // TAREA DE RED — núcleo 0
 // ═════════════════════════════════════════════════════════════════════════════
 static void tareaRed(void *) {
+  esp_task_wdt_add(NULL);
   redIniciar();
 
+  uint32_t ultimoLatido = 0;
+
   for (;;) {
+    esp_task_wdt_reset();
     redMantener();
+
+    // 0) El latido. Va primero y es barato: si todo lo demás falla, que al
+    //    menos el servidor sepa que esta canilla sigue viva y con cuántos
+    //    cierres atorados.
+    uint32_t ahora = millis();
+    if (redConectada() && (ultimoLatido == 0 || ahora - ultimoLatido >= LATIDO_MS)) {
+      ultimoLatido = ahora;
+      redLatido(colaCantidad());
+    }
 
     // 1) ¿Hay alguien esperando que le autoricemos una tarjeta?
     PedidoAbrir pedido;
@@ -191,7 +227,10 @@ static void imprimirTicket(uint32_t ml, uint32_t pulsos) {
 }
 
 static void tareaControl(void *) {
+  esp_task_wdt_add(NULL);
+
   for (;;) {
+    esp_task_wdt_reset();
     uint32_t ahora = millis();
 
     // ── EL CORTE POR LÍMITE VA PRIMERO ──────────────────────────────────────
@@ -396,6 +435,20 @@ void setup() {
   if (!tarjetaIniciar()) {
     Serial.println("!! El lector RFID no contesta. Revisar SPI y que este a 3.3V.");
   }
+
+  // El watchdog se configura ANTES de crear las tareas, porque cada una se
+  // anota sola al arrancar.
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
+  esp_task_wdt_config_t cfgWdt = {
+    .timeout_ms     = WATCHDOG_S * 1000,
+    .idle_core_mask = 0,
+    .trigger_panic  = true,
+  };
+  esp_task_wdt_init(&cfgWdt);
+#else
+  esp_task_wdt_init(WATCHDOG_S, true);
+#endif
+  Serial.printf("Watchdog          : %lu s\n", (unsigned long)WATCHDOG_S);
 
   colaPedidoAbrir    = xQueueCreate(2, sizeof(PedidoAbrir));
   colaRespuestaAbrir = xQueueCreate(2, sizeof(RespuestaAbrir));

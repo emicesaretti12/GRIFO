@@ -34,6 +34,38 @@ export type Grifo = {
   ibu: number | null
   color: string | null
   imagen_url: string | null
+
+  // ── Salud, solo por `admin_listar_grifos()` ───────────────────────────────
+  // Lo que manda el ESP32 en su latido, cada minuto.
+  ultimo_latido?: string | null
+  firmware?: string | null
+  cierres_pendientes?: number | null
+  senal_dbm?: number | null
+  ip_local?: string | null
+}
+
+/** Qué tan al día está el latido de una canilla.
+ *
+ *  Tres minutos de tolerancia sobre un latido por minuto: aguanta dos perdidos
+ *  antes de dar la alarma. Un umbral más ajustado avisaría por cada bache de
+ *  WiFi, y una alarma que suena por nada es una alarma que nadie mira.
+ */
+export type SaludCanilla = 'en-linea' | 'sin-señal' | 'nunca'
+
+export function saludDeCanilla(ultimoLatido?: string | null): SaludCanilla {
+  if (!ultimoLatido) return 'nunca'
+  const hace = Date.now() - new Date(ultimoLatido).getTime()
+  return hace < 3 * 60 * 1000 ? 'en-linea' : 'sin-señal'
+}
+
+/** "hace 2 min", "hace 3 h". Para que el número se lea sin hacer cuentas. */
+export function haceCuanto(iso?: string | null): string {
+  if (!iso) return 'nunca'
+  const seg = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000))
+  if (seg < 60)    return 'recién'
+  if (seg < 3600)  return `hace ${Math.floor(seg / 60)} min`
+  if (seg < 86400) return `hace ${Math.floor(seg / 3600)} h`
+  return `hace ${Math.floor(seg / 86400)} d`
 }
 
 export type Movimiento = {

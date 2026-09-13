@@ -6,6 +6,13 @@
 #include "red.h"
 #include "secrets.h"
 
+// Si el secrets.h es de antes de que existiera este campo, no rompe: se asume
+// un valor. Agregar una configuración obligatoria a un archivo que ya está en
+// la máquina de otro es una forma barata de romperle la compilación.
+#ifndef FIRMWARE_VERSION
+  #define FIRMWARE_VERSION "etapa6"
+#endif
+
 static const uint32_t TIMEOUT_MS      = 8000;
 static const uint32_t REINTENTO_WIFI_MS = 5000;
 
@@ -158,4 +165,25 @@ bool redCerrarSesion(int64_t sesionId, uint32_t ml, uint32_t pulsos) {
     Serial.println("   (ya estaba cerrada: idempotencia del servidor)");
   }
   return true;
+}
+
+
+bool redLatido(uint32_t cierresPendientes) {
+  JsonDocument pedido;
+  pedido["p_grifo"]      = GRIFO_ID;
+  pedido["p_token"]      = GRIFO_TOKEN;
+  pedido["p_firmware"]   = FIRMWARE_VERSION;
+  pedido["p_pendientes"] = cierresPendientes;
+  pedido["p_senal"]      = (int)WiFi.RSSI();
+  pedido["p_ip"]         = WiFi.localIP().toString();
+
+  String cuerpo;
+  serializeJson(pedido, cuerpo);
+
+  String respuesta;
+  if (postRpc("canilla_latido", cuerpo, respuesta) != 200) return false;
+
+  JsonDocument doc;
+  if (deserializeJson(doc, respuesta)) return false;
+  return doc["ok"].as<bool>();
 }

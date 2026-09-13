@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { pesos, aCentavos, fecha, fechaCorta } from '../lib/plata'
 import { subirImagenCerveza } from '../lib/imagenes'
-import { mensajeDeError, type Grifo } from '../lib/tipos'
+import { mensajeDeError, saludDeCanilla, haceCuanto, type Grifo } from '../lib/tipos'
 import { Panel, Chip, Nota, Vacio, HuesoTabla } from '../componentes/UI'
 import { Modal, Confirmar } from '../componentes/Modal'
 import { useAvisos } from '../componentes/Toast'
@@ -84,6 +84,7 @@ export default function Grifos() {
                   <th className="num">Costo / L</th>
                   <th className="num">Margen</th>
                   <th>Estado</th>
+                  <th>Canilla</th>
                   <th />
                 </tr>
               </thead>
@@ -133,6 +134,7 @@ export default function Grifos() {
                             : <Chip tono="grave">sin token</Chip>}
                         </div>
                       </td>
+                      <td><Salud grifo={g} /></td>
                       <td>
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                           <button className="btn sm" onClick={() => setEditando(g)}>
@@ -166,6 +168,38 @@ export default function Grifos() {
         tablet.
       </Nota>
     </>
+  )
+}
+
+/* ── Salud de la canilla ──────────────────────────────────────────────────── */
+function Salud({ grifo }: { grifo: Grifo }) {
+  const estado = saludDeCanilla(grifo.ultimo_latido)
+  const pendientes = grifo.cierres_pendientes ?? 0
+
+  return (
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      {estado === 'en-linea' && <Chip tono="bien">En línea</Chip>}
+      {estado === 'sin-señal' && (
+        <span title={`Último latido: ${haceCuanto(grifo.ultimo_latido)}`}>
+          <Chip tono="grave">Sin señal · {haceCuanto(grifo.ultimo_latido)}</Chip>
+        </span>
+      )}
+      {estado === 'nunca' && <Chip>Nunca reportó</Chip>}
+
+      {/* Cierres sin entregar: son ventas que ya salieron y todavía no se
+          cobraron. Si el número no vuelve a cero solo, hay que ir a mirar. */}
+      {pendientes > 0 && (
+        <span title="Ventas servidas que el ESP32 no pudo enviar todavía">
+          <Chip tono="ojo">{pendientes} sin cobrar</Chip>
+        </span>
+      )}
+
+      {grifo.senal_dbm != null && estado === 'en-linea' && (
+        <span title={grifo.senal_dbm > -70 ? 'Señal buena' : 'Señal débil: puede cortarse'}>
+          <Chip tono={grifo.senal_dbm > -70 ? 'neutro' : 'ojo'}>{grifo.senal_dbm} dBm</Chip>
+        </span>
+      )}
+    </div>
   )
 }
 
