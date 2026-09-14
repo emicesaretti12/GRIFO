@@ -75,7 +75,21 @@ static const uint32_t LATIDO_MS = 60000;
 
 static const int PIN_BOTON = 14;
 static const int PIN_LED   = 2;
-static const uint32_t REBOTE_BOTON_MS = 30;
+// ── El antirrebote del botón es ASIMÉTRICO, y no es un capricho ─────────────
+// Los dos errores no cuestan lo mismo.
+//
+// Tardar 30 ms de más en ABRIR no lo nota nadie. Cerrar por error mientras sale
+// cerveza le corta el chorro al cliente en la mitad del vaso, y desde afuera se
+// ve exactamente como un sistema que se cuelga.
+//
+// Así que apretar se confirma rápido y soltar se confirma lento: un cuarto de
+// segundo de contacto perdido —un cable que vibra, ruido del relé conmutando,
+// el SPI del lector reiniciándose al lado— no alcanza para cortar.
+//
+//   Es el mismo criterio que el debounce de retirada de la tarjeta: cuando los
+//   dos errores no cuestan lo mismo, el umbral no va en el medio.
+static const uint32_t REBOTE_APRETAR_MS = 30;
+static const uint32_t REBOTE_SOLTAR_MS  = 250;
 
 // ── Los dos canales entre las tareas ────────────────────────────────────────
 static QueueHandle_t colaPedidoAbrir;     // control → red:  un UID
@@ -222,10 +236,14 @@ static bool botonApretado() {
   static bool     estable = false;
   static bool     ultimaLectura = false;
   static uint32_t cambioEn = 0;
+
   bool lectura = (digitalRead(PIN_BOTON) == LOW);
   uint32_t ahora = millis();
+
   if (lectura != ultimaLectura) { ultimaLectura = lectura; cambioEn = ahora; return estable; }
-  if (ahora - cambioEn >= REBOTE_BOTON_MS) estable = lectura;
+
+  uint32_t umbral = lectura ? REBOTE_APRETAR_MS : REBOTE_SOLTAR_MS;
+  if (ahora - cambioEn >= umbral) estable = lectura;
   return estable;
 }
 
@@ -394,8 +412,24 @@ static void tareaControl(void *) {
         if (pulsos != pulsosPrevios) { pulsosPrevios = pulsos; ultimoPulsoMs = ahora; }
 
         // El corte local ya se evaluó arriba, al principio de la vuelta.
-        if (!botonApretado())   { valvulaCerrar(); irA(LISTO);      break; }
-        if (!tarjetaPresente()) { valvulaCerrar(); irA(LIQUIDANDO); break; }
+        // Todo corte se explica. La primera versión salía de SIRVIENDO sin
+        // decir por qué en dos de los casos, y averiguarlo costó tres rondas de
+        // pruebas mirando el reloj del log.
+        //
+        //   Un estado que cambia sin dejar dicho el motivo es un estado que hay
+        //   que reproducir para entender.
+        if (!botonApretado()) {
+          valvulaCerrar();
+          Serial.println(">> Solto el boton. Corta.");
+          irA(LISTO);
+          break;
+        }
+        if (!tarjetaPresente()) {
+          valvulaCerrar();
+          Serial.println(">> Retiro la tarjeta mientras servia. Cierra y cobra.");
+          irA(LIQUIDANDO);
+          break;
+        }
 
         if (ahora - valvulaAbiertaDesde() > MAX_APERTURA_MS) {
           valvulaCerrar();
