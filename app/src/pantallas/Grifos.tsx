@@ -8,6 +8,7 @@ import { Modal, Confirmar } from '../componentes/Modal'
 import { useAvisos } from '../componentes/Toast'
 import Icono from '../componentes/Icono'
 import QR from '../componentes/QR'
+import ControlarCanilla from './ControlarCanilla'
 
 export default function Grifos() {
   const { avisar } = useAvisos()
@@ -15,6 +16,7 @@ export default function Grifos() {
   const [cargando, setCargando] = useState(true)
   const [editando, setEditando] = useState<Grifo | null>(null)
   const [rotando, setRotando] = useState<Grifo | null>(null)
+  const [controlando, setControlando] = useState<Grifo | null>(null)
   const [tokenNuevo, setTokenNuevo] = useState<{ grifo: Grifo; token: string } | null>(null)
 
   const traer = useCallback(async () => {
@@ -59,6 +61,11 @@ export default function Grifos() {
                    bajada="El token actual deja de funcionar al instante, y con él se desconectan a la vez el ESP32 y la pantalla de esa canilla. Vas a tener que volver a vincular los dos."
                    textoAccion="Generar token nuevo" tono="grave"
                    onSi={() => rotar(rotando)} onCerrar={() => setRotando(null)} />
+      )}
+
+      {controlando && (
+        <ControlarCanilla grifo={controlando} avisar={avisar}
+                          onCerrar={() => { setControlando(null); void traer() }} />
       )}
 
       {editando && (
@@ -140,6 +147,10 @@ export default function Grifos() {
                           <button className="btn sm" onClick={() => setEditando(g)}>
                             <Icono nombre="lapiz" tam={14} /> Editar
                           </button>
+                          <button className="btn sm" onClick={() => setControlando(g)}
+                                  title="Reiniciarla o cambiarle el WiFi sin ir hasta ahi">
+                            <Icono nombre="refrescar" tam={14} /> Controlar
+                          </button>
                           <button className="btn sm"
                                   onClick={() => rpc('admin_actualizar_grifo',
                                     { p_grifo: g.id, p_activo: !g.activo },
@@ -160,6 +171,12 @@ export default function Grifos() {
           </div>
         )}
       </Panel>
+
+      <Nota tono="info">
+        <strong>Controlar</strong> no ejecuta nada al instante: deja la orden anotada y la
+        canilla la busca en su próximo latido, cada 30 segundos. Está detrás del router del
+        bar, así que nadie de afuera puede iniciarle una conexión — es ella la que pregunta.
+      </Nota>
 
       <Nota tono="info">
         <strong>La pantalla de cada canilla</strong> se vincula con el mismo token que

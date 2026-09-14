@@ -44,6 +44,54 @@ export type Grifo = {
   ip_local?: string | null
 }
 
+// ── Órdenes para la canilla ─────────────────────────────────────────────────
+// Son las tres cosas que solo puede hacer el aparato. El resto (precio,
+// calibración, si está activa) lo resuelve el servidor sin pedirle permiso a
+// nadie, y llega en la autorización.
+export type TipoOrden = 'reiniciar' | 'wifi' | 'olvidar_wifi'
+
+export type OrdenCanilla = {
+  id: number
+  grifo_id: number
+  grifo: string
+  tipo: TipoOrden
+  /** El SSID se conserva para el historial. La clave nunca sale del servidor. */
+  ssid: string | null
+  creada_en: string
+  entregada_en: string | null
+  aplicada_en: string | null
+  cancelada_en: string | null
+}
+
+export type EstadoOrden = 'aplicada' | 'cancelada' | 'entregada' | 'esperando'
+
+export function estadoDeOrden(o: OrdenCanilla): EstadoOrden {
+  if (o.aplicada_en) return 'aplicada'
+  if (o.cancelada_en) return 'cancelada'
+  if (o.entregada_en) return 'entregada'
+  return 'esperando'
+}
+
+export const NOMBRE_ORDEN: Record<TipoOrden, string> = {
+  reiniciar: 'Reiniciar',
+  wifi: 'Cambiar de red WiFi',
+  olvidar_wifi: 'Borrar el WiFi y abrir el portal',
+}
+
+/** Qué tan lejos está una orden de haber pasado algo.
+ *
+ *  `entregada` es un estado real y no un detalle: la canilla ya la recibió pero
+ *  todavía no la ejecutó, porque **no ejecuta órdenes mientras está sirviendo**.
+ *  Ver eso en pantalla es la diferencia entre "no llegó" y "llegó y está
+ *  esperando el momento".
+ */
+export const DETALLE_ORDEN: Record<EstadoOrden, string> = {
+  esperando: 'Todavía no la recibió. La busca en cada latido, cada 30 s.',
+  entregada: 'Ya la recibió. La aplica en cuanto termine lo que está haciendo.',
+  aplicada: 'Hecho.',
+  cancelada: 'Cancelada antes de que la recibiera.',
+}
+
 /** Qué tan al día está el latido de una canilla.
  *
  *  Tres minutos de tolerancia sobre un latido por minuto: aguanta dos perdidos

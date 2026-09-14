@@ -362,24 +362,62 @@ bool redCerrarSesion(int64_t sesionId, uint32_t ml, uint32_t pulsos) {
 }
 
 
-bool redLatido(uint32_t cierresPendientes) {
+/** El cuerpo del latido. Lo usan `redLatido` y `redCalentar`, así que vive en
+ *  un solo lugar: un campo agregado en uno solo de los dos sería un bug que
+ *  aparece únicamente en el arranque. */
+static void cuerpoDelLatido(uint32_t cierresPendientes, String &salida) {
   JsonDocument pedido;
-  pedido["p_grifo"]      = GRIFO_ID;
-  pedido["p_token"]      = GRIFO_TOKEN;
-  pedido["p_firmware"]   = FIRMWARE_VERSION;
-  pedido["p_pendientes"] = cierresPendientes;
-  pedido["p_senal"]      = (int)WiFi.RSSI();
-  pedido["p_ip"]         = WiFi.localIP().toString();
+  pedido["p_grifo"]        = GRIFO_ID;
+  pedido["p_token"]        = GRIFO_TOKEN;
+  pedido["p_firmware"]     = FIRMWARE_VERSION;
+  pedido["p_pendientes"]   = cierresPendientes;
+  pedido["p_senal"]        = (int)WiFi.RSSI();
+  pedido["p_ip"]           = WiFi.localIP().toString();
+
+  // Hasta acá llegué. El servidor solo me va a dar órdenes con un número mayor.
+  pedido["p_ultima_orden"] = ajustesUltimaOrden();
+
+  serializeJson(pedido, salida);
+}
+
+/** Saca la orden de la respuesta del latido, si vino alguna. */
+static void leerOrden(JsonDocument &doc, Orden &orden) {
+  memset(&orden, 0, sizeof(orden));
+
+  JsonVariant o = doc["orden"];
+  if (o.isNull()) return;
+
+  int64_t id = o["id"].as<long long>();
+  if (id <= 0) return;
+
+  orden.id = id;
+  snprintf(orden.tipo, sizeof(orden.tipo), "%s", o["tipo"] | "");
+  snprintf(orden.ssid, sizeof(orden.ssid), "%s", o["datos"]["ssid"] | "");
+  snprintf(orden.pass, sizeof(orden.pass), "%s", o["datos"]["pass"] | "");
+}
+
+bool redLatido(uint32_t cierresPendientes, Orden &orden) {
+  memset(&orden, 0, sizeof(orden));
 
   String cuerpo;
-  serializeJson(pedido, cuerpo);
+  cuerpoDelLatido(cierresPendientes, cuerpo);
 
   String respuesta;
   if (postRpc("canilla_latido", cuerpo, respuesta, TIMEOUT_ADORNO) != 200) return false;
 
   JsonDocument doc;
   if (deserializeJson(doc, respuesta)) return false;
-  return doc["ok"].as<bool>();
+  if (!doc["ok"].as<bool>()) {
+    Serial.printf("[red] el latido fue rechazado: %s\n", doc["motivo"] | "?");
+    return false;
+  }
+
+  leerOrden(doc, orden);
+  if (orden.id > 0) {
+    Serial.printf("[red] llego una orden: %s (#%lld)\n",
+                  orden.tipo, (long long)orden.id);
+  }
+  return true;
 }
 
 
@@ -412,16 +450,7 @@ bool redCalentar(uint32_t cierresPendientes) {
   // los 2,5 s dejaría el handshake a medias justo para que lo pague el primer
   // cliente.
   String cuerpo, respuesta;
-  {
-    JsonDocument pedido;
-    pedido["p_grifo"]      = GRIFO_ID;
-    pedido["p_token"]      = GRIFO_TOKEN;
-    pedido["p_firmware"]   = FIRMWARE_VERSION;
-    pedido["p_pendientes"] = cierresPendientes;
-    pedido["p_senal"]      = (int)WiFi.RSSI();
-    pedido["p_ip"]         = WiFi.localIP().toString();
-    serializeJson(pedido, cuerpo);
-  }
+  cuerpoDelLatido(cierresPendientes, cuerpo);
 
   int codigo = postRpc("canilla_latido", cuerpo, respuesta, TIMEOUT_MS);
   uint32_t tardo = millis() - t0;

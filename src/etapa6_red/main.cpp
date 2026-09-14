@@ -45,6 +45,7 @@
 #include "../comun/tarjeta.h"
 #include "cola.h"
 #include "red.h"
+#include "ajustes.h"
 #include "secrets.h"
 
 static const uint32_t MAX_APERTURA_MS   = 90000;
@@ -71,7 +72,14 @@ static const uint32_t TIMEOUT_AUTORIZAR = 10000;
 static const uint32_t WATCHDOG_S = 30;
 
 // Cada cuánto la canilla le avisa al servidor que está viva.
-static const uint32_t LATIDO_MS = 60000;
+// Sin canal de push, el intervalo del latido ES la latencia de una orden: si
+// preguntamos cada minuto, "reiniciate" puede tardar un minuto en llegar.
+// Treinta segundos es el punto donde la espera todavía se tolera parado frente
+// a la canilla y el tráfico sigue siendo nada (2.880 pedidos por día).
+//
+//   Es elegir el intervalo del polling por la latencia que querés, no por lo
+//   que parece prolijo.
+static const uint32_t LATIDO_MS = 30000;
 
 // Lo pone el setup leyendo el botón, lo consume la tarea de red. Una sola
 // escritura antes de que arranquen las tareas, así que no necesita candado.
@@ -115,6 +123,19 @@ struct PedidoAbrir { char uid[21]; uint32_t pedidoEn; };
 //   Es un `debounce` con el último valor, no una cola de trabajos.
 struct Progreso { int64_t sesionId; uint32_t ml; uint32_t pulsos; };
 static QueueHandle_t colaProgreso;
+
+// ── Las órdenes bajan por acá, y no se aplican donde llegan ─────────────────
+// La tarea de red recibe la orden pero NO la ejecuta. La deja acá, y la tarea
+// de control la levanta solo cuando está en ESPERANDO.
+//
+// Es la regla que importa: "reiniciate" en medio de un servicio corta la
+// cerveza y pierde la venta, porque el cierre recién se guarda al liquidar.
+// Una orden nunca puede interrumpir algo que ya está cobrando.
+//
+//   Es aplicar la migración entre requests y no arriba de uno a medio
+//   ejecutar. El momento correcto no es "cuando llega": es "cuando no hay
+//   nada en vuelo".
+static QueueHandle_t colaOrden;
 
 // Cada cuánto se refresca el vaso de la pantalla. Más seguido no se nota a
 // simple vista y le roba tiempo a la red; más espaciado se ve a los saltos.
@@ -236,7 +257,12 @@ static void tareaRed(void *) {
     if (redConectada() && !hiceAlgoCaro &&
         (ultimoLatido == 0 || ahora - ultimoLatido >= LATIDO_MS)) {
       ultimoLatido = ahora;
-      redLatido(colaCantidad());
+      Orden orden;
+      if (redLatido(colaCantidad(), orden) && orden.id > 0) {
+        // No se aplica acá. La tarea de red no toca la canilla: deja la orden
+        // donde el control la va a levantar cuando esté en un momento seguro.
+        xQueueOverwrite(colaOrden, &orden);
+      }
       hiceAlgoCaro = true;
     }
 
@@ -249,6 +275,47 @@ static void tareaRed(void *) {
 
     vTaskDelay(pdMS_TO_TICKS(200));
   }
+}
+
+
+/** Ejecuta una orden que bajó del servidor. Se llama SOLO desde ESPERANDO. */
+static void aplicarOrden(const Orden &o) {
+  Serial.printf("\n>> ORDEN #%lld: %s\n", (long long)o.id, o.tipo);
+
+  // ── La marca se anota ANTES de ejecutar, y esto no es negociable ──────────
+  // Las tres órdenes terminan en un reinicio. Si la marca se anotara después,
+  // no llegaría a anotarse nunca: la placa se reinicia, el latido siguiente
+  // pide órdenes desde el mismo número, el servidor devuelve la misma, y la
+  // canilla se reinicia otra vez. Para siempre.
+  //
+  //   Es commitear el offset antes de procesar. Al revés, un mensaje que mata
+  //   al worker se reintenta eternamente: la cola de veneno.
+  //
+  // El precio de hacerlo así es que una orden podría darse por hecha sin
+  // haberse ejecutado. Para estas tres el precio es barato: se vuelve a mandar
+  // desde la app. Un reinicio en bucle, en cambio, no se arregla solo.
+  ajustesGuardarUltimaOrden(o.id);
+
+  if (strcmp(o.tipo, "wifi") == 0) {
+    if (!ajustesGuardarWifi(o.ssid, o.pass)) {
+      Serial.println("   no se pudo guardar. Se ignora la orden.");
+      return;
+    }
+    Serial.printf("   red nueva a prueba: \"%s\"\n", o.ssid);
+    Serial.println("   Si no conecta, vuelve sola a la anterior.");
+  } else if (strcmp(o.tipo, "olvidar_wifi") == 0) {
+    ajustesOlvidarWifi();
+    Serial.println("   al reiniciar va a levantar el portal.");
+  } else if (strcmp(o.tipo, "reiniciar") != 0) {
+    Serial.println("   tipo desconocido (firmware viejo?). Se ignora.");
+    return;
+  }
+
+  Serial.println(">> Reiniciando...");
+  Serial.flush();
+  valvulaCerrar();      // por las dudas, aunque en ESPERANDO ya esté cerrada
+  delay(300);
+  ESP.restart();
 }
 
 
@@ -409,6 +476,15 @@ static void tareaControl(void *) {
     switch (estado) {
 
       case ESPERANDO: {
+        // Acá y en ningún otro lado: sin tarjeta, sin sesión y con la válvula
+        // cerrada es el único momento en que reiniciar no le cuesta nada a
+        // nadie.
+        Orden orden;
+        if (xQueueReceive(colaOrden, &orden, 0) == pdTRUE) {
+          aplicarOrden(orden);
+          break;
+        }
+
         if (!tarjetaPresente()) break;
         strncpy(uidSesion, tarjetaUid(), sizeof(uidSesion) - 1);
         uidSesion[sizeof(uidSesion) - 1] = '\0';
@@ -666,6 +742,11 @@ void setup() {
   colaPedidoAbrir    = xQueueCreate(2, sizeof(PedidoAbrir));
   colaRespuestaAbrir = xQueueCreate(2, sizeof(RespuestaAbrir));
   colaProgreso       = xQueueCreate(1, sizeof(Progreso));
+
+  // Longitud 1 y se pisa: si llegaron dos órdenes antes de poder aplicar
+  // ninguna, la que vale es la última. El servidor igual vuelve a mandar lo que
+  // quede pendiente, porque la marca de agua no avanzó.
+  colaOrden          = xQueueCreate(1, sizeof(Orden));
 
   // Núcleos distintos y prioridades distintas. El control gana siempre.
   xTaskCreatePinnedToCore(tareaRed,     "red",     8192, NULL, 1, NULL, 0);

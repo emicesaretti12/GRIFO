@@ -57,3 +57,18 @@ bool ajustesRevertirWifi();
 
 /** Borra el WiFi guardado. La próxima vez arranca el portal. */
 void ajustesOlvidarWifi();
+
+
+// ── La marca de agua de las órdenes ─────────────────────────────────────────
+// Hasta qué número de orden llegó esta canilla. Viaja en cada latido, y el
+// servidor solo le entrega órdenes con un número mayor.
+//
+// Vive en NVS y no en RAM por un motivo puntual: la orden más útil es
+// "reiniciate". Si la marca se perdiera en el reinicio, el servidor volvería a
+// entregar la misma orden en el latido siguiente, y la canilla se reiniciaría
+// para siempre.
+//
+//   Es el offset del consumidor commiteado antes de procesar. Sin eso, un
+//   mensaje que mata al worker se reintenta eternamente: la cola de veneno.
+int64_t ajustesUltimaOrden();
+void    ajustesGuardarUltimaOrden(int64_t id);

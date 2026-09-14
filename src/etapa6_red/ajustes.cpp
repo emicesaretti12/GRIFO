@@ -16,11 +16,13 @@ static const char *K_PASS  = "pass";
 static const char *K_SSID0 = "ssid0";   // la que andaba antes: el respaldo
 static const char *K_PASS0 = "pass0";
 static const char *K_PRUEBA = "prueba";
+static const char *K_ORDEN  = "orden";
 
 static Preferences  nvs;
 static bool         abierto = false;
 static AjustesWifi  actual  = { "", "" };
 static bool         aPrueba = false;
+static int64_t      ultimaOrden = 0;
 
 static void copiar(char *destino, size_t largo, const String &origen) {
   snprintf(destino, largo, "%s", origen.c_str());
@@ -36,6 +38,7 @@ void ajustesIniciar() {
   copiar(actual.ssid, sizeof(actual.ssid), nvs.getString(K_SSID, ""));
   copiar(actual.pass, sizeof(actual.pass), nvs.getString(K_PASS, ""));
   aPrueba = nvs.getUChar(K_PRUEBA, 0) == 1;
+  ultimaOrden = (int64_t)nvs.getLong64(K_ORDEN, 0);
 }
 
 void ajustesSembrarWifi(const char *ssid, const char *pass) {
@@ -129,4 +132,13 @@ void ajustesOlvidarWifi() {
   nvs.remove(K_PASS0);
   nvs.putUChar(K_PRUEBA, 0);
   Serial.println("[ajustes] WiFi borrado. Al reiniciar arranca el portal.");
+}
+
+
+int64_t ajustesUltimaOrden() { return ultimaOrden; }
+
+void ajustesGuardarUltimaOrden(int64_t id) {
+  if (id <= ultimaOrden) return;      // solo sube
+  ultimaOrden = id;
+  if (abierto) nvs.putLong64(K_ORDEN, (int64_t)id);
 }

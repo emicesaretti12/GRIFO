@@ -22,6 +22,20 @@ struct RespuestaAbrir {
   uint32_t saldoCentavos;
 };
 
+// ── Una orden que vino del servidor ─────────────────────────────────────────
+// Son las tres cosas que SOLO puede hacer el aparato. Todo lo demás que la app
+// necesita cambiar de una canilla (precio, calibración, si está activa) lo
+// resuelve el servidor solo, y llega en la autorización.
+//
+//   Si el servidor puede resolverlo sin el dispositivo, mandárselo es agregar
+//   un punto de falla a cambio de nada.
+struct Orden {
+  int64_t id;          // 0 = no hay ninguna
+  char    tipo[16];    // "reiniciar" | "wifi" | "olvidar_wifi"
+  char    ssid[33];
+  char    pass[65];
+};
+
 void redIniciar();
 bool redConectada();
 
@@ -70,7 +84,7 @@ bool redCerrarSesion(int64_t sesionId, uint32_t ml, uint32_t pulsos);
  *  Un sistema que dura años no es uno que no falla: es uno donde **se ve que
  *  falló**, temprano y sin que nadie tenga que ir a mirar. Sin esto, una
  *  canilla colgada o sin red pasa desapercibida hasta que un cliente reclama. */
-bool redLatido(uint32_t cierresPendientes);
+bool redLatido(uint32_t cierresPendientes, Orden &orden);
 
 /** Abre la conexión segura **antes** de que nadie la necesite.
  *
