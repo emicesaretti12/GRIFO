@@ -284,3 +284,50 @@ npm run dev
 Y si estás mirando la versión publicada, forzá la recarga con **Ctrl+Shift+R**:
 el navegador cachea el HTML y a veces se queda con el anterior aunque el deploy
 haya terminado.
+
+---
+
+## Ahora mismo — el tablero en vivo
+
+Arriba de todo en Inicio, una tarjeta por canilla con lo que está pasando **en
+este momento**: libre, sirviendo (con los ml y los pesos subiendo), sin señal o
+fuera de servicio.
+
+Se refresca cada **2 segundos**, no cada 20 como el resto del tablero. Una
+cerveza entera sale en menos de veinte segundos: un panel que muestra lo que
+pasa mientras lo mirás no puede tener el mismo refresco que uno que muestra el
+día.
+
+> Es elegir el refresco por la velocidad de lo que muestra, no por una constante
+> global.
+
+El dato en vivo sale de `sesiones.ml_parcial`, que escribe el ESP32 mientras
+sirve. Es lo único del sistema que cambia mientras lo estás mirando.
+
+### El color de la cerveza no se usa como color de interfaz
+
+El tinte de cada tarjeta sale de la cerveza que cargó el dueño. Una stout negra
+sobre el tema oscuro no se ve; una rubia clarísima sobre el tema claro tampoco.
+
+Así que el color de la interfaz se **deriva** del dato: se mezcla con `--ink`,
+que es el color del texto —negro en claro, blanco en oscuro— y por lo tanto, por
+definición, el que más contrasta contra ese fondo. Mezclar hacia ahí levanta lo
+oscuro y baja lo claro, sin una sola regla por tema.
+
+> El dato dice qué cerveza es. El contraste no es negociable.
+
+## Canillas: alta y baja desde la app
+
+Antes se creaban desde el SQL Editor de Supabase. Ahora hay **Nueva canilla**.
+
+Nace **fuera de servicio** a propósito: todavía no tiene token, así que no
+podría vender. Una canilla que figura "en servicio" sin poder servir es una
+mentira en el tablero, y el que mira el tablero decide en base a eso.
+
+**Borrar solo se puede si nunca vendió nada.** Una sola sesión, aunque sea de
+hace un año, alcanza para que el servidor se niegue: esa fila es plata que
+entró, y el arqueo la lee por el nombre del grifo. Para sacarla de circulación
+está *Desactivar*, que la saca de la operación y deja la historia intacta.
+
+> Es el soft delete. Lo que participó de una transacción no se borra: se da de
+> baja.

@@ -17,6 +17,8 @@ export default function Grifos() {
   const [editando, setEditando] = useState<Grifo | null>(null)
   const [rotando, setRotando] = useState<Grifo | null>(null)
   const [controlando, setControlando] = useState<Grifo | null>(null)
+  const [creando, setCreando] = useState(false)
+  const [borrando, setBorrando] = useState<Grifo | null>(null)
   const [tokenNuevo, setTokenNuevo] = useState<{ grifo: Grifo; token: string } | null>(null)
 
   const traer = useCallback(async () => {
@@ -63,6 +65,23 @@ export default function Grifos() {
                    onSi={() => rotar(rotando)} onCerrar={() => setRotando(null)} />
       )}
 
+      {creando && (
+        <NuevaCanilla onCerrar={() => setCreando(false)} avisar={avisar}
+                      onCreada={async () => { setCreando(false); await traer() }} />
+      )}
+
+      {borrando && (
+        <Confirmar titulo={`Borrar ${borrando.nombre}`}
+                   bajada="Solo se puede borrar una canilla que nunca vendió nada. Si ya vendió, el arqueo la necesita: desactivala en vez de borrarla."
+                   textoAccion="Borrar" tono="grave"
+                   onSi={async () => {
+                     const g = borrando
+                     setBorrando(null)
+                     await rpc('admin_borrar_grifo', { p_grifo: g.id }, 'Canilla borrada')
+                   }}
+                   onCerrar={() => setBorrando(null)} />
+      )}
+
       {controlando && (
         <ControlarCanilla grifo={controlando} avisar={avisar}
                           onCerrar={() => { setControlando(null); void traer() }} />
@@ -76,10 +95,14 @@ export default function Grifos() {
 
       <Panel titulo="Canillas"
              bajada="Cada canilla es una cerveza distinta: su precio, su costo, su calibración y su pantalla."
+             accion={<button className="btn primario" onClick={() => setCreando(true)}>
+                       <Icono nombre="mas" tam={14} /> Nueva canilla
+                     </button>}
              pegado>
         {cargando ? <HuesoTabla columnas={6} /> : grifos.length === 0 ? (
           <Vacio icono="grifo" titulo="No hay canillas cargadas">
-            Se dan de alta desde el SQL Editor de Supabase.
+            Creá la primera con <strong>Nueva canilla</strong>. Después le generás el
+            token y lo pegás en el <code>secrets.h</code> del ESP32.
           </Vacio>
         ) : (
           <div className="scroll-x">
@@ -160,6 +183,10 @@ export default function Grifos() {
                           <button className="btn sm" onClick={() => setRotando(g)}
                                   title={conToken ? `Rotado ${fecha(g.token_rotado_en)}` : 'Todavía no tiene token'}>
                             <Icono nombre="llave" tam={14} /> {conToken ? 'Rotar' : 'Generar'} token
+                          </button>
+                          <button className="btn sm" onClick={() => setBorrando(g)}
+                                  title="Solo se puede si nunca vendio nada">
+                            Borrar
                           </button>
                         </div>
                       </td>
@@ -251,6 +278,103 @@ function TokenNuevo({ grifo, token, onCerrar, onCopiado }: {
           Copiar link
         </button>
         <a className="btn sm" href={link} target="_blank" rel="noreferrer">Abrir en otra pestaña</a>
+      </div>
+    </Modal>
+  )
+}
+
+/* ── Alta de una canilla ──────────────────────────────────────────────────── */
+/**
+ * Hasta acá las canillas se creaban desde el SQL Editor de Supabase. Eso
+ * funciona mientras el que lo hace sea el que escribió el sistema; el día que
+ * el bar quiera agregar una y esa persona no esté, el sistema deja de servir.
+ *
+ *   Es la tarea que quedó como "corré este script a mano". Mientras hay una
+ *   sola persona que sabe, parece que está resuelta.
+ */
+function NuevaCanilla({ onCerrar, onCreada, avisar }: {
+  onCerrar: () => void
+  onCreada: () => void | Promise<void>
+  avisar: (t: string, o?: { tono?: 'bien' | 'grave' | 'neutro'; detalle?: string }) => void
+}) {
+  const [nombre, setNombre] = useState('')
+  const [precio, setPrecio] = useState('')
+  const [pulsos, setPulsos] = useState('450')
+  const [minimo, setMinimo] = useState('50')
+  const [creando, setCreando] = useState(false)
+
+  const precioC = aCentavos(precio) ?? 0
+  const valido = nombre.trim() !== '' && precioC > 0 && Number(pulsos.replace(',', '.')) > 0
+
+  async function crear() {
+    setCreando(true)
+    const { data, error } = await supabase.rpc('admin_crear_grifo', {
+      p_nombre: nombre.trim(),
+      p_precio_litro: precioC,
+      p_pulsos_por_litro: Number(pulsos.replace(',', '.')),
+      p_ml_minimos: Number(minimo) || 50,
+    })
+    setCreando(false)
+
+    if (error) { avisar('Error', { tono: 'grave', detalle: error.message }); return }
+    const r = data as { ok: boolean; motivo?: string; id?: number }
+    if (!r.ok) { avisar('No se pudo', { tono: 'grave', detalle: mensajeDeError(r) }); return }
+
+    avisar(`Canilla #${r.id} creada`, {
+      tono: 'bien',
+      detalle: 'Está fuera de servicio. Generale el token y activala cuando el ESP32 esté conectado.',
+    })
+    await onCreada()
+  }
+
+  return (
+    <Modal titulo="Nueva canilla"
+           bajada="Lo mínimo para que exista. El resto —la cerveza, la foto, el color— se carga después desde Editar."
+           onCerrar={onCerrar}
+           acciones={
+             <>
+               <button className="btn" onClick={onCerrar}>Cancelar</button>
+               <button className="btn primario" disabled={!valido || creando} onClick={crear}>
+                 {creando ? 'Creando…' : 'Crear'}
+               </button>
+             </>
+           }>
+      <div style={{ display: 'grid', gap: 12 }}>
+        <div>
+          <label htmlFor="nn">Nombre</label>
+          <input id="nn" className="campo" value={nombre} placeholder="Rubia de la casa"
+                 onChange={e => setNombre(e.target.value)} />
+        </div>
+
+        <div className="rejilla c2" style={{ gap: 12 }}>
+          <div>
+            <label htmlFor="np">Precio por litro</label>
+            <input id="np" className="campo" inputMode="decimal" value={precio}
+                   placeholder="3200" onChange={e => setPrecio(e.target.value)} />
+          </div>
+          <div>
+            <label htmlFor="nm">Mínimo servible (ml)</label>
+            <input id="nm" className="campo" inputMode="numeric" value={minimo}
+                   onChange={e => setMinimo(e.target.value)} />
+          </div>
+        </div>
+
+        <div>
+          <label htmlFor="npl">Pulsos por litro</label>
+          <input id="npl" className="campo" inputMode="decimal" value={pulsos}
+                 onChange={e => setPulsos(e.target.value)} />
+          <small style={{ color: 'var(--ink-3)' }}>
+            450 es el valor de catálogo del caudalímetro. El de verdad sale de calibrar
+            con agua, y se corrige después desde Editar.
+          </small>
+        </div>
+
+        <Nota tono="info">
+          <strong>Nace fuera de servicio</strong>, y es a propósito: todavía no tiene
+          token, así que no podría vender. Una canilla que figura "en servicio" sin poder
+          servir es una mentira en el tablero, y el que mira el tablero decide en base a
+          eso.
+        </Nota>
       </div>
     </Modal>
   )

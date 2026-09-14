@@ -13,7 +13,7 @@ export type Rol = 'cajero' | 'admin'
 // Va en una sola linea y con `as const` a proposito: supabase-js deriva el tipo
 // de la fila parseando este string en tiempo de compilacion. Partido en dos con
 // `+` deja de ser un literal y el tipo degenera en `GenericStringError[]`.
-export const COLUMNAS_GRIFO = 'id, nombre, precio_litro_centavos, pulsos_por_litro, ml_minimos, ml_vaso, activo, token_rotado_en, estilo, descripcion, abv, ibu, color, imagen_url' as const
+export const COLUMNAS_GRIFO = 'id, nombre, precio_litro_centavos, pulsos_por_litro, ml_minimos, ml_vaso, activo, token_rotado_en, estilo, descripcion, abv, ibu, color, imagen_url, ultimo_latido, firmware, cierres_pendientes, senal_dbm, ip_local' as const
 
 export type Grifo = {
   id: number
@@ -167,6 +167,22 @@ export type Sesion = {
   cerrada_en: string | null
 }
 
+/** Una sesión con la canilla abierta ahora mismo.
+ *
+ *  `ml_parcial` lo escribe el ESP32 mientras sirve, con `reportar_progreso`.
+ *  Es la única cosa del sistema que cambia mientras la mirás. */
+export type SesionEnVivo = {
+  id: number
+  uid: string
+  grifo_id: number
+  ml_parcial: number
+  ml_maximos: number
+  precio_litro_centavos: number
+  saldo_inicial_centavos: number
+  abierta_en: string
+  visto_en: string | null
+}
+
 export type Tarjeta = {
   uid: string
   saldo_centavos: number
@@ -200,6 +216,14 @@ export const MOTIVOS: Record<string, string> = {
   rango_invalido: 'El período está al revés: la fecha de fin es anterior a la de inicio.',
   saldo_insuficiente: 'El ajuste dejaría la tarjeta en negativo.',
   costo_invalido: 'El costo no puede ser negativo.',
+
+  // ── Canillas: alta, baja y órdenes ────────────────────────────────────────
+  falta_nombre_canilla: 'Hay que ponerle un nombre a la canilla.',
+  tiene_ventas: 'Esta canilla ya vendió. No se borra: desactivala, y la historia queda intacta.',
+  tiene_barriles: 'Esta canilla tiene barriles cargados. Sacá el inventario antes de borrarla.',
+  tipo_desconocido: 'Esa orden no existe. Puede ser una app más nueva que el servidor.',
+  falta_ssid: 'Hay que poner el nombre exacto de la red.',
+  ya_no_se_puede: 'La canilla ya la aplicó. No se puede cancelar.',
   color_invalido: 'El color tiene que ser hexadecimal, tipo #c8811f.',
   usuario_inexistente: 'Ese usuario no existe. Invitalo primero desde Supabase.',
   rol_invalido: 'Rol inválido.',

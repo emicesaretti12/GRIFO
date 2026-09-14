@@ -396,3 +396,119 @@ tbody tr:hover { background: var(--superficie-2); }
 }
 .barril-pie { display: flex; justify-content: space-between; font-size: 13px; color: var(--ink-2); }
 .barril-pie strong { color: var(--ink); }
+
+/* ── Tablero en vivo ───────────────────────────────────────────────────────
+   Las canillas de "Ahora mismo". La que está sirviendo se distingue sola:
+   se tiñe del color de su cerveza y late. El resto queda en gris.
+
+   Es lo que hace que se pueda leer de un vistazo desde el otro lado de la
+   barra, que es donde va a estar el que mira. */
+.rejilla-vivo {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+}
+
+.tarjeta-vivo {
+  /* ── El color lo pone el usuario, y puede ser cualquiera ─────────────────
+     El tinte sale de la cerveza que cargó el dueño del bar. Una stout negra
+     sobre el tema oscuro no se ve, y una rubia clarísima sobre el tema claro
+     tampoco. Usar el dato crudo como color de interfaz falla en un tema o en
+     el otro, siempre.
+
+     La salida es mezclarlo con `--ink`, que es el color del TEXTO: negro en
+     claro, blanco en oscuro. O sea, por definición, el color que más contrasta
+     contra el fondo de ese tema. Mezclar hacia ahí levanta lo oscuro y baja lo
+     claro, sin una sola regla por tema.
+
+       Es derivar el color de interfaz del dato en vez de usar el dato como
+       color de interfaz. El dato dice qué cerveza es; el contraste no es
+       negociable. */
+  --tinte-ui: var(--tinte);
+  --tinte-ui: color-mix(in oklab, var(--tinte) 62%, var(--ink) 38%);
+
+  border: 1px solid var(--linea);
+  border-radius: 14px;
+  padding: 13px 14px;
+  background: var(--superficie);
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  transition: border-color .25s, box-shadow .25s;
+}
+
+.tarjeta-vivo.sirviendo {
+  border-color: var(--tinte-ui);
+  box-shadow: 0 0 0 1px var(--tinte-ui), 0 6px 20px -12px var(--tinte-ui);
+}
+
+.vivo-cabeza { display: flex; align-items: center; gap: 9px; }
+
+/* ── Los dos `min-width: 0` que hacen falta, y por qué son dos ─────────────
+   El valor inicial de `min-width` en un item de grid o de flex es `auto`, no
+   `0`: por defecto **ningún item achica por debajo de su contenido**. Un nombre
+   largo empuja la tarjeta fuera de su columna, y `text-overflow: ellipsis`
+   nunca llega a actuar porque el contenedor le da todo el ancho que pide.
+
+   Y hay que soltarlo en CADA nivel de la cadena, no en el de más adentro: con
+   la tarjeta suelta pero su fila de encabezado todavía en `auto`, la fila sigue
+   midiendo lo que mide el nombre entero y empuja igual. Medirlo en el navegador
+   lo mostró enseguida: tarjeta 244px, encabezado 246px.
+
+     Es el `min-width: 0` que todo el mundo descubre la primera vez que un flex
+     no quiere achicarse. No es un parche: es desactivar un default. */
+.tarjeta-vivo        { min-width: 0; }   /* la tarjeta dentro de la grilla  */
+.tarjeta-vivo > *    { min-width: 0; }   /* cada fila dentro de la tarjeta  */
+.tarjeta-vivo .crece { min-width: 0; }   /* el texto dentro de la fila      */
+
+.vivo-gota {
+  width: 32px; height: 32px; border-radius: 8px; flex: none;
+  display: grid; place-items: center; font-size: 16px;
+  background: var(--tinte-ui);
+  color: #fff;
+}
+
+.vivo-nombre {
+  display: block; font-size: 14.5px; line-height: 1.25;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.vivo-sub { font-size: 11.5px; color: var(--ink-3); }
+
+.vivo-monto { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.vivo-ml    { font-size: 25px; font-weight: 700; letter-spacing: -.5px;
+              font-variant-numeric: tabular-nums; }
+.vivo-pesos { font-size: 14px; color: var(--ink-2);
+              font-variant-numeric: tabular-nums; }
+
+.vivo-barra {
+  height: 6px; border-radius: 99px; overflow: hidden;
+  background: var(--superficie-2);
+}
+.vivo-barra i {
+  display: block; height: 100%; border-radius: 99px;
+  background: var(--tinte-ui);
+  /* Acompaña al refresco de 2 s para que la barra suba parejo en vez de dar
+     saltos. Es interpolar entre muestras, no inventar datos. */
+  transition: width 1.8s linear;
+}
+
+.vivo-pie {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11.5px; color: var(--ink-3);
+}
+
+.vivo-estado { display: flex; gap: 6px; flex-wrap: wrap; min-height: 24px; align-items: center; }
+
+/* El latido: lento y sutil. Una animación rápida en una pantalla que alguien
+   mira toda la noche cansa. */
+.tarjeta-vivo.sirviendo .vivo-gota { animation: latir 2.4s ease-in-out infinite; }
+
+@keyframes latir {
+  0%, 100% { transform: scale(1);    opacity: 1;   }
+  50%      { transform: scale(1.07); opacity: .82; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tarjeta-vivo.sirviendo .vivo-gota { animation: none; }
+  .vivo-barra i { transition: none; }
+}

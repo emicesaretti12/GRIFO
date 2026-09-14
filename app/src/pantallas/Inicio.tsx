@@ -9,6 +9,7 @@ import { Panel, Stat, Chip, Nota, Vacio, Hueso } from '../componentes/UI'
 import { Columnas, Barras } from '../componentes/Grafico'
 import Icono from '../componentes/Icono'
 import { UMBRAL_BAJO, type Barril } from './Barriles'
+import AhoraMismo from './AhoraMismo'
 
 const REFRESCO_MS = 20000
 
@@ -83,6 +84,8 @@ export default function Inicio() {
 
   return (
     <>
+      <AhoraMismo />
+
       {(sinToken.length > 0 || recortadas.length > 0 || sinLiquidar.length > 0 || barrilesBajos.length > 0) && (
         <div style={{ marginBottom: 16 }}>
           {barrilesBajos.length > 0 && (
