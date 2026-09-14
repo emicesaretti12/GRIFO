@@ -13,7 +13,15 @@
   #define FIRMWARE_VERSION "etapa6"
 #endif
 
-static const uint32_t TIMEOUT_MS      = 8000;
+// Dos plazos distintos, porque no todo vale lo mismo.
+//
+// Un cobro merece esperar: es plata. Un refresco de la pantalla no — si tarda
+// más de dos segundos ya perdió sentido, y mientras tanto está ocupando la
+// única conexión que hay.
+//
+//   Es poner un timeout más corto en la llamada opcional que en la crítica.
+static const uint32_t TIMEOUT_MS      = 6000;   // autorizar y cobrar
+static const uint32_t TIMEOUT_ADORNO  = 2500;   // latido y progreso
 static const uint32_t REINTENTO_WIFI_MS = 5000;
 
 static WiFiClientSecure cliente;
@@ -90,7 +98,8 @@ void redMantener() {
 
 /** Hace el POST y deja el cuerpo de la respuesta en `salida`.
  *  Devuelve el código HTTP, o un negativo si ni siquiera se pudo enviar. */
-static int postRpc(const char *funcion, const String &cuerpo, String &salida) {
+static int postRpc(const char *funcion, const String &cuerpo, String &salida,
+                   uint32_t plazo = TIMEOUT_MS) {
   if (!redConectada()) return -1;
 
   if (!httpConfigurado) {
@@ -101,7 +110,8 @@ static int postRpc(const char *funcion, const String &cuerpo, String &salida) {
   String url = String(SUPABASE_URL) + "/rest/v1/rpc/" + funcion;
   if (!http.begin(cliente, url)) return -2;
 
-  http.setTimeout(TIMEOUT_MS);
+  http.setTimeout(plazo);
+  http.setConnectTimeout(plazo);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("apikey", SUPABASE_ANON);
   http.addHeader("Authorization", String("Bearer ") + SUPABASE_ANON);
@@ -109,6 +119,19 @@ static int postRpc(const char *funcion, const String &cuerpo, String &salida) {
   int codigo = http.POST(cuerpo);
   if (codigo > 0) salida = http.getString();
   http.end();
+
+  // ── La contracara de reusar la conexión ───────────────────────────────────
+  // Mantenerla abierta ahorra el handshake, pero el servidor la cierra por su
+  // cuenta cuando quiere. Si eso pasa entre dos pedidos, el siguiente sale por
+  // un socket que ya no existe y se queda esperando hasta agotar el plazo.
+  //
+  // Ante cualquier error se tira el socket y el próximo pedido abre uno nuevo.
+  // Cuesta un handshake; no hacerlo cuesta que una canilla quede clavada.
+  //
+  //   Es descartar del pool la conexión que devolvió error en vez de
+  //   devolverla y que le toque al que viene.
+  if (codigo != 200) cliente.stop();
+
   return codigo;
 }
 
@@ -201,7 +224,7 @@ bool redLatido(uint32_t cierresPendientes) {
   serializeJson(pedido, cuerpo);
 
   String respuesta;
-  if (postRpc("canilla_latido", cuerpo, respuesta) != 200) return false;
+  if (postRpc("canilla_latido", cuerpo, respuesta, TIMEOUT_ADORNO) != 200) return false;
 
   JsonDocument doc;
   if (deserializeJson(doc, respuesta)) return false;
@@ -220,5 +243,5 @@ bool redReportarProgreso(int64_t sesionId, uint32_t ml, uint32_t pulsos) {
   serializeJson(pedido, cuerpo);
 
   String respuesta;
-  return postRpc("reportar_progreso", cuerpo, respuesta) == 200;
+  return postRpc("reportar_progreso", cuerpo, respuesta, TIMEOUT_ADORNO) == 200;
 }

@@ -97,7 +97,7 @@ static QueueHandle_t colaProgreso;
 
 // Cada cuánto se refresca el vaso de la pantalla. Más seguido no se nota a
 // simple vista y le roba tiempo a la red; más espaciado se ve a los saltos.
-static const uint32_t PROGRESO_MS = 700;
+static const uint32_t PROGRESO_MS = 1000;
 
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -113,32 +113,35 @@ static void tareaRed(void *) {
     esp_task_wdt_reset();
     redMantener();
 
-    // 0) El latido. Va primero y es barato: si todo lo demás falla, que al
-    //    menos el servidor sepa que esta canilla sigue viva y con cuántos
-    //    cierres atorados.
-    uint32_t ahora = millis();
-    if (redConectada() && (ultimoLatido == 0 || ahora - ultimoLatido >= LATIDO_MS)) {
-      ultimoLatido = ahora;
-      redLatido(colaCantidad());
-    }
+    // ── El orden de acá abajo ES la política del sistema ──────────────────
+    //
+    // Todo lo que sigue comparte una sola conexión y un solo hilo, así que lo
+    // que va primero puede hacer esperar a lo que va después. El orden no es
+    // estético: decide qué se sacrifica cuando la red anda mal.
+    //
+    //   1. AUTORIZAR  — hay un cliente parado con la tarjeta en la mano.
+    //   2. COBRAR     — es plata ya servida.
+    //   3. LATIDO     — barato, y es lo que avisa si esta canilla se cayó.
+    //   4. PROGRESO   — un adorno.
+    //
+    // La primera versión tenía el progreso arriba de todo. Con la pantalla
+    // refrescando cada 700 ms, un solo pedido colgado dejaba esperando detrás a
+    // la autorización del cliente siguiente y a los cobros.
+    //
+    //   Es poner el envío del mail de cortesía adelante del cobro de la tarjeta
+    //   en la misma cola. Funciona hasta el día que el servidor de mail tarda.
+    bool hiceAlgoCaro = false;
 
-    // 1) El progreso de la pantalla, si hay uno fresco. Antes de la cola de
-    //    cierres porque es lo único con plazo: un vaso que se llena tarde no
-    //    sirve de nada, mientras que un cierre puede esperar cinco segundos.
-    Progreso prog;
-    if (xQueueReceive(colaProgreso, &prog, 0) == pdTRUE) {
-      redReportarProgreso(prog.sesionId, prog.ml, prog.pulsos);
-    }
-
-    // 2) ¿Hay alguien esperando que le autoricemos una tarjeta?
+    // 1) Un cliente esperando que le autoricen la tarjeta.
     PedidoAbrir pedido;
     if (xQueueReceive(colaPedidoAbrir, &pedido, 0) == pdTRUE) {
       RespuestaAbrir r;
       redAbrirSesion(pedido.uid, r);
       xQueueSend(colaRespuestaAbrir, &r, 0);
+      hiceAlgoCaro = true;
     }
 
-    // 3) Vaciar la cola de cierres, de a uno y en orden.
+    // 2) Los cierres, de a uno y en orden.
     //
     // De a uno a propósito: si el servidor rechaza el primero, no queremos
     // seguir mandando los demás a ciegas. Y en orden, porque así se cerraron.
@@ -151,9 +154,25 @@ static void tareaRed(void *) {
         colaSacarPrimero();
         Serial.println("[red] cierre confirmado");
       } else {
-        // No se saca de la cola. Se reintenta en la próxima vuelta.
-        vTaskDelay(pdMS_TO_TICKS(3000));
+        vTaskDelay(pdMS_TO_TICKS(3000));   // no martillar al servidor
       }
+      hiceAlgoCaro = true;
+    }
+
+    // 3) El latido, una vez por minuto.
+    uint32_t ahora = millis();
+    if (redConectada() && !hiceAlgoCaro &&
+        (ultimoLatido == 0 || ahora - ultimoLatido >= LATIDO_MS)) {
+      ultimoLatido = ahora;
+      redLatido(colaCantidad());
+      hiceAlgoCaro = true;
+    }
+
+    // 4) El progreso de la pantalla. Último, y solo si no hubo nada importante
+    //    en esta vuelta: que el vaso se dibuje tarde no le cuesta nada a nadie.
+    Progreso prog;
+    if (!hiceAlgoCaro && xQueueReceive(colaProgreso, &prog, 0) == pdTRUE) {
+      redReportarProgreso(prog.sesionId, prog.ml, prog.pulsos);
     }
 
     vTaskDelay(pdMS_TO_TICKS(200));
