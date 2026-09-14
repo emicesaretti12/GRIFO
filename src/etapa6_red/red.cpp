@@ -384,16 +384,19 @@ static void cuerpoDelLatido(uint32_t cierresPendientes, String &salida) {
 static void leerOrden(JsonDocument &doc, Orden &orden) {
   memset(&orden, 0, sizeof(orden));
 
-  JsonVariant o = doc["orden"];
-  if (o.isNull()) return;
-
-  int64_t id = o["id"].as<long long>();
+  // Se indexa directo y no por una variable intermedia. Pedirle un campo a algo
+  // que no existe devuelve nulo, y un nulo leído como entero da 0: con eso
+  // alcanza para distinguir "no vino ninguna orden" de "vino la #7", sin
+  // depender de ninguna conversión implícita.
+  //
+  //   Es el optional chaining. `a?.b?.c ?? 0` no necesita chequear cada nivel.
+  int64_t id = doc["orden"]["id"].as<long long>();
   if (id <= 0) return;
 
   orden.id = id;
-  snprintf(orden.tipo, sizeof(orden.tipo), "%s", o["tipo"] | "");
-  snprintf(orden.ssid, sizeof(orden.ssid), "%s", o["datos"]["ssid"] | "");
-  snprintf(orden.pass, sizeof(orden.pass), "%s", o["datos"]["pass"] | "");
+  snprintf(orden.tipo, sizeof(orden.tipo), "%s", doc["orden"]["tipo"] | "");
+  snprintf(orden.ssid, sizeof(orden.ssid), "%s", doc["orden"]["datos"]["ssid"] | "");
+  snprintf(orden.pass, sizeof(orden.pass), "%s", doc["orden"]["datos"]["pass"] | "");
 }
 
 bool redLatido(uint32_t cierresPendientes, Orden &orden) {
