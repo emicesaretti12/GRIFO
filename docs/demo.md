@@ -172,9 +172,9 @@ celular o en la notebook: se va a mover solo cuando sirvas.
 **3. Apoyá la tarjeta.**
 Aparece quién es y cuánto puede tomar.
 
-**4. Apretá el botón.**
-El relé clickea y la válvula golpea. **Ese ruido es el que convence**: es la cosa
-física obedeciendo.
+**4. No hay botón: ya está sirviendo.**
+En el mismo momento en que apoyás la tarjeta, el relé clickea y la válvula
+golpea. **Ese ruido es el que convence**: es la cosa física obedeciendo.
 
 **5. Señalá la pantalla mientras sirve.**
 Los mililitros y los pesos suben solos. El vaso se llena; si te pasás, se
@@ -184,8 +184,8 @@ convierte en jarra.
 Sale el ticket y el saldo queda descontado.
 
 **7. Ahora la tarjeta con poco saldo.**
-Apretá el botón y **no lo sueltes**. Corta solo, en el límite exacto. Esto es lo
-que responde a "¿y si alguien se sirve de más?".
+Apoyala y dejala. Corta sola, en el límite exacto, con la tarjeta todavía
+puesta. Esto es lo que responde a "¿y si alguien se sirve de más?".
 
 **8. El remate: cortá el WiFi.**
 Apagá el hotspot a mitad de una tirada. **Sigue cortando igual**, porque el corte

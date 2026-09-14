@@ -100,6 +100,27 @@ static const int PIN_LED   = 2;
 //
 //   Es el mismo criterio que el debounce de retirada de la tarjeta: cuando los
 //   dos errores no cuestan lo mismo, el umbral no va en el medio.
+// ── Con botón o sin botón ───────────────────────────────────────────────────
+// `true`  — la válvula abre sola mientras la tarjeta esté apoyada, y cierra al
+//           retirarla. Un solo gesto: apoyar y sacar.
+// `false` — hay que mantener el botón apretado para que salga. La tarjeta
+//           autoriza, el botón sirve.
+//
+// Lo que se gana sin botón es que no hay nada que aprender: el cliente apoya la
+// tarjeta y sale cerveza.
+//
+// Lo que se pierde es el segundo consentimiento. Con botón, para que salga
+// líquido hacen falta **dos** acciones deliberadas; sin botón, una tarjeta
+// apoyada de casualidad —o apoyada y olvidada— abre la canilla igual.
+//
+// El único freno que queda entonces es el límite de saldo y los 90 s de
+// apertura máxima. Eso es una decisión de negocio, no técnica, y por eso queda
+// acá arriba en una sola línea en vez de repartida por la máquina de estados.
+//
+//   Es el `confirm()` antes de la acción destructiva. Sacarlo hace la interfaz
+//   más rápida, y también más fácil de disparar sin querer.
+static const bool ABRIR_CON_LA_TARJETA = true;
+
 static const uint32_t REBOTE_APRETAR_MS = 30;
 static const uint32_t REBOTE_SOLTAR_MS  = 250;
 
@@ -532,8 +553,16 @@ static void tareaControl(void *) {
           Serial.printf("Tarjeta %s | saldo %s | hasta %lu ml (%lu pulsos)\n",
                         uidSesion, s, (unsigned long)r.mlMaximos,
                         (unsigned long)pulsosMax);
-          Serial.println("Apreta el boton para servir.");
-          irA(LISTO);
+          if (ABRIR_CON_LA_TARJETA) {
+            Serial.println("Sirviendo. Retira la tarjeta para cortar.");
+            valvulaAbrir();
+            ultimoPulsoMs = ahora;
+            ultimoInforme = ahora;
+            irA(SIRVIENDO);
+          } else {
+            Serial.println("Apreta el boton para servir.");
+            irA(LISTO);
+          }
           break;
         }
 
@@ -565,6 +594,23 @@ static void tareaControl(void *) {
 
       case LISTO: {
         if (!tarjetaPresente()) { irA(LIQUIDANDO); break; }
+
+        // Sin botón, a LISTO solo se llega después de un corte: el límite, los
+        // 90 s, o la falta de pulsos. En ninguno de esos casos conviene volver
+        // a abrir sola.
+        //
+        // Si volviera a abrir al instante, un barril vacío daría un ciclo de
+        // abrir-cerrar sin fin, y los 90 s de apertura máxima dejarían de ser
+        // un tope: serían el período de un oscilador.
+        //
+        // Así que se queda cerrada y espera. Para seguir, el cliente retira la
+        // tarjeta y la vuelve a apoyar — un gesto deliberado, igual que el
+        // primero.
+        //
+        //   Es no reintentar solo después de que saltó el disyuntor. Alguien
+        //   tiene que mirar qué pasó antes de volver a dar corriente.
+        if (ABRIR_CON_LA_TARJETA) break;
+
         if (botonApretado() && pulsosServidos < pulsosMax) {
           valvulaAbrir();
           ultimoPulsoMs = ahora;
@@ -586,7 +632,7 @@ static void tareaControl(void *) {
         //
         //   Un estado que cambia sin dejar dicho el motivo es un estado que hay
         //   que reproducir para entender.
-        if (!botonApretado()) {
+        if (!ABRIR_CON_LA_TARJETA && !botonApretado()) {
           valvulaCerrar();
           Serial.println(">> Solto el boton. Corta.");
           irA(LISTO);
@@ -602,12 +648,14 @@ static void tareaControl(void *) {
         if (ahora - valvulaAbiertaDesde() > MAX_APERTURA_MS) {
           valvulaCerrar();
           Serial.println("!! FAILSAFE: 90 s abierta. Corta.");
+          if (ABRIR_CON_LA_TARJETA) Serial.println("   Retira y volve a apoyar la tarjeta para seguir.");
           irA(LISTO);
           break;
         }
         if (ahora - ultimoPulsoMs > SIN_PULSOS_MS) {
           valvulaCerrar();
           Serial.println("!! FAILSAFE: abierta sin pulsos. Corta.");
+          if (ABRIR_CON_LA_TARJETA) Serial.println("   No llego liquido. Revisa el barril o la manguera.");
           irA(LISTO);
           break;
         }

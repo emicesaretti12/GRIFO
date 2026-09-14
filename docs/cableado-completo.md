@@ -177,17 +177,35 @@ Ojo con esto: `H32` (que sí lleva 3,3 V) y `B32` están **en la misma fila pero
 lados distintos del canal**. Son dos nodos separados. Un agujero de diferencia
 entre "anda" y "el relé queda trabado".
 
-### Botón
+### Botón — ya no se usa para servir
 
-No hace falta uno físico: un botón son dos cables que se tocan.
+`ABRIR_CON_LA_TARJETA = true` en `main.cpp`: **la válvula abre sola mientras la
+tarjeta esté apoyada** y cierra al retirarla. El botón dejó de participar de la
+venta.
+
+Lo que se gana es que no hay nada que aprender: el cliente apoya la tarjeta y
+sale cerveza. Lo que se pierde es el segundo consentimiento — con botón hacían
+falta **dos** acciones deliberadas para que saliera líquido; ahora una tarjeta
+apoyada de casualidad abre la canilla igual. Los frenos que quedan son el límite
+de saldo y los 90 s de apertura máxima.
+
+> Es el `confirm()` antes de la acción destructiva. Sacarlo hace la interfaz más
+> rápida, y también más fácil de disparar sin querer.
+
+**El pin sigue conectado**, porque al arrancar es lo que pide el portal:
 
 | Punta | Hueco |
 |---|---|
 | una | `E10` (bus de GND) |
 | la otra | `J51` (`P14`) |
 
-Meterla en `J51` es apretar; sacarla es soltar. El firmware usa `INPUT_PULLUP`:
-el pin queda solo en 3,3 V y **apretado es cuando lo llevás a masa**.
+Para entrar al portal: enchufar con el cable puesto en `J51`, esperar 3 s, y
+**sacarlo**. El portal se confirma al soltar, no al apretar — si el cable queda
+puesto, el firmware lo toma por un contacto trabado y arranca normal.
+
+En operación normal **ese cable va afuera**.
+
+Para volver al modo con botón, `ABRIR_CON_LA_TARJETA = false` y recompilar.
 
 ---
 
