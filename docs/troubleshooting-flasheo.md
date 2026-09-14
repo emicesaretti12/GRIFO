@@ -66,6 +66,40 @@ Es más lento pero mucho más tolerante con cables largos o conversores clon.
 
 ---
 
+## `Serial data stream stopped: Possible serial noise or corruption`
+
+```
+Connecting.....
+esptool.util.FatalError: Serial data stream stopped: Possible serial noise or corruption.
+A fatal error occurred: The chip stopped responding.
+```
+
+**Casi siempre: los 12 V están enchufados.** Es la regla 5 de
+[`protocolo-electrico.md`](protocolo-electrico.md).
+
+Mirá el detalle que distingue este error de los otros dos: el `Connecting.....`
+**pasó**. El chip contestó el primer sync y recién después se corrompió el
+stream. O sea que la placa está viva y el conversor la encuentra — lo que falla
+es la integridad de la línea a mitad de la conversación.
+
+> Es la diferencia entre "connection refused" y "connection reset". El primero
+> dice que del otro lado no hay nadie; el segundo, que había alguien y la
+> conversación se rompió. No se buscan en el mismo lugar.
+
+Con la bobina del relé y la válvula colgadas de la misma fuente, cada conmutación
+mete ruido en la masa que comparten el ESP32 y el conversor USB.
+
+**Qué hacer, en este orden:**
+
+1. Desenchufar los 12 V.
+2. Desenchufar el USB, esperar tres segundos, volver a enchufarlo. (El
+   conversor CP2102 queda en un estado raro después de un intento fallido.)
+3. Reintentar.
+4. Si sigue: mantener apretado **BOOT** mientras dice `Connecting.....`, soltarlo
+   cuando empiece a escribir.
+
+---
+
 ## `Unable to verify flash chip connection (No serial data received.)`
 
 Se reconoce porque el flasheo llega lejos —detecta el chip, lee el MAC, sube y
