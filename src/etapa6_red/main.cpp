@@ -686,9 +686,34 @@ void setup() {
       delay(20);
     }
     digitalWrite(PIN_LED, LOW);
+
+    // ── Y ahora hay que esperar a que lo SUELTE ───────────────────────────
+    // Un botón apretado al arrancar no prueba que haya alguien: el "botón" de
+    // este banco de pruebas es un cable metido en un hueco, y si quedó puesto
+    // la placa lee "apretado" para siempre.
+    //
+    // Eso armaba un bucle: la válvula al cerrar reseteaba la placa, la placa
+    // arrancaba con el cable puesto, entraba al portal, y en el portal no se
+    // vende. Cada reinicio la hundía más.
+    //
+    // Lo que distingue a una persona de un contacto trabado no es que apriete:
+    // es que **suelta**. Así que el portal se confirma recién cuando suelta.
+    //
+    //   Es exigir el flanco y no el nivel. Un nivel puede quedar clavado por
+    //   una falla; una transición hay que producirla.
     if (digitalRead(PIN_BOTON) == LOW) {
-      pidieronPortal = true;
-      Serial.println(">> PORTAL DE CONFIGURACION pedido a mano.");
+      Serial.println("Solta el boton para entrar al portal...");
+      uint32_t espera = millis();
+      while (digitalRead(PIN_BOTON) == LOW && millis() - espera < 10000) {
+        delay(20);
+      }
+      if (digitalRead(PIN_BOTON) == LOW) {
+        Serial.println("!! El boton quedo apretado solo. Se ignora y arranca normal.");
+        Serial.println("!! Si es el cable de pruebas, sacalo del hueco J51.");
+      } else {
+        pidieronPortal = true;
+        Serial.println(">> PORTAL DE CONFIGURACION pedido a mano.");
+      }
     }
   }
 
