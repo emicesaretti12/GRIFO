@@ -46,3 +46,11 @@ bool redCerrarSesion(int64_t sesionId, uint32_t ml, uint32_t pulsos);
  *  falló**, temprano y sin que nadie tenga que ir a mirar. Sin esto, una
  *  canilla colgada o sin red pasa desapercibida hasta que un cliente reclama. */
 bool redLatido(uint32_t cierresPendientes);
+
+/** POST /rpc/reportar_progreso. Es lo que hace que el vaso de la pantalla de la
+ *  canilla se llene **en vivo** mientras sale la cerveza.
+ *
+ *  Es puramente estético y no participa de la plata: si no llega, el cobro sale
+ *  igual. Por eso se manda sin reintentos y sin bloquear nada — un adorno que
+ *  frenara una venta sería un mal negocio. */
+bool redReportarProgreso(int64_t sesionId, uint32_t ml, uint32_t pulsos);

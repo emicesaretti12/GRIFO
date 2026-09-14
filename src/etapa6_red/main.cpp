@@ -83,6 +83,22 @@ static QueueHandle_t colaRespuestaAbrir;  // red → control:  el resultado
 
 struct PedidoAbrir { char uid[21]; };
 
+// ── El progreso para la pantalla del cliente ────────────────────────────────
+// Va por una cola de UN elemento con `xQueueOverwrite`: si la tarea de red no
+// llegó a mandar el anterior, se pisa con el nuevo.
+//
+// Es lo correcto acá. El progreso es una foto del momento, no un evento que
+// haya que conservar: mandar uno viejo porque quedó encolado mostraría el vaso
+// más vacío de lo que está.
+//
+//   Es un `debounce` con el último valor, no una cola de trabajos.
+struct Progreso { int64_t sesionId; uint32_t ml; uint32_t pulsos; };
+static QueueHandle_t colaProgreso;
+
+// Cada cuánto se refresca el vaso de la pantalla. Más seguido no se nota a
+// simple vista y le roba tiempo a la red; más espaciado se ve a los saltos.
+static const uint32_t PROGRESO_MS = 700;
+
 
 // ═════════════════════════════════════════════════════════════════════════════
 // TAREA DE RED — núcleo 0
@@ -106,7 +122,15 @@ static void tareaRed(void *) {
       redLatido(colaCantidad());
     }
 
-    // 1) ¿Hay alguien esperando que le autoricemos una tarjeta?
+    // 1) El progreso de la pantalla, si hay uno fresco. Antes de la cola de
+    //    cierres porque es lo único con plazo: un vaso que se llena tarde no
+    //    sirve de nada, mientras que un cierre puede esperar cinco segundos.
+    Progreso prog;
+    if (xQueueReceive(colaProgreso, &prog, 0) == pdTRUE) {
+      redReportarProgreso(prog.sesionId, prog.ml, prog.pulsos);
+    }
+
+    // 2) ¿Hay alguien esperando que le autoricemos una tarjeta?
     PedidoAbrir pedido;
     if (xQueueReceive(colaPedidoAbrir, &pedido, 0) == pdTRUE) {
       RespuestaAbrir r;
@@ -114,7 +138,7 @@ static void tareaRed(void *) {
       xQueueSend(colaRespuestaAbrir, &r, 0);
     }
 
-    // 2) Vaciar la cola de cierres, de a uno y en orden.
+    // 3) Vaciar la cola de cierres, de a uno y en orden.
     //
     // De a uno a propósito: si el servidor rechaza el primero, no queremos
     // seguir mandando los demás a ciegas. Y en orden, porque así se cerraron.
@@ -367,11 +391,18 @@ static void tareaControl(void *) {
           break;
         }
 
-        if (ahora - ultimoInforme >= 500) {
+        if (ahora - ultimoInforme >= PROGRESO_MS) {
           ultimoInforme = ahora;
+          uint32_t ml = mlDePulsos(pulsos, pulsosPorLitroMili);
+
           Serial.printf("   sirviendo... %lu ml  (%lu/%lu pulsos)\n",
-                        (unsigned long)mlDePulsos(pulsos, pulsosPorLitroMili),
-                        (unsigned long)pulsos, (unsigned long)pulsosMax);
+                        (unsigned long)ml, (unsigned long)pulsos,
+                        (unsigned long)pulsosMax);
+
+          // Se deja la foto y se sigue. No se espera respuesta ni se reintenta:
+          // la tarea de control no se detiene por un adorno.
+          Progreso p = { sesionId, ml, pulsos };
+          xQueueOverwrite(colaProgreso, &p);
         }
         break;
       }
@@ -438,20 +469,33 @@ void setup() {
 
   // El watchdog se configura ANTES de crear las tareas, porque cada una se
   // anota sola al arrancar.
+  // Se mira el resultado, no se supone. El nucleo de Arduino ya inicializa el
+  // watchdog al arrancar, y volver a inicializarlo devuelve un error que es
+  // facil ignorar: ahi el timeout queda en el del sistema, no en el nuestro, y
+  // el banner diria 30 s mientras el chip usa otro.
+  //
+  //   Pedir la configuracion y no chequear el resultado es como leer el log que
+  //   uno mismo escribio en vez del que escribio el sistema.
 #if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
   esp_task_wdt_config_t cfgWdt = {
     .timeout_ms     = WATCHDOG_S * 1000,
     .idle_core_mask = 0,
     .trigger_panic  = true,
   };
-  esp_task_wdt_init(&cfgWdt);
+  esp_err_t rWdt = esp_task_wdt_init(&cfgWdt);
 #else
-  esp_task_wdt_init(WATCHDOG_S, true);
+  esp_err_t rWdt = esp_task_wdt_init(WATCHDOG_S, true);
 #endif
-  Serial.printf("Watchdog          : %lu s\n", (unsigned long)WATCHDOG_S);
+  if (rWdt == ESP_OK) {
+    Serial.printf("Watchdog          : %lu s\n", (unsigned long)WATCHDOG_S);
+  } else {
+    Serial.println("Watchdog          : ya venia configurado por el sistema");
+    Serial.println("                    (el timeout es el del nucleo, no el nuestro)");
+  }
 
   colaPedidoAbrir    = xQueueCreate(2, sizeof(PedidoAbrir));
   colaRespuestaAbrir = xQueueCreate(2, sizeof(RespuestaAbrir));
+  colaProgreso       = xQueueCreate(1, sizeof(Progreso));
 
   // Núcleos distintos y prioridades distintas. El control gana siempre.
   xTaskCreatePinnedToCore(tareaRed,     "red",     8192, NULL, 1, NULL, 0);
