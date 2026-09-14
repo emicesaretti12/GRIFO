@@ -20,8 +20,23 @@
 // única conexión que hay.
 //
 //   Es poner un timeout más corto en la llamada opcional que en la crítica.
-static const uint32_t TIMEOUT_MS      = 6000;   // autorizar y cobrar
-static const uint32_t TIMEOUT_ADORNO  = 2500;   // latido y progreso
+static const uint32_t TIMEOUT_MS      = 6000;   // esperar la RESPUESTA: autorizar y cobrar
+static const uint32_t TIMEOUT_ADORNO  = 2500;   // esperar la RESPUESTA: latido y progreso
+
+// ── Y este es OTRO plazo, el de ESTABLECER la conexión ──────────────────────
+// Un handshake TLS en un ESP32 tarda dos o tres segundos: intercambio de
+// claves, validación, negociación. Es lento y no hay nada que hacerle.
+//
+// Aplicarle a eso el plazo corto del adorno fue un error mío: la conexión no
+// llegaba a completarse nunca y cada pedido moría con
+// `start_ssl_client: -1`.
+//
+//   Es confundir el timeout de conexión con el de lectura. Son dos cosas
+//   distintas y solo una de las dos se puede apurar.
+//
+// Con la conexión reusada esto se paga una sola vez; a partir de ahí los
+// pedidos siguientes ya la encuentran abierta.
+static const uint32_t TIMEOUT_CONECTAR = 9000;
 static const uint32_t REINTENTO_WIFI_MS = 5000;
 
 static WiFiClientSecure cliente;
@@ -110,8 +125,8 @@ static int postRpc(const char *funcion, const String &cuerpo, String &salida,
   String url = String(SUPABASE_URL) + "/rest/v1/rpc/" + funcion;
   if (!http.begin(cliente, url)) return -2;
 
-  http.setTimeout(plazo);
-  http.setConnectTimeout(plazo);
+  http.setTimeout(plazo);                    // cuánto esperar la respuesta
+  http.setConnectTimeout(TIMEOUT_CONECTAR);  // cuánto esperar el handshake
   http.addHeader("Content-Type", "application/json");
   http.addHeader("apikey", SUPABASE_ANON);
   http.addHeader("Authorization", String("Bearer ") + SUPABASE_ANON);
