@@ -1,10 +1,23 @@
 # Cableado completo del sistema
 
-Todo junto: lector, caudalímetro, relé y botón. Es el cableado de la etapa 5 en
-adelante.
+Todo junto: lector, caudalímetro, relé, botón y válvula. Es el cableado de la
+etapa 6 en adelante, con el ESP32 **clavado al protoboard**.
 
-**La válvula sigue sin conectarse.** Los bornes de salida del relé quedan al
-aire hasta la etapa 7.
+### La válvula solenoide
+
+Ya va conectada. Sus dos cables (soldados a las patitas metálicas con las que
+vino) van a los bornes de salida del relé:
+
+| Válvula | → | Dónde |
+|---|---|---|
+| un cable | → | `COM` del relé |
+| el otro | → | positivo de la fuente de 12 V |
+| `NO` y `NC` | | quedan **vacíos** |
+
+⚠️ **Falta el diodo 1N4007** en paralelo con la bobina de la válvula, con la
+banda hacia el positivo. Sin él, cada vez que el relé corta, la bobina devuelve
+un pico de tensión que castiga los contactos. Es la trampa 7 de
+[`pinout-y-trampas.md`](pinout-y-trampas.md), y no es opcional antes del bar.
 
 ---
 
@@ -13,7 +26,8 @@ aire hasta la etapa 7.
 Leé [`protocolo-electrico.md`](protocolo-electrico.md). Las dos que más importan:
 
 - **Cable de masa fijo** atornillado en `DC-`, y su punta libre en `B33`. La
-  punta negra del tester va a `A33` o `C33`, nunca a la bornera.
+  punta negra del tester va a `A33`, que se deja libre justamente para eso.
+  Nunca a la bornera.
 - **El `DC+` tapado con cinta.** No se toca con nada.
 
 Y el orden de siempre: cambio de cable = **las dos fuentes desenchufadas**.
@@ -51,83 +65,129 @@ del caudalímetro con el riel a 5 V. El esquema está en
 
 ---
 
-## La lista
+## El ESP32 va clavado al protoboard
 
-El ESP32 está suelto (no clavado al protoboard), así que casi todo va con cables
-**macho-hembra**: la hembra calza sobre el pin, el macho va al protoboard o al
-componente.
+Al principio estaba suelto y todo iba con cables macho-hembra directo a los
+pines. Ahora está clavado: los pines quedaron en las columnas **`B`** (izquierda)
+y **`I`** (derecha), y las columnas libres son **`A`** y **`J`**.
+
+| Fila | `B` (izq) | `I` (der) |
+|---|---|---|
+| 40 | `GND` | `3V3` |
+| 41 | `P23` | `EN` |
+| 42 | `P22` | `P36` |
+| 46 | `GND` | `P32` |
+| 47 | `P19` | `P33` |
+| 48 | `P18` | `P25` |
+| 49 | `P5` | `P26` |
+| 50 | `P17` | `P27` |
+| 51 | `P16` | `P14` |
+| 58 | `CLK` | `5V` |
+
+**Para verificar que estás leyendo bien las filas:** el hueco `J` enfrente de
+`B40` tiene que ser el pin que dice `3V3`. Si eso da, el resto cae solo.
+
+---
+
+## Los dos buses: filas 5 y 10
+
+Cada fila tiene **un solo hueco libre**, pero el `3V3` y el `GND` los necesitan
+cuatro cosas cada uno. La salida es repartirlos.
+
+Los cinco huecos de una fila están unidos por abajo, así que un cable
+macho-macho desde el pin hasta una fila vacía convierte esa fila en una regleta.
+
+```
+  J40 ──────cable──────> A5
+                          │
+                   (unidos por abajo)
+                          │
+                    B5  C5  D5  E5   ← tres tomas más de 3,3 V
+```
+
+> Es exportar una constante una vez e importarla donde la necesites, en lugar de
+> repetir el valor.
+
+| Cable macho-macho | Deja |
+|---|---|
+| `J40` → `A5` | **fila 5 = bus de 3,3 V** |
+| `A40` → `A10` | **fila 10 = bus de GND** |
+
+### Qué cuelga de cada bus
+
+| Fila 5 — **3,3 V** | | Fila 10 — **GND** | |
+|---|---|---|---|
+| `A5` | viene de `J40` | `A10` | viene de `A40` |
+| `B5` | → `H32` (riel `LV` del conversor) | `B10` | → `C33` (masa del conversor) |
+| `C5` | `3.3V` del lector | `C10` | `GND` del lector |
+| `D5` | rojo del caudalímetro | `D10` | negro del caudalímetro |
+| | | `E10` | una punta del botón |
+
+---
+
+## La lista completa
 
 ### Lector RFID — MFRC522
 
 Es un chip de 3,3 V. Va **directo**, sin conversor.
 
-| Pin del lector | → | ESP32 |
-|---|---|---|
-| `SDA` / `SS` | → | `P5` |
-| `SCK` | → | `P18` |
-| `MOSI` | → | `P23` |
-| `MISO` | → | `P19` |
-| `RST` | → | `P22` |
-| `3.3V` | → | `3V3` |
-| `GND` | → | `GND` |
+| Pin del lector | → | Hueco | (pin del ESP32) |
+|---|---|---|---|
+| `SDA` / `SS` | → | `A49` | `P5` |
+| `SCK` | → | `A48` | `P18` |
+| `MOSI` | → | `A41` | `P23` |
+| `MISO` | → | `A47` | `P19` |
+| `RST` | → | `A42` | `P22` |
+| `3.3V` | → | `C5` | bus |
+| `GND` | → | `C10` | bus |
 
 ⚠️ **Con 5 V se quema.** No hay vuelta atrás con eso.
 
-📏 **No más de 20-30 cm** entre el ESP32 y el lector: el SPI no tolera cables
-largos. Por eso la caja del ESP32 vive dentro de la columna de la canilla.
+📏 **No más de 20-30 cm** de cable: el SPI no tolera cables largos. Por eso la
+caja del ESP32 vive dentro de la columna de la canilla.
 
 ### Caudalímetro
 
-| Cable | → | Adónde |
-|---|---|---|
-| rojo | → | **`3V3`** del ESP32 ← *no 5V* |
-| negro | → | `GND` |
-| amarillo | → | **`P27`** directo, sin pasar por el conversor |
+| Cable | → | Hueco | |
+|---|---|---|---|
+| rojo | → | `D5` | **3,3 V**, *no 5 V* |
+| negro | → | `D10` | GND |
+| amarillo | → | `J50` | `P27`, directo y sin conversor |
 
 El pull-up lo pone el ESP32 por dentro (`caudalIniciar(true)` en el firmware).
 
-### Relé — por el canal 4 del conversor
+### Relé y conversor — todos macho-macho
 
 | Desde | → | Hasta |
 |---|---|---|
-| `DC+` del relé | → | positivo de la fuente de 12V (y tapado con cinta) |
-| `DC-` del relé | → | negativo de la fuente **y** a `B33` |
-| `IN` del relé | → | **`C35`** (`HV4`) |
-| `P26` del ESP32 | → | **`G35`** (`LV4`) |
-| `3V3` del ESP32 | → | **`H32`** (riel `LV` del conversor) |
-| `GND` del ESP32 | → | **`A33`** |
+| `J49` (`P26`) | → | `G35` (`LV4`) |
+| `B5` (bus 3,3 V) | → | `H32` (riel `LV`) |
+| `B10` (bus GND) | → | `C33` (masa del conversor) |
+| `IN` del relé | → | `C35` (`HV4`) |
+| `DC-` del relé | → | `B33` |
+| `DC+` del relé | → | positivo de la fuente de 12 V, **tapado con cinta** |
 
 **Jumper del relé en `L`.**
 
 🚫 **El riel `HV` (`A32`/`B32`/`C32`) queda VACÍO.** Si le ponés los 5 V, el relé
-se activa y no suelta nunca. Es el bug que nos costó media etapa encontrar.
+se activa y no suelta nunca. Es el bug que nos costó media etapa encontrar, y
+desde afuera parece que el firmware no corta.
+
+Ojo con esto: `H32` (que sí lleva 3,3 V) y `B32` están **en la misma fila pero de
+lados distintos del canal**. Son dos nodos separados. Un agujero de diferencia
+entre "anda" y "el relé queda trabado".
 
 ### Botón
 
-| Desde | → | Hasta |
-|---|---|---|
-| una pata | → | `P14` |
-| la otra | → | `GND` |
+No hace falta uno físico: un botón son dos cables que se tocan.
 
-Si no hay botón, un cable macho-macho hace lo mismo: tocar es apretar.
+| Punta | Hueco |
+|---|---|
+| una | `E10` (bus de GND) |
+| la otra | `J51` (`P14`) |
 
----
-
-## Mapa del conversor en este protoboard
-
-Las patitas están en la columna **`d`** (lado HV) y **`f`** (lado LV). El cuerpo
-de la plaquita tapa la `e`.
-
-| Fila | Patita HV | Patita LV | Uso ahora |
-|---|---|---|---|
-| 30 | `HV1` `D30` | `LV1` `F30` | **libre** (era el caudalímetro) |
-| 31 | `HV2` `D31` | `LV2` `F31` | libre |
-| 32 | `HV` `D32` | `LV` `F32` | `HV` **vacío** · `LV` = 3,3 V |
-| 33 | `GND` `D33` | `GND` `F33` | masa común |
-| 34 | `HV3` `D34` | `LV3` `F34` | libre |
-| 35 | `HV4` `D35` | `LV4` `F35` | **relé** |
-
-**Huecos libres:** `a`, `b`, `c` del lado HV · `g`, `h`, `i`, `j` del lado LV.
+Meterla en `J51` es apretar; sacarla es soltar. El firmware usa `INPUT_PULLUP`:
+el pin queda solo en 3,3 V y **apretado es cuando lo llevás a masa**.
 
 ---
 
@@ -140,6 +200,7 @@ Con **nada enchufado**, tester en `Ω` escala `200`. Todo tiene que dar `1`
 |---|---|
 | `H32` y `A33` | riel 3,3 V contra masa |
 | `B32` y `A33` | riel HV contra masa |
+| `B5` y `B10` | los dos buses entre sí |
 | `B32` y `H32` | los dos rieles entre sí |
 | `DC+` y `DC-` | la fuente de 12V |
 
@@ -150,7 +211,7 @@ Si alguna da `0`, **no se enchufa nada** hasta entenderlo.
 ## Probar
 
 ```bash
-cd ~/GRIFO && git pull && pio run -e etapa5_maquina -t upload
+cd ~/GRIFO && git pull && pio run -e etapa6_red -t upload
 ```
 
 Con los **12 V desenchufados** mientras se graba. Después los enchufás y abrís
