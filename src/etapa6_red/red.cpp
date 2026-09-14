@@ -4,6 +4,8 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include "red.h"
+#include "ajustes.h"
+#include "portal.h"
 #include "secrets.h"
 
 // Si el secrets.h es de antes de que existiera este campo, no rompe: se asume
@@ -11,6 +13,12 @@
 // la máquina de otro es una forma barata de romperle la compilación.
 #ifndef FIRMWARE_VERSION
   #define FIRMWARE_VERSION "etapa6"
+#endif
+
+// Clave de la red que levanta la canilla cuando no puede conectarse a ninguna.
+// Mínimo 8 caracteres: es lo que exige WPA2. Con menos, la red sale ABIERTA.
+#ifndef PORTAL_PASS
+  #define PORTAL_PASS "cerveza2024"
 #endif
 
 // Dos plazos distintos, porque no todo vale lo mismo.
@@ -50,6 +58,19 @@ static const int SIN_WIFI      = -100;
 static const int NO_ARRANCO    = -101;
 static const uint32_t REINTENTO_WIFI_MS = 5000;
 
+// Cuánto se le da a una red para demostrar que anda antes de dudar de ella.
+// Un ESP32 con buena señal conecta en 3-6 s; 20 s cubre un router lento sin
+// dejar la canilla colgada un minuto en cada arranque.
+static const uint32_t ESPERA_CONEXION_MS = 20000;
+
+// El portal es una red sin dueño al alcance de cualquiera que pase. Si nadie la
+// usó en diez minutos, es que nadie la está esperando: se reinicia y se vuelve
+// a intentar con la red guardada, que para entonces quizás ya volvió.
+//
+//   Es cerrar la puerta de servicio cuando se terminó el turno del técnico.
+static const uint32_t PORTAL_MAX_MS = 600000;
+static uint32_t portalDesde = 0;
+
 static WiFiClientSecure cliente;
 
 // ── Por qué el HTTPClient es uno solo y vive para siempre ───────────────────
@@ -69,11 +90,29 @@ static WiFiClientSecure cliente;
 static HTTPClient http;
 static bool       httpConfigurado = false;
 
-void redIniciar() {
-  Serial.printf("[red] Conectando a \"%s\"...\n", WIFI_SSID);
+/** Le pide al chip que se conecte a la red que hoy está guardada. */
+static void arrancarWifi() {
+  const AjustesWifi &w = ajustesWifi();
+  Serial.printf("[red] Conectando a \"%s\"%s...\n", w.ssid,
+                ajustesWifiAPrueba() ? " (a prueba)" : "");
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  WiFi.begin(w.ssid, w.pass);
+}
+
+void redIniciar() {
+  ajustesIniciar();
+
+  // ── El `secrets.h` pasa a ser el valor de FÁBRICA, no la verdad ───────────
+  // La primera vez se copia a NVS; de ahí en adelante manda lo que hay en NVS.
+  // Así el equipo que ya está andando sigue andando sin tocar nada, y el que se
+  // reconfigura desde el portal no vuelve a la red vieja al reflashear.
+  //
+  //   Es un default en el código que la config del entorno pisa.
+  ajustesSembrarWifi(WIFI_SSID, WIFI_PASS);
+
+  if (ajustesHayWifi()) arrancarWifi();
+  else Serial.println("[red] No hay ninguna red guardada.");
 
   if (strlen(CERT_RAIZ) > 0) {
     cliente.setCACert(CERT_RAIZ);
@@ -88,6 +127,69 @@ void redIniciar() {
   cliente.setTimeout(TIMEOUT_MS / 1000);
 }
 
+void redAbrirPortal() {
+  char nombre[20];
+  snprintf(nombre, sizeof(nombre), "GRIFO-%d", (int)GRIFO_ID);
+  portalDesde = millis();
+  portalArrancar(nombre, PORTAL_PASS);
+}
+
+bool redEnPortal() { return portalActivo(); }
+
+bool redHayWifiGuardado() { return ajustesHayWifi(); }
+
+/** Se llama UNA vez, después de que el arranque le dio su tiempo al WiFi.
+ *
+ *  La espera en sí la hace el que llama, porque es el dueño del watchdog: un
+ *  bucle de veinte segundos acá adentro lo dejaría sin alimentar y la placa se
+ *  reiniciaría sola a mitad del arranque.
+ *
+ *    Es no meter un sleep largo adentro de una función que no controla el
+ *    heartbeat del supervisor. */
+bool redResolverArranque() {
+  if (redConectada()) {
+    // Conectó: si estaba a prueba, recién ahora se gana el puesto.
+    ajustesConfirmarWifi();
+    return true;
+  }
+
+  // ── No conectó. Acá se decide, y el orden importa ─────────────────────────
+  if (ajustesWifiAPrueba()) {
+    // Alguien la configuró recién y no anda. Antes de molestar a nadie, se
+    // vuelve sola a la red que sí andaba. Esto es lo que hace que cambiar el
+    // WiFi desde la app no pueda dejar la canilla incomunicada.
+    Serial.println("[red] La red nueva no conecto. Volviendo a la anterior...");
+    if (ajustesRevertirWifi()) {
+      Serial.println("[red] Reiniciando para probar la red anterior.");
+      delay(400);
+      ESP.restart();
+    }
+  }
+
+  Serial.println("[red] Sin red. Levantando el portal de configuracion.");
+  redAbrirPortal();
+  return false;
+}
+
+void redAtenderPortal() {
+  if (!portalActivo()) return;
+  portalAtender();
+
+  if (portalGuardoWifi()) {
+    Serial.println("[red] Credenciales guardadas. Reiniciando para usarlas.");
+    delay(1200);        // que la respuesta llegue al celular antes del reset
+    ESP.restart();
+  }
+
+  // Si hay una red guardada a la que volver a intentarle, el portal no se queda
+  // arriba para siempre.
+  if (ajustesHayWifi() && millis() - portalDesde > PORTAL_MAX_MS) {
+    Serial.println("[red] Nadie uso el portal. Reintentando la red guardada.");
+    delay(200);
+    ESP.restart();
+  }
+}
+
 bool redConectada() { return WiFi.status() == WL_CONNECTED; }
 
 void redMantener() {
@@ -99,11 +201,15 @@ void redMantener() {
   // que importa. Se avisa cuando CAMBIA, que es cuando hay algo que saber.
   //
   //   Es loguear las transiciones, no el polling.
+  if (portalActivo()) return;   // mientras el portal manda, nadie toca el WiFi
+
   if (redConectada()) {
     if (!anunciado) {
-      Serial.printf("[red] WiFi conectado. IP %s  (senal %d dBm)\n",
-                    WiFi.localIP().toString().c_str(), (int)WiFi.RSSI());
+      Serial.printf("[red] WiFi conectado a \"%s\". IP %s  (senal %d dBm)\n",
+                    ajustesWifi().ssid, WiFi.localIP().toString().c_str(),
+                    (int)WiFi.RSSI());
       anunciado = true;
+      ajustesConfirmarWifi();
     }
     return;
   }
@@ -117,9 +223,10 @@ void redMantener() {
   uint32_t ahora = millis();
   if (ahora - ultimoIntento < REINTENTO_WIFI_MS) return;
   ultimoIntento = ahora;
+  if (!ajustesHayWifi()) return;
   Serial.println("[red] reintentando conectar...");
   WiFi.disconnect();
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  arrancarWifi();
 }
 
 /** Hace el POST y deja el cuerpo de la respuesta en `salida`.

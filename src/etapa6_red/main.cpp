@@ -73,6 +73,10 @@ static const uint32_t WATCHDOG_S = 30;
 // Cada cuánto la canilla le avisa al servidor que está viva.
 static const uint32_t LATIDO_MS = 60000;
 
+// Lo pone el setup leyendo el botón, lo consume la tarea de red. Una sola
+// escritura antes de que arranquen las tareas, así que no necesita candado.
+static bool pidieronPortal = false;
+
 static const int PIN_BOTON = 14;
 static const int PIN_LED   = 2;
 // ── El antirrebote del botón es ASIMÉTRICO, y no es un capricho ─────────────
@@ -132,21 +136,42 @@ static void tareaRed(void *) {
   //
   //   El costo de arranque no desaparece porque lo ignores. Solo elegís quién
   //   lo paga: el sistema al levantarse, o el primer usuario del día.
-  uint32_t esperandoDesde = millis();
-  while (!redConectada() && millis() - esperandoDesde < 20000) {
-    esp_task_wdt_reset();
+  if (pidieronPortal) {
+    redAbrirPortal();
+  } else {
+    uint32_t esperandoDesde = millis();
+    while (!redConectada() && redHayWifiGuardado() &&
+           millis() - esperandoDesde < 20000) {
+      esp_task_wdt_reset();
+      redMantener();
+      vTaskDelay(pdMS_TO_TICKS(200));
+    }
     redMantener();
-    vTaskDelay(pdMS_TO_TICKS(200));
+    esp_task_wdt_reset();
+
+    // Si no conectó, acá adentro se decide: volver a la red anterior (y
+    // reiniciar) o levantar el portal.
+    if (redResolverArranque()) redCalentar(colaCantidad());
   }
-  redMantener();
-  esp_task_wdt_reset();
-  redCalentar(colaCantidad());
 
   // Ya se mandó uno recién; el próximo va dentro de un minuto y no ahora mismo.
   uint32_t ultimoLatido = millis();
 
   for (;;) {
     esp_task_wdt_reset();
+
+    // ── Con el portal arriba no hay internet, y no hay nada que mandar ───────
+    // La canilla es su propio router: no es cliente de ninguna red. Intentar
+    // autorizar o cobrar en ese estado solo gastaría tiempo para fallar.
+    //
+    // La tarea de control sigue corriendo igual en el otro núcleo, y la válvula
+    // sigue cerrándose en cada vuelta. El portal no relaja ninguna seguridad.
+    if (redEnPortal()) {
+      redAtenderPortal();
+      vTaskDelay(pdMS_TO_TICKS(10));
+      continue;
+    }
+
     redMantener();
 
     // ── El orden de acá abajo ES la política del sistema ──────────────────
@@ -454,7 +479,8 @@ static void tareaControl(void *) {
         }
 
         if (ahora - pidioAutorizarEn > TIMEOUT_AUTORIZAR) {
-          if (!redConectada()) Serial.println("Sin WiFi. La canilla no puede autorizar.");
+          if (redEnPortal())        Serial.println("Portal de configuracion abierto: no se vende hasta reiniciar.");
+          else if (!redConectada())  Serial.println("Sin WiFi. La canilla no puede autorizar.");
           else                 Serial.println("Sin respuesta del servidor. Revisa el WiFi.");
           irA(RECHAZADO);
         }
@@ -564,6 +590,31 @@ void setup() {
   pinMode(PIN_BOTON, INPUT_PULLUP);
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_LED, LOW);
+
+  // ── El botón apretado durante el arranque pide el portal ──────────────────
+  // Es la única entrada física que tiene la canilla, así que hace de "modo
+  // recovery". El día que el bar cambie la clave del WiFi, esto es lo que evita
+  // tener que ir con una notebook a reflashear.
+  //
+  // Tres segundos a propósito: lo suficiente para que no pase por accidente al
+  // enchufar, y el LED parpadea mientras tanto para que se vea que cuenta.
+  //
+  //   Es el arranque en modo seguro. Una combinación incómoda a propósito, que
+  //   está siempre disponible aunque todo lo demás falle.
+  pidieronPortal = false;
+  if (digitalRead(PIN_BOTON) == LOW) {
+    Serial.println("Boton apretado. Solta antes de 3 s para arrancar normal...");
+    uint32_t desde = millis();
+    while (digitalRead(PIN_BOTON) == LOW && millis() - desde < 3000) {
+      digitalWrite(PIN_LED, ((millis() - desde) / 150) % 2);
+      delay(20);
+    }
+    digitalWrite(PIN_LED, LOW);
+    if (digitalRead(PIN_BOTON) == LOW) {
+      pidieronPortal = true;
+      Serial.println(">> PORTAL DE CONFIGURACION pedido a mano.");
+    }
+  }
 
   Serial.println();
   Serial.println("=============================================");

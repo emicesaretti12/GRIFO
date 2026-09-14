@@ -25,6 +25,31 @@ struct RespuestaAbrir {
 void redIniciar();
 bool redConectada();
 
+/** true si hay alguna red guardada a la cual intentarle. */
+bool redHayWifiGuardado();
+
+/** Se llama una sola vez en el arranque, cuando ya se le dio tiempo al WiFi.
+ *  Devuelve true si conectó. Si no conectó, esta misma llamada decide:
+ *
+ *    · la red era nueva y a prueba  -> vuelve a la anterior y REINICIA la placa
+ *    · no hay red a la cual volver  -> levanta el portal de configuración
+ *
+ *  La espera la hace el que llama, que es quien tiene que alimentar el
+ *  watchdog mientras tanto. */
+bool redResolverArranque();
+
+/** true mientras la canilla esté haciendo de router con su propio portal.
+ *  Mientras tanto no hay internet y no se puede autorizar a nadie. */
+bool redEnPortal();
+
+/** Atiende una vuelta del portal. Va en el bucle de la tarea de red.
+ *  Si alguien guardó credenciales, esta función **reinicia la placa**: es la
+ *  única forma limpia de levantar la pila de WiFi como cliente. */
+void redAtenderPortal();
+
+/** Levanta el portal a pedido — el botón apretado durante el arranque. */
+void redAbrirPortal();
+
 /** Reconecta si hace falta. Se llama desde la tarea de red, no del control. */
 void redMantener();
 
