@@ -4,6 +4,7 @@ import { pesos, volumen } from '../lib/plata'
 import FondoCerveza, { type FondoAPI } from './FondoCerveza'
 import { veredicto, punteria } from './veredicto'
 import './estilos-kiosco.css'
+import Vaso from './Vaso'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Pantalla de una canilla, para correr en modo kiosco en la tablet / monitor
@@ -161,7 +162,8 @@ export default function Kiosco() {
             </div>
           ) : s ? (
             s.ml_parcial > 0
-              ? <Sirviendo ml={s.ml_parcial} vaso={vaso} gastado={gastado} restante={restante} />
+              ? <Sirviendo ml={s.ml_parcial} vaso={vaso} gastado={gastado}
+                          restante={restante} color={color} />
               : <Bienvenida saldo={s.saldo_centavos} maximo={s.ml_maximos} cliente={cli} />
           ) : u ? (
             <Ticket ultima={u} vaso={vaso} cliente={cli} />
@@ -268,13 +270,13 @@ function Bienvenida({ saldo, maximo, cliente }: {
 }
 
 /* ── Sirviendo: el medidor de puntería ────────────────────────────────────── */
-function Sirviendo({ ml, vaso, gastado, restante }: {
-  ml: number; vaso: number; gastado: number; restante: number
+function Sirviendo({ ml, vaso, gastado, restante, color }: {
+  ml: number; vaso: number; gastado: number; restante: number; color: string
 }) {
   const cerca = Math.abs(ml - vaso) / vaso < 0.05
   return (
     <div>
-      <Aro valor={ml} objetivo={vaso} unidad="ml" acertado={cerca} />
+      <Vaso ml={ml} objetivo={vaso} color={color} />
       <div className="kiosco-sub" style={{ marginTop: 10 }}>
         {cerca ? '¡Ahí está la medida justa!' : `apuntá a los ${vaso} ml`}
       </div>
@@ -318,34 +320,6 @@ function Ticket({ ultima, vaso, cliente }: {
             <div className="va">{volumen(cliente.ml_total)}</div>
           </div>
         )}
-      </div>
-    </div>
-  )
-}
-
-/* ── Aro de progreso ──────────────────────────────────────────────────────── */
-function Aro({ valor, objetivo, unidad, acertado }: {
-  valor: number; objetivo: number; unidad: string; acertado: boolean
-}) {
-  const r = 118, C = 2 * Math.PI * r
-  const frac = Math.min(1.35, valor / objetivo)
-  const lleno = Math.min(1, frac)
-  return (
-    <div className="kiosco-aro" style={{ width: 280, height: 280, margin: '0 auto' }}>
-      <svg width={280} height={280} viewBox="0 0 280 280">
-        <circle cx={140} cy={140} r={r} fill="none" stroke="rgba(255,255,255,.16)" strokeWidth={16} />
-        <circle cx={140} cy={140} r={r} fill="none"
-                stroke={acertado ? '#7ef08a' : '#fff'} strokeWidth={16} strokeLinecap="round"
-                strokeDasharray={C} strokeDashoffset={C * (1 - lleno)}
-                style={{ transition: 'stroke-dashoffset .35s ease-out, stroke .3s' }} />
-        {/* La marca del vaso: adónde hay que apuntar */}
-        <circle cx={140} cy={22} r={5} fill={acertado ? '#7ef08a' : 'rgba(255,255,255,.85)'} />
-      </svg>
-      <div className="adentro">
-        <div>
-          <div className="n">{valor}</div>
-          <div className="u">{unidad} de {objetivo}</div>
-        </div>
       </div>
     </div>
   )

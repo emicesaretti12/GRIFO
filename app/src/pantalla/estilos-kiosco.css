@@ -121,3 +121,76 @@
   position: absolute; bottom: 6px; right: 10px; z-index: 3;
   font-size: 10px; opacity: .3; font-family: ui-monospace, Menlo, monospace;
 }
+
+/* ═════════════════════════════════════════════════════════════════════════════
+   EL VASO
+   Todo lo que se mueve usa `transform` y `opacity`: son las dos cosas que el
+   navegador anima sin rehacer el layout. Animar `height` o `top` lo obligaría a
+   recalcular la página sesenta veces por segundo, y en la tablet de la canilla
+   eso se ve entrecortado.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.vaso-caja { position: relative; width: min(80vw, 320px); margin: 0 auto; }
+
+.vaso-svg {
+  width: 100%; height: auto; display: block;
+  filter: drop-shadow(0 20px 38px rgba(0, 0, 0, .5));
+}
+
+/* El nivel sube suave. Medio segundo es el punto justo: más rápido salta de un
+   valor al otro, más lento se despega de lo que está saliendo. */
+.vaso-nivel { transition: transform .55s cubic-bezier(.22, .61, .36, 1); }
+
+/* ── Burbujas ─────────────────────────────────────────────────────────────── */
+/* Suben, se agrandan y se desvanecen antes de llegar arriba, como las de
+   verdad: la presión baja a medida que ascienden. */
+.vaso-burbuja {
+  animation-name: vaso-subir;
+  animation-timing-function: cubic-bezier(.45, 0, .75, .3);
+  animation-iteration-count: infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes vaso-subir {
+  0%   { transform: translateY(0)      scale(.5); opacity: 0; }
+  10%  {                                          opacity: .8; }
+  80%  {                                          opacity: .55; }
+  100% { transform: translateY(-190px) scale(1.35); opacity: 0; }
+}
+
+/* ── Espuma ───────────────────────────────────────────────────────────────── */
+/* Las burbujas de la cresta laten desfasadas: el borde nunca queda quieto ni se
+   mueve todo junto. */
+.vaso-cresta {
+  animation: vaso-latir 2.6s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+  will-change: transform;
+}
+
+@keyframes vaso-latir {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.1); }
+}
+
+/* ── La marca y el número ─────────────────────────────────────────────────── */
+.vaso-marca-linea { transition: stroke .3s; }
+
+.vaso-cifra { text-align: center; margin-top: 12px; line-height: 1; transition: color .3s; }
+.vaso-cifra .n {
+  font-size: clamp(46px, 14vw, 76px);
+  font-weight: 800;
+  letter-spacing: -.02em;
+  /* Ancho fijo por dígito: sin esto el número tiembla al cambiar, porque el
+     `1` es más angosto que el `8`. */
+  font-variant-numeric: tabular-nums;
+}
+.vaso-cifra .u { display: block; font-size: 17px; font-weight: 600; opacity: .6; margin-top: 6px; }
+.vaso-cifra.justo  { color: #8ef29b; }
+.vaso-cifra.pasado { color: #ffc27a; }
+
+/* Quien pidió menos movimiento en su sistema, menos movimiento. El vaso se
+   sigue llenando: lo que se apaga es lo decorativo. */
+@media (prefers-reduced-motion: reduce) {
+  .vaso-burbuja, .vaso-cresta { animation: none; }
+}
