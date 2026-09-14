@@ -130,7 +130,61 @@
    eso se ve entrecortado.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-.vaso-caja { position: relative; width: min(80vw, 320px); margin: 0 auto; }
+.vaso-caja { position: relative; width: min(82vw, 340px); margin: 0 auto; }
+
+/* ── El resplandor del color de la cerveza ────────────────────────────────── */
+/* Es lo que hace que la pantalla se sienta encendida y no impresa. Crece con el
+   llenado: cuanta más cerveza hay, más "presencia" tiene el recipiente. */
+.vaso-halo {
+  position: absolute;
+  inset: -14% -22%;
+  border-radius: 50%;
+  filter: blur(26px);
+  pointer-events: none;
+  transition: opacity .6s ease;
+  z-index: 0;
+}
+.vaso-svg, .vaso-cifra, .vaso-ascenso { position: relative; z-index: 1; }
+
+/* ── El ascenso a jarra ───────────────────────────────────────────────────── */
+/* Entra con un rebote corto y se va sola. No hay nada que cerrar: en una
+   canilla las manos están ocupadas, y un cartel que hay que despachar es peor
+   que no tenerlo. */
+.vaso-ascenso {
+  position: absolute;
+  top: -6px; left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  background: linear-gradient(135deg, #ffd479, #ffb02e);
+  color: #3a2408;
+  font-weight: 800;
+  font-size: clamp(15px, 4.4vw, 19px);
+  padding: 10px 18px;
+  border-radius: 999px;
+  box-shadow: 0 10px 28px rgba(255, 176, 46, .45);
+  animation: vaso-cartel 2.2s cubic-bezier(.2, .8, .3, 1) forwards;
+}
+.vaso-ascenso .ico { margin-right: 6px; }
+
+@keyframes vaso-cartel {
+  0%   { opacity: 0; transform: translateX(-50%) translateY(14px) scale(.7); }
+  14%  { opacity: 1; transform: translateX(-50%) translateY(0)    scale(1.08); }
+  22%  {             transform: translateX(-50%) translateY(0)    scale(1); }
+  82%  { opacity: 1; transform: translateX(-50%) translateY(0)    scale(1); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-12px) scale(.94); }
+}
+
+/* ── La entrada del recipiente nuevo ──────────────────────────────────────── */
+/* El cambio de vaso a jarra tiene que sentirse como un logro, no como un
+   parpadeo. Entra un poco grande y se asienta: es el gesto que el ojo lee como
+   "apareció algo mejor". */
+.vaso-entra { animation: vaso-aparecer .52s cubic-bezier(.18, .9, .26, 1.02); }
+
+@keyframes vaso-aparecer {
+  0%   { opacity: 0; transform: scale(.78) translateY(16px); }
+  55%  { opacity: 1; transform: scale(1.05) translateY(-4px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
 
 .vaso-svg {
   width: 100%; height: auto; display: block;
@@ -186,11 +240,11 @@
   font-variant-numeric: tabular-nums;
 }
 .vaso-cifra .u { display: block; font-size: 17px; font-weight: 600; opacity: .6; margin-top: 6px; }
-.vaso-cifra.justo  { color: #8ef29b; }
-.vaso-cifra.pasado { color: #ffc27a; }
+.vaso-cifra.justo { color: #8ef29b; }
 
 /* Quien pidió menos movimiento en su sistema, menos movimiento. El vaso se
    sigue llenando: lo que se apaga es lo decorativo. */
 @media (prefers-reduced-motion: reduce) {
-  .vaso-burbuja, .vaso-cresta { animation: none; }
+  .vaso-burbuja, .vaso-cresta, .vaso-entra { animation: none; }
+  .vaso-ascenso { animation: none; opacity: 1; }
 }

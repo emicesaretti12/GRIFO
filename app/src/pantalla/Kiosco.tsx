@@ -4,7 +4,7 @@ import { pesos, volumen } from '../lib/plata'
 import FondoCerveza, { type FondoAPI } from './FondoCerveza'
 import { veredicto, punteria } from './veredicto'
 import './estilos-kiosco.css'
-import Vaso from './Vaso'
+import Recipiente from './Recipiente'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Pantalla de una canilla, para correr en modo kiosco en la tablet / monitor
@@ -276,7 +276,7 @@ function Sirviendo({ ml, vaso, gastado, restante, color }: {
   const cerca = Math.abs(ml - vaso) / vaso < 0.05
   return (
     <div>
-      <Vaso ml={ml} objetivo={vaso} color={color} />
+      <Recipiente ml={ml} vasoMl={vaso} color={color} />
       <div className="kiosco-sub" style={{ marginTop: 10 }}>
         {cerca ? '¡Ahí está la medida justa!' : `apuntá a los ${vaso} ml`}
       </div>
