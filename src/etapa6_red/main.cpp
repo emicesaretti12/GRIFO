@@ -95,7 +95,10 @@ static const uint32_t REBOTE_SOLTAR_MS  = 250;
 static QueueHandle_t colaPedidoAbrir;     // control → red:  un UID
 static QueueHandle_t colaRespuestaAbrir;  // red → control:  el resultado
 
-struct PedidoAbrir { char uid[21]; };
+// Lleva la hora en que se pidió. Sin eso, un pedido que quedó encolado porque
+// no había WiFi se manda igual cuando el WiFi vuelve, medio minuto después, y
+// abre una sesión para una tarjeta que ya no está.
+struct PedidoAbrir { char uid[21]; uint32_t pedidoEn; };
 
 // ── El progreso para la pantalla del cliente ────────────────────────────────
 // Va por una cola de UN elemento con `xQueueOverwrite`: si la tarea de red no
@@ -121,7 +124,26 @@ static void tareaRed(void *) {
   esp_task_wdt_add(NULL);
   redIniciar();
 
-  uint32_t ultimoLatido = 0;
+  // ── Pagar el handshake TLS ACA, antes de que haya alguien esperando ───────
+  // Esto es lo que rompía el arranque. La conexión segura tarda dos o tres
+  // segundos en abrirse, y la primera petición que salía era la del primer
+  // cliente que apoyaba la tarjeta: la pagaba él, parado frente a la canilla,
+  // con el lector perdiéndole la tarjeta mientras tanto.
+  //
+  //   El costo de arranque no desaparece porque lo ignores. Solo elegís quién
+  //   lo paga: el sistema al levantarse, o el primer usuario del día.
+  uint32_t esperandoDesde = millis();
+  while (!redConectada() && millis() - esperandoDesde < 20000) {
+    esp_task_wdt_reset();
+    redMantener();
+    vTaskDelay(pdMS_TO_TICKS(200));
+  }
+  redMantener();
+  esp_task_wdt_reset();
+  redCalentar(colaCantidad());
+
+  // Ya se mandó uno recién; el próximo va dentro de un minuto y no ahora mismo.
+  uint32_t ultimoLatido = millis();
 
   for (;;) {
     esp_task_wdt_reset();
@@ -147,11 +169,22 @@ static void tareaRed(void *) {
     bool hiceAlgoCaro = false;
 
     // 1) Un cliente esperando que le autoricen la tarjeta.
+    //
+    // Solo se saca de la cola si hay WiFi. Sacarlo sin red era contestar
+    // "rechazada" en 100 ms cuando la verdad es "todavía no me conecté" —
+    // pasaba en cada arranque con una tarjeta ya apoyada. Dejándolo en la cola,
+    // se atiende apenas hay red, y si nadie esperó tanto, se vence solo.
     PedidoAbrir pedido;
-    if (xQueueReceive(colaPedidoAbrir, &pedido, 0) == pdTRUE) {
-      RespuestaAbrir r;
-      redAbrirSesion(pedido.uid, r);
-      xQueueSend(colaRespuestaAbrir, &r, 0);
+    if (redConectada() && xQueueReceive(colaPedidoAbrir, &pedido, 0) == pdTRUE) {
+      if (millis() - pedido.pedidoEn > TIMEOUT_AUTORIZAR) {
+        // El de control ya se cansó de esperar. Abrirle la sesión ahora sería
+        // dejar una sesión abierta para una tarjeta que no está.
+        Serial.println("[red] pedido vencido, se descarta sin abrir sesion");
+      } else {
+        RespuestaAbrir r;
+        redAbrirSesion(pedido.uid, r);
+        xQueueSend(colaRespuestaAbrir, &r, 0);
+      }
       hiceAlgoCaro = true;
     }
 
@@ -212,6 +245,21 @@ static uint32_t pulsosPrevios = 0;
 static uint32_t ultimoPulsoMs = 0;
 static uint32_t ultimoInforme = 0;
 static uint32_t pidioAutorizarEn = 0;
+
+// ── Por qué AUTORIZANDO tolera que la tarjeta desaparezca un momento ────────
+// El lector pierde la tarjeta cada tanto aunque esté apoyada. Cortar la
+// autorización al primer parpadeo obligaba a apoyarla de nuevo, y como la
+// respuesta tarda, no llegaba nunca: la tarjeta "se iba" antes de que el
+// servidor contestara.
+//
+// Acá el riesgo de esperar de más es cero: la válvula está cerrada y no hay
+// plata en juego todavía. En SIRVIENDO es al revés, y por eso allá el criterio
+// es el opuesto.
+//
+//   El mismo evento no vale lo mismo en dos estados distintos. El umbral va
+//   donde está el costo, no donde queda prolijo.
+static const uint32_t GRACIA_AUSENCIA_MS = 3000;
+static uint32_t ausenteDesde = 0;
 
 static const char *nombreEstado(Estado e) {
   switch (e) {
@@ -350,8 +398,10 @@ static void tareaControl(void *) {
 
         PedidoAbrir p;
         strncpy(p.uid, uidSesion, sizeof(p.uid));
+        p.pedidoEn = ahora;
         xQueueSend(colaPedidoAbrir, &p, 0);
         pidioAutorizarEn = ahora;
+        ausenteDesde = 0;
         irA(AUTORIZANDO);
         break;
       }
@@ -386,10 +436,26 @@ static void tareaControl(void *) {
           break;
         }
 
-        if (!tarjetaPresente()) { irA(ESPERANDO); break; }
+        if (!tarjetaPresente()) {
+          if (ausenteDesde == 0) ausenteDesde = ahora;
+          if (ahora - ausenteDesde >= GRACIA_AUSENCIA_MS) {
+            Serial.println("Se retiro la tarjeta antes de autorizar.");
+            irA(ESPERANDO);
+            break;
+          }
+        } else if (strcmp(tarjetaUid(), uidSesion) != 0) {
+          // Volvió, pero es OTRA tarjeta. La respuesta que venga es para la
+          // anterior: se sale y que la nueva pida lo suyo desde cero.
+          Serial.println("Cambio la tarjeta durante la autorizacion.");
+          irA(ESPERANDO);
+          break;
+        } else {
+          ausenteDesde = 0;
+        }
 
         if (ahora - pidioAutorizarEn > TIMEOUT_AUTORIZAR) {
-          Serial.println("Sin respuesta del servidor. Revisa el WiFi.");
+          if (!redConectada()) Serial.println("Sin WiFi. La canilla no puede autorizar.");
+          else                 Serial.println("Sin respuesta del servidor. Revisa el WiFi.");
           irA(RECHAZADO);
         }
         break;

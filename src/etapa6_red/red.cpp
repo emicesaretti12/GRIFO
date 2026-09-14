@@ -34,9 +34,20 @@ static const uint32_t TIMEOUT_ADORNO  = 2500;   // esperar la RESPUESTA: latido 
 //   Es confundir el timeout de conexión con el de lectura. Son dos cosas
 //   distintas y solo una de las dos se puede apurar.
 //
-// Con la conexión reusada esto se paga una sola vez; a partir de ahí los
-// pedidos siguientes ya la encuentran abierta.
-static const uint32_t TIMEOUT_CONECTAR = 9000;
+// Pero tampoco puede ser enorme. El plazo de conexión tiene que entrar CÓMODO
+// adentro del que tiene la máquina de estados para autorizar (10 s): si un
+// intento fallido de conectar se come los 10 s solo, el cliente ve
+// "sin respuesta" sin que se haya llegado a preguntar nada.
+//
+//   El timeout de la capa de abajo tiene que ser menor que el de la de arriba.
+//   Si es al revés, el de arriba nunca llega a hacer su trabajo.
+//
+// Con la conexión ya abierta por `redCalentar()`, esto casi nunca se usa.
+static const uint32_t TIMEOUT_CONECTAR = 4000;
+
+// Códigos propios, bien lejos de los que usa HTTPClient (que llegan a -11).
+static const int SIN_WIFI      = -100;
+static const int NO_ARRANCO    = -101;
 static const uint32_t REINTENTO_WIFI_MS = 5000;
 
 static WiFiClientSecure cliente;
@@ -115,7 +126,7 @@ void redMantener() {
  *  Devuelve el código HTTP, o un negativo si ni siquiera se pudo enviar. */
 static int postRpc(const char *funcion, const String &cuerpo, String &salida,
                    uint32_t plazo = TIMEOUT_MS) {
-  if (!redConectada()) return -1;
+  if (!redConectada()) return SIN_WIFI;
 
   if (!httpConfigurado) {
     http.setReuse(true);          // no cerrar el TCP al terminar cada pedido
@@ -123,7 +134,7 @@ static int postRpc(const char *funcion, const String &cuerpo, String &salida,
   }
 
   String url = String(SUPABASE_URL) + "/rest/v1/rpc/" + funcion;
-  if (!http.begin(cliente, url)) return -2;
+  if (!http.begin(cliente, url)) return NO_ARRANCO;
 
   http.setTimeout(plazo);                    // cuánto esperar la respuesta
   http.setConnectTimeout(TIMEOUT_CONECTAR);  // cuánto esperar el handshake
@@ -150,6 +161,22 @@ static int postRpc(const char *funcion, const String &cuerpo, String &salida,
   return codigo;
 }
 
+/** Un código de error crudo no le sirve a nadie parado frente a la canilla.
+ *  `http_-1` no dice qué hacer; "sin WiFi" sí. */
+static const char *motivoDeCodigo(int codigo) {
+  switch (codigo) {
+    case SIN_WIFI:   return "sin WiFi";
+    case NO_ARRANCO: return "no arranco el pedido";
+    case -1:         return "no se pudo conectar";
+    case -5:         return "se corto la conexion";
+    case -11:        return "el servidor tardo demasiado";
+    case 401:
+    case 403:        return "token rechazado";
+    case 404:        return "falta la funcion en el servidor";
+    default:         return NULL;
+  }
+}
+
 bool redAbrirSesion(const char *uid, RespuestaAbrir &r) {
   memset(&r, 0, sizeof(r));
 
@@ -164,7 +191,9 @@ bool redAbrirSesion(const char *uid, RespuestaAbrir &r) {
   String respuesta;
   int codigo = postRpc("abrir_sesion", cuerpo, respuesta);
   if (codigo != 200) {
-    snprintf(r.motivo, sizeof(r.motivo), "http_%d", codigo);
+    const char *m = motivoDeCodigo(codigo);
+    if (m) snprintf(r.motivo, sizeof(r.motivo), "%s", m);
+    else   snprintf(r.motivo, sizeof(r.motivo), "el servidor dijo %d", codigo);
     return false;
   }
 
@@ -259,4 +288,46 @@ bool redReportarProgreso(int64_t sesionId, uint32_t ml, uint32_t pulsos) {
 
   String respuesta;
   return postRpc("reportar_progreso", cuerpo, respuesta, TIMEOUT_ADORNO) == 200;
+}
+
+
+bool redCalentar(uint32_t cierresPendientes) {
+  if (!redConectada()) return false;
+
+  Serial.println("[red] abriendo la conexion segura (tarda unos segundos)...");
+  uint32_t t0 = millis();
+
+  // Se usa el latido porque es la petición más barata que hay y de paso avisa
+  // que la canilla arrancó. Lo que importa no es la respuesta: es que el
+  // handshake quede hecho y el socket abierto para el que venga después.
+  //
+  // Con el plazo LARGO a propósito: acá no hay nadie esperando, y abandonar a
+  // los 2,5 s dejaría el handshake a medias justo para que lo pague el primer
+  // cliente.
+  String cuerpo, respuesta;
+  {
+    JsonDocument pedido;
+    pedido["p_grifo"]      = GRIFO_ID;
+    pedido["p_token"]      = GRIFO_TOKEN;
+    pedido["p_firmware"]   = FIRMWARE_VERSION;
+    pedido["p_pendientes"] = cierresPendientes;
+    pedido["p_senal"]      = (int)WiFi.RSSI();
+    pedido["p_ip"]         = WiFi.localIP().toString();
+    serializeJson(pedido, cuerpo);
+  }
+
+  int codigo = postRpc("canilla_latido", cuerpo, respuesta, TIMEOUT_MS);
+  uint32_t tardo = millis() - t0;
+
+  if (codigo == 200) {
+    Serial.printf("[red] conexion lista en %lu ms. La primera tarjeta ya no espera esto.\n",
+                  (unsigned long)tardo);
+    return true;
+  }
+
+  const char *m = motivoDeCodigo(codigo);
+  Serial.printf("[red] no se pudo abrir la conexion (%s) tras %lu ms.\n",
+                m ? m : "error", (unsigned long)tardo);
+  Serial.println("[red] Se reintenta con el proximo latido. La canilla igual corta sola.");
+  return false;
 }

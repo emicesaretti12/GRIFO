@@ -47,6 +47,20 @@ bool redCerrarSesion(int64_t sesionId, uint32_t ml, uint32_t pulsos);
  *  canilla colgada o sin red pasa desapercibida hasta que un cliente reclama. */
 bool redLatido(uint32_t cierresPendientes);
 
+/** Abre la conexión segura **antes** de que nadie la necesite.
+ *
+ *  El handshake TLS cuesta dos o tres segundos y hay que pagarlo una vez. La
+ *  pregunta no es si se paga, es **quién espera mientras**: si la primera
+ *  petición es la de un cliente con la tarjeta apoyada, la paga él, parado
+ *  frente a la canilla, creyendo que no funciona.
+ *
+ *  Acá se paga en el arranque, mientras todavía se está imprimiendo el banner y
+ *  no hay nadie esperando nada.
+ *
+ *    Es precalentar el pool de conexiones al levantar el servidor en vez de
+ *    que el primer request del día se coma la latencia. */
+bool redCalentar(uint32_t cierresPendientes);
+
 /** POST /rpc/reportar_progreso. Es lo que hace que el vaso de la pantalla de la
  *  canilla se llene **en vivo** mientras sale la cerveza.
  *
