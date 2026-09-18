@@ -477,7 +477,12 @@ static void tareaControl(void *) {
           break;
         }
         if (ahora - valvulaAbiertaDesde() > MAX_APERTURA_MS) {
-          liquidar("FAILSAFE: 90 s abierta seguidas. Corta y cobra.");
+          // El texto sale del propio tope: ahora esta frase viaja a la app
+          // como ultimo_evento, y un numero desactualizado ahi miente.
+          char m[72];
+          snprintf(m, sizeof(m), "FAILSAFE: %lu s abierta seguidas. Corta y cobra.",
+                   (unsigned long)(MAX_APERTURA_MS / 1000));
+          liquidar(m);
           break;
         }
 

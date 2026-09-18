@@ -90,39 +90,50 @@ Y se tiene que escuchar el **clic del relé**.
    sirviendo... 130 ml  (59/1754 pulsos)
 ```
 
-### 4. Cerrar el grifo cierra la válvula — pero no la sesión
+### 4. Cerrar el grifo NO cierra la válvula todavía
+
+Cerrá el grifo manual. A los 3 segundos sin pulsos:
 
 ```
->> Cerro el grifo. Valvula cerrada; la sesion sigue abierta.
-[  31300 ms] SIRVIENDO -> PAUSA
+>> Dejo de correr. Le espero 7 s por si sigue.
 ```
 
-Vas a escuchar el relé haciendo clic **cinco veces** en los 25 segundos
-siguientes: son los asomos.
+**La válvula queda abierta y no vas a escuchar ningún clic.** Eso es a
+propósito. Antes la canilla cerraba y cada tanto "asomaba" para ver si el
+cliente había vuelto, pero ese asomo hacía girar la turbina y el firmware lo
+leía como "volvió a servir". El mecanismo que servía para medir era el mismo que
+perturbaba lo medido, y la sesión no liquidaba nunca.
 
-### 5. Volver a abrir el grifo reanuda, sin tocar la tablet
+Si escuchás clics repetidos acá, estás con firmware viejo.
 
-Dentro de esos 25 segundos, abrí el grifo de nuevo:
+### 5. Volver a abrir reanuda, y la espera se agranda
+
+Dentro de esos 7 segundos, abrí el grifo de nuevo:
 
 ```
->> Volvio a abrir el grifo. Sigue sirviendo.
+>> Siguio sirviendo. La proxima espera 10 s.
 ```
 
-**Esta es la prueba que valida el diseño de la pausa.** Si no reanuda, el asomo
-no está llegando: revisá que la solenoide esté antes del grifo manual.
+Cada pausa que el cliente completa le suma 3 segundos a la próxima espera, hasta
+un techo de 16. La canilla aprende que **esta persona** toma con pausas y deja
+de apurarla; con un cliente que se sirve de una, sigue cerrando a los 7.
+
+Repetilo tres o cuatro veces y mirá cómo sube el número. Esa es la prueba de que
+la espera es adaptativa y no un temporizador fijo.
 
 ### 6. Al final cobra una sola vez
 
-Dejá pasar los 25 segundos:
+Cerrá el grifo y esperá sin tocar nada hasta que se agote la espera:
 
 ```
->> Se acabo la espera. Cierra y cobra lo servido.
+>> Se fue. Cierra y cobra lo servido.
 ================ TICKET ================
  Cliente   : Emi
  Servido   : 480 ml  (217 pulsos)
 ```
 
-Y en la app, **un solo cobro** por todo lo servido, pausas incluidas.
+Ahí sí escuchás **un** clic. Y en la app, **un solo cobro** por todo lo servido,
+pausas incluidas.
 
 ### 7. Nadie abre el grifo
 
