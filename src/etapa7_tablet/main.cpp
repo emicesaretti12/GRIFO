@@ -69,6 +69,22 @@ static const uint32_t SONDEOS[]  = { 3000, 6000, 10000, 15000, 22000 };
 static const uint8_t  N_SONDEOS  = sizeof(SONDEOS) / sizeof(SONDEOS[0]);
 static const uint32_t SONDEO_MS  = 200;
 
+// ── Cuántos pulsos hacen falta para creer que el cliente volvió ─────────────
+// El asomo se dispara a sí mismo: al abrir 200 ms la turbina alcanza a dar un
+// tic aunque el grifo esté cerrado —un golpe de presión, una gota, vibración—.
+// La primera versión leía ese tic como "volvió a abrir" y armaba un oscilador:
+// reanudaba, no pasaba nada, volvía a pausa, se asomaba de nuevo. Y cada falso
+// reanudar reiniciaba la gracia, así que esa sesión no se liquidaba nunca.
+//
+// Un pulso suelto no es un cliente. Sirviendo de verdad, esta canilla marca
+// más de doscientos pulsos por segundo: seis en un asomo de 200 ms es
+// trivialmente fácil para un chorro e imposible para un tic.
+//
+//   Es exigir una señal por encima del piso de ruido del propio sensor. Si el
+//   umbral está debajo de lo que el sistema genera solo, el sistema se
+//   dispara solo.
+static const uint32_t PULSOS_PARA_REANUDAR = 6;
+
 // Failsafe de apertura: una válvula abierta un minto y medio seguido no es un
 // cliente sirviéndose, es algo trabado.
 static const uint32_t MAX_APERTURA_MS = 90000;
@@ -257,6 +273,7 @@ static uint32_t ultimoPulsoMs = 0;
 static uint32_t ultimoInforme = 0;
 static uint32_t habilitadaEn = 0;
 static uint32_t pausaDesde = 0;
+static uint32_t pulsosAlPausar = 0;
 static uint8_t  sondeoProximo = 0;
 static bool     asomada = false;
 static uint32_t asomadaEn = 0;
@@ -436,9 +453,10 @@ static void tareaControl(void *) {
           valvulaCerrar();
           if (GRACIA_PAUSA_MS == 0) { liquidar("Cerro el grifo. Cobra."); break; }
           Serial.println(">> Cerro el grifo. Valvula cerrada; la sesion sigue abierta.");
-          pausaDesde   = ahora;
-          sondeoProximo = 0;
-          asomada      = false;
+          pausaDesde     = ahora;
+          pulsosAlPausar = pulsos;
+          sondeoProximo  = 0;
+          asomada        = false;
           irA(PAUSA);
           break;
         }
@@ -458,8 +476,9 @@ static void tareaControl(void *) {
       case PAUSA: {
         uint32_t pulsos = caudalPulsos() - pulsosBase;
 
-        // Volvió a correr: el cliente abrió el grifo durante un asomo.
-        if (pulsos != pulsosPrevios) {
+        // Volvió a correr de verdad: no alcanza un pulso suelto, porque el
+        // propio asomo los genera. Ver PULSOS_PARA_REANUDAR.
+        if (pulsos - pulsosAlPausar >= PULSOS_PARA_REANUDAR) {
           pulsosPrevios  = pulsos;
           pulsosServidos = pulsos;
           ultimoPulsoMs  = ahora;
