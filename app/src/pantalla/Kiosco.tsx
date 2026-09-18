@@ -5,7 +5,7 @@ import FondoCerveza, { type FondoAPI } from './FondoCerveza'
 import { veredicto, punteria } from './veredicto'
 import './estilos-kiosco.css'
 import Recipiente from './Recipiente'
-import Cantinero from './Cantinero'
+import Tirada from './Tirada'
 import { useNFC, porQueNoHayNFC } from '../lib/useNFC'
 import { mensajeDeError } from '../lib/tipos'
 
@@ -343,7 +343,7 @@ function Bienvenida({ saldo, maximo, cliente, color }: {
     <div className="kiosco-rota">
       {/* Con el vaso vacío la escena ya está en su gesto de arranque: inclinado
           bajo la canilla, esperando. No hace falta decir "listo". */}
-      <Cantinero llenado={0} sirviendo={false} color={color} />
+      <Tirada llenado={0} sirviendo={false} color={color} />
       <div className="kiosco-cartel">{saludo.t}</div>
       <div className="kiosco-sub kiosco-late">{saludo.s}</div>
       <div className="kiosco-fila">
@@ -369,7 +369,7 @@ function Sirviendo({ ml, vaso, gastado, restante, color }: {
     <div>
       {/* El vaso del cantinero se llena contra el vaso de referencia. Pasado
           eso sigue subiendo igual, pero la escena ya dijo lo suyo. */}
-      <Cantinero llenado={ml / Math.max(1, vaso)} sirviendo color={color} />
+      <Tirada llenado={ml / Math.max(1, vaso)} sirviendo color={color} />
       <div className="kiosco-sub" style={{ marginTop: 10 }}>
         {cerca ? '¡Ahí está la medida justa!' : `apuntá a los ${vaso} ml`}
       </div>

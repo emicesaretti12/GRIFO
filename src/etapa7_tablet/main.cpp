@@ -48,43 +48,25 @@ static const int PIN_LED   = 2;
 //   pueden compartir número.
 static const uint32_t ESPERA_PRIMER_PULSO_MS = 30000;  // caminar y abrir el grifo
 static const uint32_t FIN_DE_SERVICIO_MS     =  3000;  // cerró el grifo: terminó
-static const uint32_t GRACIA_PAUSA_MS        = 25000;  // puede volver sin la tablet
 
-// ── La pausa, y por qué la válvula se asoma ─────────────────────────────────
-// La solenoide está ANTES del grifo manual. Con la solenoide cerrada, el
-// cliente puede abrir el grifo y no pasa líquido — y sin líquido no hay pulsos.
-// **El grifo no tiene forma de avisar que lo abrieron.**
+// ── Por qué no hay estado de pausa ──────────────────────────────────────────
+// Hubo uno. La válvula cerraba a los 3 s pero la sesión quedaba abierta 25
+// segundos más, y para detectar que el cliente volvía a abrir el grifo la
+// válvula "se asomaba" 200 ms cada tanto.
 //
-// Entonces la válvula se asoma: abre 200 ms cada tanto. Si el grifo está
-// abierto, sale cerveza y la sesión sigue. Si está cerrado, no sale nada.
+// No funcionó, y el motivo es de fondo: **el asomo se detectaba a sí mismo**.
+// Al abrir, la turbina daba un tic aunque el grifo estuviera cerrado, el
+// firmware lo leía como "volvió el cliente", y arrancaba un ciclo de
+// abrir-cerrar que además reiniciaba la gracia en cada vuelta. Esa sesión no se
+// liquidaba nunca.
 //
-// Y es seguro por una razón concreta: la ÚNICA forma de entrar en pausa es que
-// el grifo esté cerrado. Con el grifo cerrado, una válvula abierta no entrega
-// nada.
+//   El mecanismo que sirve para medir no puede ser el mismo que perturba lo
+//   medido. Cuando lo es, lo que leés es tu propia influencia.
 //
-// Los sondeos van con espera creciente: cinco en toda la gracia, no veinte.
-// Cada ciclo de la bobina es un pico de tensión, y mientras no haya diodo cada
-// pico puede resetear la placa.
-static const uint32_t SONDEOS[]  = { 3000, 6000, 10000, 15000, 22000 };
-static const uint8_t  N_SONDEOS  = sizeof(SONDEOS) / sizeof(SONDEOS[0]);
-static const uint32_t SONDEO_MS  = 200;
-
-// ── Cuántos pulsos hacen falta para creer que el cliente volvió ─────────────
-// El asomo se dispara a sí mismo: al abrir 200 ms la turbina alcanza a dar un
-// tic aunque el grifo esté cerrado —un golpe de presión, una gota, vibración—.
-// La primera versión leía ese tic como "volvió a abrir" y armaba un oscilador:
-// reanudaba, no pasaba nada, volvía a pausa, se asomaba de nuevo. Y cada falso
-// reanudar reiniciaba la gracia, así que esa sesión no se liquidaba nunca.
+// Así que vale la regla simple: tres segundos sin cerveza es que terminó. Para
+// seguir, se apoya la tarjeta de nuevo — un gesto que el cliente ya conoce,
+// porque es el mismo con el que empezó.
 //
-// Un pulso suelto no es un cliente. Sirviendo de verdad, esta canilla marca
-// más de doscientos pulsos por segundo: seis en un asomo de 200 ms es
-// trivialmente fácil para un chorro e imposible para un tic.
-//
-//   Es exigir una señal por encima del piso de ruido del propio sensor. Si el
-//   umbral está debajo de lo que el sistema genera solo, el sistema se
-//   dispara solo.
-static const uint32_t PULSOS_PARA_REANUDAR = 6;
-
 // Failsafe de apertura: una válvula abierta un minto y medio seguido no es un
 // cliente sirviéndose, es algo trabado.
 static const uint32_t MAX_APERTURA_MS = 90000;
@@ -256,7 +238,7 @@ static void tareaRed(void *) {
 // ═════════════════════════════════════════════════════════════════════════════
 // TAREA DE CONTROL — núcleo 1
 // ═════════════════════════════════════════════════════════════════════════════
-enum Estado { ESPERANDO, HABILITADO, SIRVIENDO, PAUSA, LIQUIDANDO };
+enum Estado { ESPERANDO, HABILITADO, SIRVIENDO, LIQUIDANDO };
 
 static Estado   estado = ESPERANDO;
 static int64_t  sesionId = 0;
@@ -272,18 +254,12 @@ static uint32_t pulsosPrevios = 0;
 static uint32_t ultimoPulsoMs = 0;
 static uint32_t ultimoInforme = 0;
 static uint32_t habilitadaEn = 0;
-static uint32_t pausaDesde = 0;
-static uint32_t pulsosAlPausar = 0;
-static uint8_t  sondeoProximo = 0;
-static bool     asomada = false;
-static uint32_t asomadaEn = 0;
 
 static const char *nombreDe(Estado e) {
   switch (e) {
     case ESPERANDO:  return "ESPERANDO";
     case HABILITADO: return "HABILITADO";
     case SIRVIENDO:  return "SIRVIENDO";
-    case PAUSA:      return "PAUSA";
     case LIQUIDANDO: return "LIQUIDANDO";
   }
   return "?";
@@ -364,8 +340,7 @@ static void tareaControl(void *) {
     // ── La regla de oro, antes que cualquier otra cosa ───────────────────
     // La válvula está abierta SOLO en los estados que la necesitan. Cualquier
     // camino nuevo que alguien agregue mañana nace con la válvula cerrada.
-    bool debeEstarAbierta = (estado == HABILITADO) || (estado == SIRVIENDO) ||
-                            (estado == PAUSA && asomada);
+    bool debeEstarAbierta = (estado == HABILITADO) || (estado == SIRVIENDO);
     if (!debeEstarAbierta) valvulaCerrar();
 
     digitalWrite(PIN_LED, (estado == SIRVIENDO || estado == HABILITADO) ? HIGH : LOW);
@@ -448,16 +423,9 @@ static void tareaControl(void *) {
           break;
         }
 
-        // Tres segundos sin un pulso: cerró el grifo.
+        // Tres segundos sin un pulso: cerró el grifo, terminó.
         if (ahora - ultimoPulsoMs > FIN_DE_SERVICIO_MS) {
-          valvulaCerrar();
-          if (GRACIA_PAUSA_MS == 0) { liquidar("Cerro el grifo. Cobra."); break; }
-          Serial.println(">> Cerro el grifo. Valvula cerrada; la sesion sigue abierta.");
-          pausaDesde     = ahora;
-          pulsosAlPausar = pulsos;
-          sondeoProximo  = 0;
-          asomada        = false;
-          irA(PAUSA);
+          liquidar("Cerro el grifo. Cierra y cobra.");
           break;
         }
 
@@ -469,44 +437,6 @@ static void tareaControl(void *) {
                         (unsigned long)pulsosMax);
           Progreso p = { sesionId, ml, pulsos };
           xQueueOverwrite(colaProgreso, &p);
-        }
-        break;
-      }
-
-      case PAUSA: {
-        uint32_t pulsos = caudalPulsos() - pulsosBase;
-
-        // Volvió a correr de verdad: no alcanza un pulso suelto, porque el
-        // propio asomo los genera. Ver PULSOS_PARA_REANUDAR.
-        if (pulsos - pulsosAlPausar >= PULSOS_PARA_REANUDAR) {
-          pulsosPrevios  = pulsos;
-          pulsosServidos = pulsos;
-          ultimoPulsoMs  = ahora;
-          anotarVenta(sesionId, pulsos, pulsosPorLitroMili);
-          asomada = false;
-          abrirSiHaceFalta();
-          Serial.println(">> Volvio a abrir el grifo. Sigue sirviendo.");
-          irA(SIRVIENDO);
-          break;
-        }
-
-        // Cerrar el asomo.
-        if (asomada && ahora - asomadaEn >= SONDEO_MS) {
-          asomada = false;
-          valvulaCerrar();
-        }
-
-        // ¿Toca asomarse?
-        if (!asomada && sondeoProximo < N_SONDEOS &&
-            ahora - pausaDesde >= SONDEOS[sondeoProximo]) {
-          sondeoProximo++;
-          asomada   = true;
-          asomadaEn = ahora;
-          abrirSiHaceFalta();
-        }
-
-        if (ahora - pausaDesde > GRACIA_PAUSA_MS) {
-          liquidar("Se acabo la espera. Cierra y cobra lo servido.");
         }
         break;
       }

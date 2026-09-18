@@ -285,50 +285,36 @@
   .nfc-encender { animation: none; }
 }
 
-/* ── El cantinero ───────────────────────────────────────────────────────────
-   Silueta a contraluz sobre la cerveza del fondo. Lo único con color es el
-   vaso y lo que cae adentro — que es lo único que el cliente necesita mirar. */
-.cant {
-  width: min(56vh, 340px);
+/* ── La tirada: la canilla y el vaso ───────────────────────────────────── */
+.tir {
+  width: min(52vh, 300px);
   height: auto;
   display: block;
   margin: 0 auto;
-  overflow: visible;
+  filter: drop-shadow(0 18px 26px rgba(0, 0, 0, .35));
 }
 
-.cant-persona,
-.cant-canilla,
-.cant-mano {
-  fill: rgba(16, 8, 2, .78);
-  stroke: rgba(255, 233, 196, .34);
-  stroke-width: 2;
-  stroke-linejoin: round;
-}
-
-/* La canilla es metal: un poco más opaca y con el contorno más marcado. */
-.cant-canilla { fill: rgba(12, 6, 1, .86); stroke: rgba(255, 238, 208, .46); }
-
-/* La mano va sin contorno: pegada al vaso, el borde se leería como una grieta
-   en el vidrio. */
-.cant-mano { stroke: none; }
-
-/* El giro del vaso acompaña al llenado, que ya viene suavizado desde el
-   componente. La transición de acá solo redondea el último tramo. */
-.cant > g[transform] { transition: transform .35s ease-out; }
-
-/* Las burbujas caen con el chorro. Dos, desfasadas, alcanzan para que se lea
+/* Las gotas caen con el chorro. Dos, desfasadas, alcanzan para que se lea
    movimiento sin que parezca una cascada. */
-.cant-burbuja { fill: #fff8e6; opacity: .9; }
-.cant-burbuja.b1 { animation: cant-cae 620ms linear infinite; }
-.cant-burbuja.b2 { animation: cant-cae 620ms linear infinite 310ms; }
+.tir-gota { fill: #fff6dd; opacity: .9; }
+.tir-gota.g1 { animation: tir-cae 560ms linear infinite; }
+.tir-gota.g2 { animation: tir-cae 560ms linear infinite 280ms; }
 
-@keyframes cant-cae {
-  from { transform: translateY(0);  opacity: 0; }
-  20%  { opacity: .9; }
+@keyframes tir-cae {
+  from { transform: translateY(0);   opacity: 0; }
+  22%  { opacity: .9; }
   to   { transform: translateY(14px); opacity: 0; }
 }
 
+/* La condensación respira apenas. Es lo único que se mueve cuando no sirve, y
+   es lo que separa un dibujo de una captura de pantalla. */
+.tir-frio { opacity: .5; animation: tir-respira 5.5s ease-in-out infinite; }
+
+@keyframes tir-respira {
+  0%, 100% { opacity: .38; }
+  50%      { opacity: .62; }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .cant-burbuja { animation: none; opacity: .5; }
-  .cant > g[transform] { transition: none; }
+  .tir-gota, .tir-frio { animation: none; }
 }
