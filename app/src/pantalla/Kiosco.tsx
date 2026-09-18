@@ -5,6 +5,8 @@ import FondoCerveza, { type FondoAPI } from './FondoCerveza'
 import { veredicto, punteria } from './veredicto'
 import './estilos-kiosco.css'
 import Recipiente from './Recipiente'
+import { useNFC, porQueNoHayNFC } from '../lib/useNFC'
+import { mensajeDeError } from '../lib/tipos'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Pantalla de una canilla, para correr en modo kiosco en la tablet / monitor
@@ -86,6 +88,55 @@ export default function Kiosco() {
     }
     setError(null); setEstado(r)
   }, [config])
+
+  // ── El lector NFC de la tablet ───────────────────────────────────────────
+  // Acá la tablet deja de ser una pantalla y pasa a ser el lector: es la que
+  // identifica al cliente y abre la sesión. El ESP32 se entera sondeando.
+  const [avisoNfc, setAvisoNfc] = useState<string | null>(null)
+  const abriendo = useRef(false)
+  const ultimaLectura = useRef(0)
+
+  const alLeerTarjeta = useCallback(async (uid: string) => {
+    if (!config) return
+
+    // Una tarjeta apoyada dispara `onreading` varias veces por segundo. Sin
+    // esto, un solo apoyo manda diez pedidos iguales.
+    //
+    //   Es el debounce del submit. El usuario hizo una cosa; que salga un
+    //   pedido.
+    const ahora = Date.now()
+    if (abriendo.current || ahora - ultimaLectura.current < 2500) return
+    ultimaLectura.current = ahora
+    abriendo.current = true
+    setAvisoNfc(null)
+
+    const { data, error: err } = await supabase.rpc('tablet_abrir_sesion', {
+      p_uid: uid, p_grifo: config.grifo, p_token: config.token,
+    })
+    abriendo.current = false
+
+    if (err) { setAvisoNfc('No pudimos abrir la sesión. Revisá la conexión.'); return }
+    const r = data as { ok: boolean; motivo?: string; cliente?: string | null }
+    if (!r.ok) {
+      setAvisoNfc(r.motivo === 'canilla_ocupada' && r.cliente
+        ? `Esperá: ${r.cliente} está sirviendo.`
+        : mensajeDeError(r))
+      return
+    }
+
+    // No esperamos al sondeo de 2 s: el cliente acaba de apoyar la tarjeta y
+    // tiene que ver su nombre ahora.
+    await consultar()
+  }, [config, consultar])
+
+  const nfc = useNFC(alLeerTarjeta)
+
+  // El aviso se borra solo. Es una pantalla de salón: nadie va a ir a cerrarlo.
+  useEffect(() => {
+    if (!avisoNfc) return
+    const id = setTimeout(() => setAvisoNfc(null), 6000)
+    return () => clearTimeout(id)
+  }, [avisoNfc])
 
   const sirviendo = estado?.sesion != null
   useEffect(() => {
@@ -173,6 +224,21 @@ export default function Kiosco() {
           )}
         </main>
 
+        {avisoNfc && <div className="nfc-aviso">{avisoNfc}</div>}
+
+        {/* El lector hay que encenderlo con un toque: el navegador exige un
+            gesto para pedir el permiso de NFC, y no lo da al cargar la página.
+            Una vez encendido queda escaneando solo. */}
+        {!error && estado && g!.listo && !s && nfc.soportado && nfc.estado !== 'escaneando' && (
+          <button className="nfc-encender" onClick={() => void nfc.empezar()}>
+            <span className="nfc-onda">📲</span>
+            <span>
+              <strong>Tocá para encender el lector</strong>
+              <small>{nfc.error ?? 'Una sola vez, cuando abre el bar'}</small>
+            </span>
+          </button>
+        )}
+
         <footer className="kiosco-abajo">
           <div className="kiosco-precio">
             {g ? pesos(g.precio_litro_centavos) : '—'} <small>el litro</small>
@@ -180,7 +246,12 @@ export default function Kiosco() {
               vaso de {vaso} ml · {pesos(Math.ceil((vaso * g.precio_litro_centavos) / 1000))}
             </span>}
           </div>
-          <div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {!nfc.soportado
+              ? <span className="kiosco-tag mal" title={porQueNoHayNFC()}>Sin NFC</span>
+              : nfc.estado === 'escaneando'
+                ? <span className="kiosco-tag bien">Lector activo</span>
+                : <span className="kiosco-tag mal">Lector apagado</span>}
             {error
               ? <span className="kiosco-tag mal">Sin conexión</span>
               : s
