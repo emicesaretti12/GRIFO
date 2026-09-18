@@ -224,6 +224,7 @@ export const MOTIVOS: Record<string, string> = {
   tipo_desconocido: 'Esa orden no existe. Puede ser una app más nueva que el servidor.',
   falta_ssid: 'Hay que poner el nombre exacto de la red.',
   ya_no_se_puede: 'La canilla ya la aplicó. No se puede cancelar.',
+  canilla_ocupada: 'Alguien está sirviendo en esta canilla. Esperá que termine.',
   color_invalido: 'El color tiene que ser hexadecimal, tipo #c8811f.',
   usuario_inexistente: 'Ese usuario no existe. Invitalo primero desde Supabase.',
   rol_invalido: 'Rol inválido.',
