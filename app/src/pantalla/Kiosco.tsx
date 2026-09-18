@@ -116,7 +116,20 @@ export default function Kiosco() {
     })
     abriendo.current = false
 
-    if (err) { setAvisoNfc('No pudimos abrir la sesión. Revisá la conexión.'); return }
+    if (err) {
+      // ── Decir QUÉ falló, no "revisá la conexión" ─────────────────────────
+      // El mensaje genérico mandó a revisar el WiFi cuando lo que faltaba era
+      // una función en la base. Media hora buscando en el lugar equivocado.
+      //
+      //   Un error que no dice qué pasó es peor que ninguno: manda a buscar a
+      //   ciegas, y casi siempre al lugar más caro.
+      const falta = err.code === 'PGRST202' ||
+                    /could not find the function/i.test(err.message ?? '')
+      setAvisoNfc(falta
+        ? 'Falta instalar el backend: corré 26-sesion-activa.sql en Supabase.'
+        : `No se pudo abrir la sesión — ${err.message}`)
+      return
+    }
     const r = data as { ok: boolean; motivo?: string; cliente?: string | null }
     if (!r.ok) {
       setAvisoNfc(r.motivo === 'canilla_ocupada' && r.cliente
@@ -135,7 +148,9 @@ export default function Kiosco() {
   // El aviso se borra solo. Es una pantalla de salón: nadie va a ir a cerrarlo.
   useEffect(() => {
     if (!avisoNfc) return
-    const id = setTimeout(() => setAvisoNfc(null), 6000)
+    // Diez segundos: los errores de instalación hay que poder leerlos y
+    // anotarlos, no cazarlos al vuelo.
+    const id = setTimeout(() => setAvisoNfc(null), 10000)
     return () => clearTimeout(id)
   }, [avisoNfc])
 
