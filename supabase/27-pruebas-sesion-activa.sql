@@ -111,6 +111,37 @@ begin
   assert not v_dup, '10: AGUJERO GRAVE: la base acepto dos sesiones abiertas en un grifo';
 end $$;
 
+-- ── 11. La pantalla puede llamar aunque haya alguien logueado ───────────────
+-- La tablet corre la misma app donde el personal inicia sesion. Si hay sesion
+-- iniciada, Supabase trata a esa pestaña como `authenticated` y no como `anon`
+-- — y un permiso dado solo a `anon` la rechaza con permission denied.
+--
+-- Es lo que paso en el bar: la pantalla leia bien (pantalla_estado esta dada a
+-- los dos) y no podia abrir sesion (esta estaba solo para anon).
+--
+--   El permiso se le da al que llama, no al que uno imagina llamando.
+do $$
+begin
+  set local role authenticated;
+  begin
+    perform public.tablet_abrir_sesion('PRUEBATAB1', 914, 'token-cualquiera');
+  exception
+    when insufficient_privilege then
+      raise exception '11: la pantalla logueada no puede llamar a tablet_abrir_sesion';
+    when others then null;   -- que rechace por token es correcto; por permiso no
+  end;
+
+  -- Y el ESP32, que siempre es anon, tambien tiene que poder sondear.
+  set local role anon;
+  begin
+    perform public.canilla_sesion_activa(914, 'token-cualquiera');
+  exception when insufficient_privilege then
+    raise exception '11: el ESP32 no puede sondear su propia sesion';
+  end;
+
+  reset role;
+end $$;
+
 select '✅ TODAS LAS PRUEBAS DE SESION ACTIVA PASARON' as resultado;
 
 rollback;

@@ -149,8 +149,22 @@ begin
   return public.abrir_sesion(p_uid, p_grifo, p_token);
 end $$;
 
+-- ── A quién se le da, y por qué a los dos ──────────────────────────────────
+-- `canilla_sesion_activa` la llama el ESP32, que siempre usa la anon key: ahí
+-- `anon` solo es lo correcto y lo más ajustado.
+--
+-- Esta la llama la PANTALLA, y la pantalla puede estar corriendo en una tablet
+-- donde alguien inició sesión en la app. Ahí Supabase la trata como
+-- `authenticated`, no como `anon`, y un permiso solo para `anon` la rechaza.
+--
+-- Es exactamente lo que hace `pantalla_estado`, que corre en la misma pantalla
+-- y por eso funcionaba mientras esta fallaba.
+--
+--   El permiso se le da al que llama, no al que uno imagina llamando. Y quién
+--   llama depende de si hay alguien logueado en ese navegador.
 revoke all on function public.tablet_abrir_sesion(text, int, text)
   from public, anon, authenticated;
-grant execute on function public.tablet_abrir_sesion(text, int, text) to anon;
+grant execute on function public.tablet_abrir_sesion(text, int, text)
+  to anon, authenticated;
 
 do $$ begin raise notice '✅ 26-sesion-activa.sql aplicado'; end $$;
