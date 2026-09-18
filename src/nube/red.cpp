@@ -365,7 +365,8 @@ bool redCerrarSesion(int64_t sesionId, uint32_t ml, uint32_t pulsos) {
 /** El cuerpo del latido. Lo usan `redLatido` y `redCalentar`, así que vive en
  *  un solo lugar: un campo agregado en uno solo de los dos sería un bug que
  *  aparece únicamente en el arranque. */
-static void cuerpoDelLatido(uint32_t cierresPendientes, String &salida) {
+static void cuerpoDelLatido(uint32_t cierresPendientes, String &salida,
+                            const char *estado = NULL, const char *evento = NULL) {
   JsonDocument pedido;
   pedido["p_grifo"]        = GRIFO_ID;
   pedido["p_token"]        = GRIFO_TOKEN;
@@ -376,6 +377,8 @@ static void cuerpoDelLatido(uint32_t cierresPendientes, String &salida) {
 
   // Hasta acá llegué. El servidor solo me va a dar órdenes con un número mayor.
   pedido["p_ultima_orden"] = ajustesUltimaOrden();
+  if (estado) pedido["p_estado"] = estado;
+  if (evento) pedido["p_evento"] = evento;
 
   serializeJson(pedido, salida);
 }
@@ -437,11 +440,12 @@ bool redSesionActiva(SesionNube &s) {
   return true;
 }
 
-bool redLatido(uint32_t cierresPendientes, Orden &orden) {
+bool redLatido(uint32_t cierresPendientes, Orden &orden,
+               const char *estado, const char *evento) {
   memset(&orden, 0, sizeof(orden));
 
   String cuerpo;
-  cuerpoDelLatido(cierresPendientes, cuerpo);
+  cuerpoDelLatido(cierresPendientes, cuerpo, estado, evento);
 
   String respuesta;
   if (postRpc("canilla_latido", cuerpo, respuesta, TIMEOUT_ADORNO) != 200) return false;

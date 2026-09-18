@@ -13,7 +13,7 @@ export type Rol = 'cajero' | 'admin'
 // Va en una sola linea y con `as const` a proposito: supabase-js deriva el tipo
 // de la fila parseando este string en tiempo de compilacion. Partido en dos con
 // `+` deja de ser un literal y el tipo degenera en `GenericStringError[]`.
-export const COLUMNAS_GRIFO = 'id, nombre, precio_litro_centavos, pulsos_por_litro, ml_minimos, ml_vaso, activo, token_rotado_en, estilo, descripcion, abv, ibu, color, imagen_url, ultimo_latido, firmware, cierres_pendientes, senal_dbm, ip_local' as const
+export const COLUMNAS_GRIFO = 'id, nombre, precio_litro_centavos, pulsos_por_litro, ml_minimos, ml_vaso, activo, token_rotado_en, estilo, descripcion, abv, ibu, color, imagen_url, ultimo_latido, firmware, cierres_pendientes, senal_dbm, ip_local, estado_texto, ultimo_evento' as const
 
 export type Grifo = {
   id: number
@@ -42,6 +42,11 @@ export type Grifo = {
   cierres_pendientes?: number | null
   senal_dbm?: number | null
   ip_local?: string | null
+  /** En qué estado está la máquina del ESP32: ESPERANDO, SIRVIENDO... */
+  estado_texto?: string | null
+  /** Lo último que le pasó, en castellano. Es el monitor serie del que está
+   *  en el bar con el celular y sin computadora. */
+  ultimo_evento?: string | null
 }
 
 // ── Órdenes para la canilla ─────────────────────────────────────────────────

@@ -155,6 +155,29 @@ static void encolarCierre(int64_t id, uint32_t ml, uint32_t pulsos) {
 // ═════════════════════════════════════════════════════════════════════════════
 // TAREA DE RED — núcleo 0
 // ═════════════════════════════════════════════════════════════════════════════
+// ── Dónde está parada la canilla, y qué fue lo último que le pasó ───────────
+// Va acá arriba y no junto al resto del control porque **la tarea de red lo
+// necesita**: son los dos campos que el latido le manda a la app, y que en el
+// bar hacen de monitor serie para quien tiene un celular y nada más.
+enum Estado { ESPERANDO, HABILITADO, SIRVIENDO, LIQUIDANDO };
+
+static const char *nombreDe(Estado e) {
+  switch (e) {
+    case ESPERANDO:  return "ESPERANDO";
+    case HABILITADO: return "HABILITADO";
+    case SIRVIENDO:  return "SIRVIENDO";
+    case LIQUIDANDO: return "LIQUIDANDO";
+  }
+  return "?";
+}
+
+static Estado estado = ESPERANDO;
+static char   ultimoEvento[72] = "recien encendida";
+
+static void anotar(const char *e) {
+  snprintf(ultimoEvento, sizeof(ultimoEvento), "%s", e);
+}
+
 static void aplicarOrden(const Orden &o);   // se ejecuta desde el control
 
 // La pone el setup leyendo el botón, la consume la tarea de red. Una sola
@@ -237,7 +260,8 @@ static void tareaRed(void *) {
     if (redConectada() && !hiceAlgoCaro && ahora - ultimoLatido >= LATIDO_MS) {
       ultimoLatido = ahora;
       Orden orden;
-      if (redLatido(colaCantidad(), orden) && orden.id > 0) {
+      if (redLatido(colaCantidad(), orden, nombreDe(estado), ultimoEvento) &&
+          orden.id > 0) {
         xQueueOverwrite(colaOrden, &orden);
       }
       hiceAlgoCaro = true;
@@ -257,9 +281,6 @@ static void tareaRed(void *) {
 // ═════════════════════════════════════════════════════════════════════════════
 // TAREA DE CONTROL — núcleo 1
 // ═════════════════════════════════════════════════════════════════════════════
-enum Estado { ESPERANDO, HABILITADO, SIRVIENDO, LIQUIDANDO };
-
-static Estado   estado = ESPERANDO;
 static int64_t  sesionId = 0;
 static char     uidSesion[21] = "";
 static char     cliente[41] = "";
@@ -281,16 +302,6 @@ static bool     enEspera = false;      // dejó de correr, pero todavía no term
 static uint32_t graciaActual() {
   uint32_t g = GRACIA_BASE + (uint32_t)GRACIA_PASO * pausasCumplidas;
   return g > GRACIA_MAX ? GRACIA_MAX : g;
-}
-
-static const char *nombreDe(Estado e) {
-  switch (e) {
-    case ESPERANDO:  return "ESPERANDO";
-    case HABILITADO: return "HABILITADO";
-    case SIRVIENDO:  return "SIRVIENDO";
-    case LIQUIDANDO: return "LIQUIDANDO";
-  }
-  return "?";
 }
 
 static void irA(Estado nuevo) {
@@ -338,6 +349,7 @@ static void imprimirTicket(uint32_t ml, uint32_t pulsos) {
 static void liquidar(const char *motivo) {
   valvulaCerrar();
   Serial.printf(">> %s\n", motivo);
+  anotar(motivo);
 
   uint32_t ml = mlDePulsos(pulsosServidos, pulsosPorLitroMili);
 
@@ -411,6 +423,12 @@ static void tareaControl(void *) {
                       cliente[0] ? cliente : uidSesion, plata,
                       (unsigned long)s.mlMaximos, (unsigned long)pulsosMax);
         Serial.println("Abri el grifo cuando quieras.");
+        {
+          char e[72];
+          snprintf(e, sizeof(e), "Tarjeta de %s, hasta %lu ml",
+                   cliente[0] ? cliente : uidSesion, (unsigned long)s.mlMaximos);
+          anotar(e);
+        }
 
         habilitadaEn = ahora;
         ultimoInforme = ahora;
@@ -426,6 +444,7 @@ static void tareaControl(void *) {
           pulsosPrevios  = pulsos;
           ultimoPulsoMs  = ahora;
           Serial.println(">> Empezo a salir. Sirviendo.");
+          anotar("Empezo a salir");
           irA(SIRVIENDO);
           break;
         }
@@ -469,6 +488,7 @@ static void tareaControl(void *) {
           enEspera = true;
           Serial.printf(">> Dejo de correr. Le espero %lu s por si sigue.\n",
                         (unsigned long)(graciaActual() / 1000));
+          anotar("Dejo de correr, esperando por si sigue");
         }
 
         if (enEspera && ahora - ultimoPulsoMs > graciaActual()) {

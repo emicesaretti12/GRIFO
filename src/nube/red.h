@@ -105,7 +105,13 @@ bool redCerrarSesion(int64_t sesionId, uint32_t ml, uint32_t pulsos);
  *  Un sistema que dura años no es uno que no falla: es uno donde **se ve que
  *  falló**, temprano y sin que nadie tenga que ir a mirar. Sin esto, una
  *  canilla colgada o sin red pasa desapercibida hasta que un cliente reclama. */
-bool redLatido(uint32_t cierresPendientes, Orden &orden);
+/** El latido. `estado` y `evento` son opcionales y viajan a la app: son el
+ *  monitor serie de quien está en el bar con el celular y sin computadora.
+ *
+ *    Es agregarle el estado al health check. Un "200 OK" dice que el proceso
+ *    respira; no dice qué está haciendo. */
+bool redLatido(uint32_t cierresPendientes, Orden &orden,
+               const char *estado = NULL, const char *evento = NULL);
 
 /** Abre la conexión segura **antes** de que nadie la necesite.
  *

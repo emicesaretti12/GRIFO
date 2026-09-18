@@ -110,7 +110,14 @@ export default function ControlarCanilla({ grifo, onCerrar, avisar }: {
           {grifo.ip_local && <Chip>{grifo.ip_local}</Chip>}
           {grifo.firmware && <Chip>{grifo.firmware}</Chip>}
           {grifo.senal_dbm != null && enLinea && <Chip>{grifo.senal_dbm} dBm</Chip>}
+          {enLinea && grifo.estado_texto && <Chip tono="bien">{grifo.estado_texto}</Chip>}
         </div>
+
+        {grifo.ultimo_evento && (
+          <p className="bajada" style={{ marginTop: -6 }}>
+            <strong>Lo último que le pasó:</strong> {grifo.ultimo_evento}
+          </p>
+        )}
 
         {!enLinea && (
           <Nota tono="ojo">

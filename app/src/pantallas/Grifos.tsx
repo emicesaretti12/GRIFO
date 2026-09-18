@@ -243,6 +243,24 @@ function Salud({ grifo }: { grifo: Grifo }) {
           <Chip tono={grifo.senal_dbm > -70 ? 'neutro' : 'ojo'}>{grifo.senal_dbm} dBm</Chip>
         </span>
       )}
+
+      {/* ── Qué está haciendo, y qué fue lo último ────────────────────────
+          En el bar no hay monitor serie. Esto es lo que lo reemplaza: sin
+          esto, "En línea" no distingue una canilla esperando clientes de una
+          que rechaza cada tarjeta por un token vencido. */}
+      {estado === 'en-linea' && grifo.estado_texto && (
+        <Chip tono={grifo.estado_texto === 'SIRVIENDO' ? 'bien' : 'neutro'}>
+          {grifo.estado_texto === 'ESPERANDO'  ? 'Libre'
+           : grifo.estado_texto === 'HABILITADO' ? 'Esperando que abran'
+           : grifo.estado_texto === 'SIRVIENDO'  ? 'Sirviendo'
+           : grifo.estado_texto}
+        </Chip>
+      )}
+      {grifo.ultimo_evento && (
+        <div style={{ fontSize: 12, color: 'var(--ink-3)', width: '100%', marginTop: 2 }}>
+          Lo último: {grifo.ultimo_evento}
+        </div>
+      )}
     </div>
   )
 }
