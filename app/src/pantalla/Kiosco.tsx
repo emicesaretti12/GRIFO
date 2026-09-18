@@ -5,6 +5,7 @@ import FondoCerveza, { type FondoAPI } from './FondoCerveza'
 import { veredicto, punteria } from './veredicto'
 import './estilos-kiosco.css'
 import Recipiente from './Recipiente'
+import Cantinero from './Cantinero'
 import { useNFC, porQueNoHayNFC } from '../lib/useNFC'
 import { mensajeDeError } from '../lib/tipos'
 
@@ -215,9 +216,10 @@ export default function Kiosco() {
             s.ml_parcial > 0
               ? <Sirviendo ml={s.ml_parcial} vaso={vaso} gastado={gastado}
                           restante={restante} color={color} />
-              : <Bienvenida saldo={s.saldo_centavos} maximo={s.ml_maximos} cliente={cli} />
+              : <Bienvenida saldo={s.saldo_centavos} maximo={s.ml_maximos}
+                            cliente={cli} color={color} />
           ) : u ? (
-            <Ticket ultima={u} vaso={vaso} cliente={cli} />
+            <Ticket ultima={u} vaso={vaso} cliente={cli} color={color} />
           ) : (
             <Libre escena={escena} ranking={estado.ranking} vaso={vaso}
                    precio={g!.precio_litro_centavos} pops={pops} />
@@ -313,17 +315,20 @@ function Libre({ escena, ranking, vaso, precio, pops }: {
 }
 
 /* ── Tarjeta apoyada, todavía sin servir ──────────────────────────────────── */
-function Bienvenida({ saldo, maximo, cliente }: {
-  saldo: number; maximo: number; cliente: Cliente | null
+function Bienvenida({ saldo, maximo, cliente, color }: {
+  saldo: number; maximo: number; cliente: Cliente | null; color: string
 }) {
   const saludo = !cliente || cliente.es_primera
-    ? { t: '¡Bienvenido!', s: 'Es tu primera acá. Mantené apretado el botón del grifo' }
+    ? { t: '¡Bienvenido!', s: 'Es tu primera acá. Abrí el grifo cuando quieras' }
     : cliente.veces < 5
       ? { t: '¡Hola de nuevo!', s: `Es tu cerveza número ${cliente.veces + 1} acá` }
       : { t: '¡Qué gusto verte!', s: `Van ${cliente.veces} cervezas y ${volumen(cliente.ml_total)} en total` }
 
   return (
     <div className="kiosco-rota">
+      {/* Con el vaso vacío la escena ya está en su gesto de arranque: inclinado
+          bajo la canilla, esperando. No hace falta decir "listo". */}
+      <Cantinero llenado={0} sirviendo={false} color={color} />
       <div className="kiosco-cartel">{saludo.t}</div>
       <div className="kiosco-sub kiosco-late">{saludo.s}</div>
       <div className="kiosco-fila">
@@ -347,7 +352,9 @@ function Sirviendo({ ml, vaso, gastado, restante, color }: {
   const cerca = Math.abs(ml - vaso) / vaso < 0.05
   return (
     <div>
-      <Recipiente ml={ml} vasoMl={vaso} color={color} />
+      {/* El vaso del cantinero se llena contra el vaso de referencia. Pasado
+          eso sigue subiendo igual, pero la escena ya dijo lo suyo. */}
+      <Cantinero llenado={ml / Math.max(1, vaso)} sirviendo color={color} />
       <div className="kiosco-sub" style={{ marginTop: 10 }}>
         {cerca ? '¡Ahí está la medida justa!' : `apuntá a los ${vaso} ml`}
       </div>
@@ -366,13 +373,17 @@ function Sirviendo({ ml, vaso, gastado, restante, color }: {
 }
 
 /* ── Ticket con el veredicto ──────────────────────────────────────────────── */
-function Ticket({ ultima, vaso, cliente }: {
-  ultima: Ultima; vaso: number; cliente: Cliente | null
+function Ticket({ ultima, vaso, cliente, color }: {
+  ultima: Ultima; vaso: number; cliente: Cliente | null; color: string
 }) {
   const v = veredicto(ultima.ml_servidos, vaso)
   const p = punteria(ultima.ml_servidos, vaso)
   return (
     <div className="kiosco-rota">
+      {/* Acá sí va el recipiente y no el cantinero: mientras sirve, lo que
+          importa es el gesto; al terminar, lo que importa es CUÁNTO — y para
+          eso el vaso que se vuelve jarra dice más que un número. */}
+      <Recipiente ml={ultima.ml_servidos} vasoMl={vaso} color={color} />
       <div className="kiosco-veredicto">{v.titulo}</div>
       <div className="kiosco-sub">{v.sub} · {p}% de puntería</div>
       <div className="kiosco-cifra">{ultima.ml_servidos}<small>ml</small></div>

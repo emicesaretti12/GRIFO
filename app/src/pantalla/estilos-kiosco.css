@@ -284,3 +284,51 @@
 @media (prefers-reduced-motion: reduce) {
   .nfc-encender { animation: none; }
 }
+
+/* ── El cantinero ───────────────────────────────────────────────────────────
+   Silueta a contraluz sobre la cerveza del fondo. Lo único con color es el
+   vaso y lo que cae adentro — que es lo único que el cliente necesita mirar. */
+.cant {
+  width: min(56vh, 340px);
+  height: auto;
+  display: block;
+  margin: 0 auto;
+  overflow: visible;
+}
+
+.cant-persona,
+.cant-canilla,
+.cant-mano {
+  fill: rgba(16, 8, 2, .78);
+  stroke: rgba(255, 233, 196, .34);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+/* La canilla es metal: un poco más opaca y con el contorno más marcado. */
+.cant-canilla { fill: rgba(12, 6, 1, .86); stroke: rgba(255, 238, 208, .46); }
+
+/* La mano va sin contorno: pegada al vaso, el borde se leería como una grieta
+   en el vidrio. */
+.cant-mano { stroke: none; }
+
+/* El giro del vaso acompaña al llenado, que ya viene suavizado desde el
+   componente. La transición de acá solo redondea el último tramo. */
+.cant > g[transform] { transition: transform .35s ease-out; }
+
+/* Las burbujas caen con el chorro. Dos, desfasadas, alcanzan para que se lea
+   movimiento sin que parezca una cascada. */
+.cant-burbuja { fill: #fff8e6; opacity: .9; }
+.cant-burbuja.b1 { animation: cant-cae 620ms linear infinite; }
+.cant-burbuja.b2 { animation: cant-cae 620ms linear infinite 310ms; }
+
+@keyframes cant-cae {
+  from { transform: translateY(0);  opacity: 0; }
+  20%  { opacity: .9; }
+  to   { transform: translateY(14px); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cant-burbuja { animation: none; opacity: .5; }
+  .cant > g[transform] { transition: none; }
+}
