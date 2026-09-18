@@ -331,3 +331,39 @@ válvula con la mano mientras el sistema está funcionando.**
 | Camino completo `NO` → bobina → `DC-` | **24,6 Ω** |
 | Tensión en `NO` con el relé activado | **12 V** |
 | Prueba en seco | **golpea** ✅ |
+
+### Mientras no haya diodo
+
+En el bar se vio en vivo: basura en el serie y la placa reiniciándose **justo en
+el instante en que la válvula cerraba**, tres veces seguidas.
+
+No hay forma de **evitar** el pico sin el diodo. Lo que sí se puede hacer es que
+no cueste plata, y que pegue lo menos posible.
+
+**Por software — ya está hecho.** Mientras sirve, el firmware anota la sesión y
+los pulsos en la **RTC RAM**, una memoria que sobrevive al reinicio del chip
+aunque no al corte de alimentación. Si se reinicia a mitad de un servicio, el
+arranque encuentra la venta a medias y la encola antes de hacer cualquier otra
+cosa.
+
+> Es el checkpoint del job largo. No evita que el worker se muera; evita que se
+> pierda lo que ya había hecho.
+
+No usa flash: escribir NVS una vez por segundo quemaría el sector en una semana
+de bar.
+
+**Por cableado — gratis y sirve.**
+
+| Qué hacer | Por qué |
+|---|---|
+| **Trenzar los dos cables de la válvula** entre sí, en todo su largo | La ida y la vuelta se cancelan los campos. Es lo que más rinde de esta lista |
+| Alejarlos del protoboard y del ESP32 | El acoplamiento cae con la distancia |
+| Que **no corran paralelos** a los cables del lector ni del caudalímetro | El SPI es lo más sensible que hay en la mesa |
+| Un solo cable de masa, corto y grueso, entre `DC-` y el protoboard | Menos impedancia compartida es menos tensión inducida |
+
+**Lo que NO arregla nada:** poner el diodo sobre el relé (ya tiene el suyo),
+subir el timeout del watchdog, o bajar la velocidad del serie.
+
+**Y el orden de las cosas:** esto es una curita. Un `1N4007` cuesta centavos y
+está en cualquier cargador viejo — buscá uno antes de que esto venda de verdad.
+

@@ -411,6 +411,47 @@ static bool botonApretado() {
 /** Encola el cierre en la flash. Si esto falla, se perdió una venta, y hay que
  *  gritarlo: es el único camino por el que la plata se puede ir sin dejar
  *  rastro. */
+// ── El checkpoint que sobrevive al reinicio ─────────────────────────────────
+// Sin el diodo de la válvula, cada cierre puede meter un pico que resetea la
+// placa. Evitarlo es hardware. Lo que sí se puede hacer por software es que ese
+// reinicio **no cueste plata**.
+//
+// Estas variables viven en la RTC RAM: una memoria que NO se borra al
+// reiniciarse el chip, pero sí al cortarse la alimentación. Un reset por el
+// pico de la bobina es exactamente el primer caso — la placa arranca de nuevo,
+// no se apaga.
+//
+// Mientras sirve, acá queda anotado cuánto lleva servido. Si se reinicia a
+// mitad, el arranque encuentra la venta a medias y la encola para cobrar antes
+// de hacer cualquier otra cosa.
+//
+//   Es el checkpoint del job largo. No evita que el worker se muera; evita que
+//   se pierda lo que ya había hecho.
+//
+// Y es gratis: es RAM, no flash. Escribirla en cada vuelta no la desgasta. Un
+// checkpoint en NVS a un escritura por segundo quemaría el sector en una
+// semana de bar.
+//
+// `RTC_NOINIT_ATTR` significa que nadie las inicializa al arrancar: en un
+// encendido en frío traen basura. Por eso hace falta la firma.
+#define FIRMA_VENTA 0x47524946u   // "GRIF"
+
+RTC_NOINIT_ATTR static uint32_t rtcFirma;
+RTC_NOINIT_ATTR static int64_t  rtcSesion;
+RTC_NOINIT_ATTR static uint32_t rtcPulsos;
+RTC_NOINIT_ATTR static uint32_t rtcPplMili;
+
+/** Deja anotada la venta en curso. Se llama seguido y no cuesta nada. */
+static void anotarVenta(int64_t id, uint32_t pulsos, uint32_t pplMili) {
+  rtcFirma   = FIRMA_VENTA;
+  rtcSesion  = id;
+  rtcPulsos  = pulsos;
+  rtcPplMili = pplMili;
+}
+
+/** La venta terminó bien: ya no hay nada que recuperar. */
+static void olvidarVenta() { rtcFirma = 0; }
+
 static void encolarCierre(int64_t id, uint32_t ml, uint32_t pulsos) {
   Pendiente p = { id, ml, pulsos };
   if (colaEncolar(p)) return;
@@ -553,6 +594,8 @@ static void tareaControl(void *) {
           Serial.printf("Tarjeta %s | saldo %s | hasta %lu ml (%lu pulsos)\n",
                         uidSesion, s, (unsigned long)r.mlMaximos,
                         (unsigned long)pulsosMax);
+          anotarVenta(sesionId, 0, pulsosPorLitroMili);
+
           if (ABRIR_CON_LA_TARJETA) {
             Serial.println("Sirviendo. Retira la tarjeta para cortar.");
             valvulaAbrir();
@@ -623,7 +666,14 @@ static void tareaControl(void *) {
       case SIRVIENDO: {
         uint32_t pulsos = caudalPulsos() - pulsosBase;
         pulsosServidos = pulsos;
-        if (pulsos != pulsosPrevios) { pulsosPrevios = pulsos; ultimoPulsoMs = ahora; }
+        if (pulsos != pulsosPrevios) {
+          pulsosPrevios = pulsos;
+          ultimoPulsoMs = ahora;
+          // Se anota en cuanto cambia, no cada tanto: lo que importa es que el
+          // último valor guardado sea el último medido. Si el pico llega justo
+          // acá, lo peor que se pierde es un pulso.
+          anotarVenta(sesionId, pulsos, pulsosPorLitroMili);
+        }
 
         // El corte local ya se evaluó arriba, al principio de la vuelta.
         // Todo corte se explica. La primera versión salía de SIRVIENDO sin
@@ -682,6 +732,7 @@ static void tareaControl(void *) {
         // Primero la flash, después el ticket. Si se corta la luz justo acá, lo
         // que tiene que haber sobrevivido es el cobro, no el papelito.
         encolarCierre(sesionId, ml, pulsosServidos);
+        olvidarVenta();      // ya está a salvo en la cola: no hay qué recuperar
         imprimirTicket(ml, pulsosServidos);
 
         uidSesion[0]   = '\0';
@@ -779,6 +830,27 @@ void setup() {
     Serial.println("Se van a entregar solos en cuanto haya red.");
   } else {
     Serial.println("Cierres pendientes: ninguno");
+  }
+
+  // ── Rescatar una venta que quedó a mitad ─────────────────────────────────
+  // Va DESPUÉS de colaIniciar y ANTES de todo lo demás: si la placa se reinició
+  // sirviendo, lo primero que tiene que pasar es que esa cerveza quede
+  // registrada. Todo lo otro puede esperar.
+  if (rtcFirma == FIRMA_VENTA && rtcSesion > 0) {
+    uint32_t ml = mlDePulsos(rtcPulsos, rtcPplMili);
+    Serial.println();
+    Serial.println("!! Se reinicio con una venta a medias. Rescatando:");
+    Serial.printf("!!   sesion %lld -- %lu ml (%lu pulsos)\n",
+                  (long long)rtcSesion, (unsigned long)ml,
+                  (unsigned long)rtcPulsos);
+    encolarCierre(rtcSesion, ml, rtcPulsos);
+    olvidarVenta();
+    Serial.println("!! Queda en la cola. Se cobra en cuanto haya red.");
+    Serial.println();
+  } else {
+    // Basura de un encendido en frio, o nada pendiente. En los dos casos, a
+    // cero: no queremos rescatar una venta inventada por la memoria sucia.
+    olvidarVenta();
   }
 
   caudalIniciar(true);
