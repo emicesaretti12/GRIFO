@@ -47,29 +47,48 @@ static const int PIN_LED   = 2;
 //   Es el timeout de conexión contra el de inactividad. Miden distinto y no
 //   pueden compartir número.
 static const uint32_t ESPERA_PRIMER_PULSO_MS = 30000;  // caminar y abrir el grifo
-static const uint32_t FIN_DE_SERVICIO_MS     =  3000;  // cerró el grifo: terminó
+static const uint32_t FIN_DE_SERVICIO_MS     =  3000;  // dejó de correr: empieza la espera
 
-// ── Por qué no hay estado de pausa ──────────────────────────────────────────
-// Hubo uno. La válvula cerraba a los 3 s pero la sesión quedaba abierta 25
-// segundos más, y para detectar que el cliente volvía a abrir el grifo la
-// válvula "se asomaba" 200 ms cada tanto.
-//
-// No funcionó, y el motivo es de fondo: **el asomo se detectaba a sí mismo**.
-// Al abrir, la turbina daba un tic aunque el grifo estuviera cerrado, el
-// firmware lo leía como "volvió el cliente", y arrancaba un ciclo de
-// abrir-cerrar que además reiniciaba la gracia en cada vuelta. Esa sesión no se
-// liquidaba nunca.
+// ── La espera: por qué la válvula NO se cierra mientras tanto ───────────────
+// Hubo una versión que cerraba a los 3 s y después "se asomaba" 200 ms cada
+// tanto para ver si el cliente había vuelto a abrir el grifo. No funcionó, y el
+// motivo es de fondo: **el asomo se detectaba a sí mismo**. Al abrir, la
+// turbina daba un tic aunque el grifo estuviera cerrado, el firmware lo leía
+// como "volvió el cliente", y arrancaba un ciclo de abrir-cerrar sin fin.
 //
 //   El mecanismo que sirve para medir no puede ser el mismo que perturba lo
 //   medido. Cuando lo es, lo que leés es tu propia influencia.
 //
-// Así que vale la regla simple: tres segundos sin cerveza es que terminó. Para
-// seguir, se apoya la tarjeta de nuevo — un gesto que el cliente ya conoce,
-// porque es el mismo con el que empezó.
+// Dejando la válvula abierta no hay nada que preguntar: el cliente abre el
+// grifo y sale cerveza, los pulsos aparecen solos. Y es seguro por una razón
+// concreta: la ÚNICA forma de entrar en la espera es que el grifo esté cerrado,
+// y una válvula abierta contra un grifo cerrado no entrega una gota.
 //
+// ── Y acá va lo que la hace inteligente ─────────────────────────────────────
+// Una pausa de cuatro segundos es alguien mirando cómo baja la espuma. Una de
+// treinta es alguien que se fue. El problema es que el primer segundo de las
+// dos es idéntico.
+//
+// Lo que las distingue no es la pausa: es lo que hizo ANTES. Un cliente que ya
+// paró y volvió dos veces está sirviéndose en tandas, y va a volver otra vez.
+// Uno que paró por primera vez, capaz terminó.
+//
+// Así que la espera crece con cada vuelta: empieza en 7 s y suma 3 por cada
+// pausa que el cliente ya demostró que era pausa y no final.
+//
+//   Es el backoff al revés. En vez de castigar los reintentos, premia al que
+//   ya demostró que vuelve. El sistema aprende el ritmo de esta persona, en
+//   esta tirada, sin saber nada de ella.
+static const uint32_t GRACIA_BASE = 7000;
+static const uint32_t GRACIA_PASO = 3000;
+static const uint32_t GRACIA_MAX  = 16000;
+
 // Failsafe de apertura: una válvula abierta un minto y medio seguido no es un
 // cliente sirviéndose, es algo trabado.
-static const uint32_t MAX_APERTURA_MS = 90000;
+// El tope de apertura ya no mide "cuánto sirvió": con la espera, la válvula
+// queda abierta entre tandas y una tirada larga con pausas lo pasaría de largo.
+// Mide lo que tiene que medir: que algo quedó trabado abierto.
+static const uint32_t MAX_APERTURA_MS = 180000;
 
 // Cada cuánto le pregunta al servidor si tiene alguien esperando. Un segundo,
 // no treinta: el cliente ya apoyó la tarjeta y está caminando hacia el grifo.
@@ -254,6 +273,15 @@ static uint32_t pulsosPrevios = 0;
 static uint32_t ultimoPulsoMs = 0;
 static uint32_t ultimoInforme = 0;
 static uint32_t habilitadaEn = 0;
+static uint8_t  pausasCumplidas = 0;   // cuántas veces paró y volvió
+static bool     enEspera = false;      // dejó de correr, pero todavía no terminó
+
+/** Cuánto se le espera a este cliente ahora mismo. Crece con cada pausa que él
+ *  mismo demostró que era pausa. */
+static uint32_t graciaActual() {
+  uint32_t g = GRACIA_BASE + (uint32_t)GRACIA_PASO * pausasCumplidas;
+  return g > GRACIA_MAX ? GRACIA_MAX : g;
+}
 
 static const char *nombreDe(Estado e) {
   switch (e) {
@@ -372,6 +400,8 @@ static void tareaControl(void *) {
         pulsosBase     = caudalPulsos();
         pulsosServidos = 0;
         pulsosPrevios  = 0;
+        pausasCumplidas = 0;
+        enEspera        = false;
         anotarVenta(sesionId, 0, pulsosPorLitroMili);
 
         char plata[24];
@@ -412,6 +442,15 @@ static void tareaControl(void *) {
           pulsosPrevios = pulsos;
           ultimoPulsoMs = ahora;
           anotarVenta(sesionId, pulsos, pulsosPorLitroMili);
+
+          // Volvió a correr después de una espera: no era el final, era una
+          // pausa. Se le anota a favor y la próxima vez se le espera más.
+          if (enEspera) {
+            enEspera = false;
+            if (pausasCumplidas < 200) pausasCumplidas++;
+            Serial.printf(">> Siguio sirviendo. La proxima espera %lu s.\n",
+                          (unsigned long)(graciaActual() / 1000));
+          }
         }
 
         if (pulsosMax > 0 && pulsos >= pulsosMax) {
@@ -423,9 +462,17 @@ static void tareaControl(void *) {
           break;
         }
 
-        // Tres segundos sin un pulso: cerró el grifo, terminó.
-        if (ahora - ultimoPulsoMs > FIN_DE_SERVICIO_MS) {
-          liquidar("Cerro el grifo. Cierra y cobra.");
+        // Dejó de correr. La válvula queda ABIERTA: con el grifo cerrado no
+        // entrega nada, y si el cliente vuelve a abrirlo los pulsos aparecen
+        // solos, sin que el firmware tenga que provocarlos.
+        if (!enEspera && ahora - ultimoPulsoMs > FIN_DE_SERVICIO_MS) {
+          enEspera = true;
+          Serial.printf(">> Dejo de correr. Le espero %lu s por si sigue.\n",
+                        (unsigned long)(graciaActual() / 1000));
+        }
+
+        if (enEspera && ahora - ultimoPulsoMs > graciaActual()) {
+          liquidar("Se fue. Cierra y cobra lo servido.");
           break;
         }
 
