@@ -43,10 +43,10 @@
 #include "../comun/valvula.h"
 #include "../comun/caudal.h"
 #include "../comun/tarjeta.h"
-#include "cola.h"
-#include "red.h"
-#include "ajustes.h"
-#include "secrets.h"
+#include "../nube/cola.h"
+#include "../nube/red.h"
+#include "../nube/ajustes.h"
+#include "../nube/secrets.h"
 
 static const uint32_t MAX_APERTURA_MS   = 90000;
 static const uint32_t SIN_PULSOS_MS     = 3000;

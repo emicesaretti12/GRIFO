@@ -72,3 +72,16 @@ void ajustesOlvidarWifi();
 //   mensaje que mata al worker se reintenta eternamente: la cola de veneno.
 int64_t ajustesUltimaOrden();
 void    ajustesGuardarUltimaOrden(int64_t id);
+
+
+// ── La última sesión que esta canilla liquidó ───────────────────────────────
+// Si se liquida una sesión y la red se cae antes de entregar el cierre, la
+// sesión sigue `abierta` del lado del servidor. El próximo sondeo la devolvería
+// y la canilla **volvería a abrir la válvula** para una venta ya cobrada.
+//
+// Con esta marca, todo id menor o igual se ignora aunque el servidor insista.
+//
+//   Es el offset del consumidor. El servidor no es la única fuente de verdad
+//   sobre lo que vos ya procesaste.
+int64_t ajustesUltimaSesion();
+void    ajustesGuardarUltimaSesion(int64_t id);

@@ -36,6 +36,27 @@ struct Orden {
   char    pass[65];
 };
 
+// ── La sesión que abrió la tablet ───────────────────────────────────────────
+// Con la tarjeta leída por la tablet, esto es lo único que le dice a la canilla
+// que tiene a alguien esperando. Trae todo lo que hace falta para servir y para
+// **cortar sin volver a preguntar**.
+struct SesionNube {
+  bool     hay;                 // false = se preguntó bien y no hay nadie
+  int64_t  id;
+  uint32_t mlMaximos;
+  uint32_t pulsosPorLitroMili;  // 452.700 viaja como 452700
+  uint32_t precioLitroCentavos;
+  uint32_t saldoCentavos;
+  char     uid[21];
+  char     cliente[41];
+};
+
+/** POST /rpc/canilla_sesion_activa. Devuelve false si no se pudo **preguntar**
+ *  —sin red, error del servidor—, que no es lo mismo que "no hay nadie".
+ *  Confundir las dos cosas dejaría la canilla sirviendo a un fantasma cada vez
+ *  que se corta el WiFi. Para eso está `s.hay`. */
+bool redSesionActiva(SesionNube &s);
+
 void redIniciar();
 bool redConectada();
 

@@ -399,6 +399,44 @@ static void leerOrden(JsonDocument &doc, Orden &orden) {
   snprintf(orden.pass, sizeof(orden.pass), "%s", doc["orden"]["datos"]["pass"] | "");
 }
 
+bool redSesionActiva(SesionNube &s) {
+  memset(&s, 0, sizeof(s));
+
+  JsonDocument pedido;
+  pedido["p_grifo"] = GRIFO_ID;
+  pedido["p_token"] = GRIFO_TOKEN;
+
+  String cuerpo;
+  serializeJson(pedido, cuerpo);
+
+  // Plazo corto a propósito: esto se pregunta una vez por segundo. Un sondeo
+  // que tarda más que el intervalo se pisa con el siguiente y la cola crece.
+  String respuesta;
+  if (postRpc("canilla_sesion_activa", cuerpo, respuesta, TIMEOUT_ADORNO) != 200) return false;
+
+  JsonDocument doc;
+  if (deserializeJson(doc, respuesta)) return false;
+  if (!doc["ok"].as<bool>()) return false;
+
+  // Se indexa directo: un campo que no existe da nulo, y un nulo leído como
+  // entero da 0. Con eso alcanza para distinguir "no hay nadie" de "la #128".
+  int64_t id = doc["sesion"]["sesion_id"].as<long long>();
+  if (id <= 0) return true;        // se preguntó bien; la canilla está libre
+
+  s.hay = true;
+  s.id  = id;
+  s.mlMaximos           = doc["sesion"]["ml_maximos"].as<uint32_t>();
+  s.precioLitroCentavos = doc["sesion"]["precio_litro_centavos"].as<uint32_t>();
+  s.saldoCentavos       = doc["sesion"]["saldo_centavos"].as<uint32_t>();
+
+  double ppl = doc["sesion"]["pulsos_por_litro"].as<double>();
+  s.pulsosPorLitroMili = (uint32_t)(ppl * 1000.0 + 0.5);
+
+  snprintf(s.uid,     sizeof(s.uid),     "%s", doc["sesion"]["uid"]     | "");
+  snprintf(s.cliente, sizeof(s.cliente), "%s", doc["sesion"]["cliente"] | "");
+  return true;
+}
+
 bool redLatido(uint32_t cierresPendientes, Orden &orden) {
   memset(&orden, 0, sizeof(orden));
 
