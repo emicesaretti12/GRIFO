@@ -126,9 +126,9 @@ def diagrama():
                  fillColor=AMBAR))
     d.add(String(2, 311, "EXTERNO", fontName="Sans-B", fontSize=7.0, fillColor=TENUE))
 
-    caja(d, 2, 266, 82, 40, "Cargador 12 V", "válvula", externo=True)
+    caja(d, 2, 266, 82, 40, "Cargador 12 V", "cables pelados", externo=True)
     caja(d, 2, 195, 82, 40, "Válvula solenoide", "12 V DC", externo=True)
-    caja(d, 2, 110, 82, 40, "Cargador 5 V", "USB-C", externo=True)
+    caja(d, 2, 110, 82, 40, "Cargador 5 V", "micro-USB", externo=True)
     caja(d, 2, 26, 82, 40, "Caudalímetro", "3 cables", externo=True)
 
     caja(d, 128, 262, 130, 46, "Entrada 12 V", "F1 · D1 · D2 · C1")
@@ -149,10 +149,10 @@ def diagrama():
     caja(d, 398, 50, 70, 28, "LED SERVICIO")
     caja(d, 318, 12, 150, 26, "LEDs 12V · 5V · VÁLVULA")
 
-    cable(d, [(84, 286), (128, 286)], "J1/J2", (96, 290))
-    cable(d, [(84, 215), (128, 215)], "J4", (96, 219))
-    cable(d, [(84, 130), (128, 130)], "J3", (96, 134))
-    cable(d, [(84, 46), (128, 46)], "J5", (96, 50))
+    cable(d, [(84, 286), (128, 286)], "J1", (96, 290))
+    cable(d, [(84, 215), (128, 215)], "J3", (96, 219))
+    cable(d, [(84, 130), (128, 130)], "J2", (96, 134))
+    cable(d, [(84, 46), (128, 46)], "J4", (96, 50))
 
     cable(d, [(193, 262), (193, 242)], "+12 V", (197, 249), ancla="start")
     cable(d, [(258, 284), (318, 284)], "12 V → GPIO36", (288, 288))
@@ -170,7 +170,7 @@ def pagina(c, doc):
     c.saveState()
     c.setFont("Sans", 7.2); c.setFillColor(TENUE)
     c.drawString(20 * mm, 287 * mm, "GRIFO · Placa controladora de canilla · rev A")
-    c.drawRightString(190 * mm, 287 * mm, "Requerimientos de diseño · borrador 2")
+    c.drawRightString(190 * mm, 287 * mm, "Requerimientos de diseño · borrador 3")
     c.setStrokeColor(LINEA); c.setLineWidth(0.5)
     c.line(20 * mm, 285 * mm, 190 * mm, 285 * mm)
     c.drawString(20 * mm, 12 * mm, FECHA)
@@ -206,7 +206,7 @@ meta = ParagraphStyle("m", fontName="Mono", fontSize=8, leading=12, textColor=TE
 
 h += [Spacer(1, 12 * mm),
       Paragraph("Placa controladora<br/>de canilla GRIFO", titulo), Spacer(1, 5),
-      Paragraph("Requerimientos de diseño · revisión A · borrador 2", sub), Spacer(1, 8),
+      Paragraph("Requerimientos de diseño · revisión A · borrador 3", sub), Spacer(1, 8),
       Paragraph("Estado: BORRADOR PARA REVISIÓN — hay datos a medir antes de fabricar (sección 15)<br/>"
                 "Reemplaza: protoboard + módulo relé + conversor de niveles + cableado suelto<br/>"
                 "Firmware de referencia: etapa 7 (tablet con NFC), rama claude/grifo-cerveza-esp32-qndb2h",
@@ -215,7 +215,7 @@ h += [Spacer(1, 12 * mm),
       ficha([
           ["Alimentación", "<b>Dos cargadores</b>, como en la instalación actual: 12 V para la válvula y "
                            "5 V USB para la electrónica. Masas unidas en la placa."],
-          ["Conexiones externas", "Cargador 12 V (jack o bornera) · cargador 5 V (USB-C) · válvula (bornera 2 polos) · "
+          ["Conexiones externas", "Cargador 12 V (bornera, cables pelados) · cargador 5 V (micro-USB, el mismo cable de hoy) · válvula (bornera 2 polos) · "
                                   "caudalímetro (bornera 3 polos). Todas sobre un mismo borde."],
           ["Controlador", "ESP32 NodeMCU-32S de 38 pines, el mismo de hoy, enchufado sobre tiras hembra."],
           ["Tensión máxima", "12 V. La placa no maneja 220 V en ningún punto: la red queda dentro de los cargadores."],
@@ -242,10 +242,10 @@ h += [P("1. Objetivo y alcance", h1),
            "Diodo D4 soldado junto a la bornera de la válvula",
            "Se elimina la causa del reinicio."],
           ["Cargador de 5 V enchufado al micro-USB del ESP32",
-           "Entrada USB-C propia de la placa",
-           "El USB del ESP32 queda libre para programar. El conector no cuelga del módulo."],
+           "Entrada micro-USB propia de la placa: el mismo cargador se enchufa a la placa",
+           "El cable deja de tirar del módulo, que va enchufado y podría salirse. El USB del ESP32 queda libre para programar."],
           ["Cargador de 12 V a los bornes DC+/DC− del relé",
-           "Jack o bornera propia con fusible y protección de polaridad",
+           "Bornera propia, con los mismos cables pelados, fusible y protección de polaridad",
            "Un cortocircuito o un cargador invertido no rompen nada."],
           ["Caudalímetro a 3,3 V (fuera de su especificación) con pull-up interno de ≈45 kΩ",
            "Sensor a 5 V, pull-up externo 10 kΩ, filtro y buffer Schmitt a 3,3 V",
@@ -272,23 +272,31 @@ h += [
           ["Tensión", "12 V DC regulada, ± 5 %", "5 V DC (USB), 4,75–5,25 V"],
           ["Corriente mínima", "1,5 × la corriente de la válvula, y nunca menos de 1 A", "1 A; se recomienda 2 A"],
           ["Tipo", "Adaptador de pared certificado, salida aislada", "Cargador USB certificado, salida aislada"],
-          ["Conector en la placa", "Jack DC 5,5 × 2,1 mm centro positivo (J1) o bornera de 2 polos (J2)",
-           "Receptáculo USB-C (J3). Cable USB-A a USB-C o USB-C a USB-C"],
-          ["Cable", "El del adaptador", "≤ 1 m y de buen calibre: un cable fino hace caer la tensión en los picos del WiFi y reinicia el ESP32"],
+          ["Conector en la placa", "Bornera de 2 polos (J1). El cable del cargador ya está pelado",
+           "Micro-USB B hembra (J2). El cable fijo del cargador, que hoy va al ESP32, pasa a ir a la placa"],
+          ["Cable", "El del cargador, con puntera crimpada en cada punta pelada (sección 12)",
+           "El fijo del cargador. Si alguna vez se reemplaza: ≤ 1 m y de buen calibre, porque un cable fino hace caer la "
+           "tensión en los picos del WiFi y reinicia el ESP32"],
           ["Qué pasa si falta", "La electrónica funciona pero la válvula no puede abrir. El firmware lo detecta por GPIO36 (sección 7.5)",
            "El ESP32 se apaga. La app muestra la canilla \"Sin señal\"; la válvula queda cerrada por R2"],
       ], [30, 70, 70]),
 
       P("4.2 Por qué dos entradas y no una", h2),
-      B("Es la instalación que ya funciona y los cargadores ya están comprados."),
+      B("Es la instalación que ya funciona, y los dos cargadores se usan tal como están: el de 12 V con sus cables pelados y "
+        "el de 5 V con su cable micro-USB fijo."),
       B("La corriente de la válvula no circula por la alimentación del ESP32: el ruido al abrir y cerrar queda del lado de 12 V."),
       B("No hace falta un regulador en la placa, que es la pieza que más calienta dentro de un gabinete cerrado."),
 
       P("4.3 Los conectores no se pueden cruzar", h2),
-      P("El cargador de 12 V entra por jack o bornera; el de 5 V solo por USB-C. <b>Es un requisito, no una "
+      P("El cargador de 12 V entra solo por la bornera J1; el de 5 V solo por micro-USB. <b>Es un requisito, no una "
         "preferencia</b>: si las dos entradas fueran borneras iguales, invertirlas pondría 12 V en el pin de 5 V del "
-        "ESP32 y lo destruiría. Además, un cargador USB-C con carga rápida solo entrega más de 5 V si el aparato lo "
-        "negocia, y esta placa no negocia: por el USB-C siempre llegan 5 V."),
+        "ESP32 y lo destruiría."),
+      aviso("NUNCA —", "ponerle un conector USB (micro-USB, USB-C ni ningún otro) al cargador de 12 V. Entraría en el "
+            "micro-USB de la placa o en el del ESP32 y quemaría el módulo en el acto. Los cables pelados en la bornera "
+            "son la conexión correcta y definitiva para los 12 V.", critico=True),
+      P("En cambio, confundir los dos micro-USB no rompe nada: el de la placa (J2) y el del módulo reciben los dos 5 V. "
+        "Tampoco un cargador de carga rápida puede subir la tensión: para eso necesita negociar por las líneas de datos, "
+        "que en J2 quedan sin conectar. Por esa entrada siempre llegan 5 V."),
 
       P("4.4 El orden de conexión es indistinto", h2),
       tabla([
@@ -353,21 +361,21 @@ h += [
 
 h += [P("7. Bloques en detalle", h1),
       P("7.1 Entrada de 12 V", h2),
-      P("J1 (jack) o J2 (bornera) → F1 → D1 → bus +12V. Sobre el bus: D2, C1 y C2."),
-      B("<b>J1</b> — jack DC hembra 5,5 × 2,1 mm, centro positivo, THT, ≥ 3 A. <b>J2</b> — bornera 2 polos, 5,08 mm. "
-        "Van en paralelo y <b>se monta uno solo</b>, según el cargador (sección 15)."),
+      P("J1 (bornera) → F1 → D1 → bus +12V. Sobre el bus: D2, C1 y C2."),
+      B("<b>J1</b> — bornera a tornillo de 2 polos, 5,08 mm, para los cables pelados del cargador. Rotulada "
+        "\"12 V\" con \"+\" y \"−\" bien visibles."),
       B("<b>F1</b> — fusible reseteable PTC 1812, I<sub>hold</sub> entre 1,5 y 2 veces la corriente de la válvula "
         "(2 A de diseño), V<sub>máx</sub> ≥ 16 V."),
       B("<b>D1</b> — Schottky SS54 (5 A, 40 V) en serie: si el cargador tiene la polaridad al revés, no pasa corriente y "
-        "no se rompe nada (LED1 apagado es la señal)."),
+        "no se rompe nada (LED1 apagado es la señal). Importa más que nunca: el cable pelado no trae marca de polaridad."),
       B("<b>D2</b> — TVS SMBJ15A a masa. <b>C1</b> 470 µF / 25 V electrolítico y <b>C2</b> 100 nF / 50 V."),
       B("<b>LED1</b> verde \"12V\" con R8 4,7 kΩ."),
 
       P("7.2 Entrada de 5 V", h2),
-      P("J3 (USB-C) → F2 → bus +5V_IN → D3 → pin 5V del ESP32 (+5V_ESP)."),
-      B("<b>J3</b> — receptáculo USB-C solo alimentación (6 pines), con patas de anclaje pasantes. "
-        "<b>R11 y R12, 5,1 kΩ, una en CC1 y otra en CC2</b>, cada una a masa. Tienen que ser dos resistencias: con una "
-        "sola compartida, los cargadores USB-C a USB-C no entregan tensión. El blindaje del conector va a masa."),
+      P("J2 (micro-USB) → F2 → bus +5V_IN → D3 → pin 5V del ESP32 (+5V_ESP)."),
+      B("<b>J2</b> — micro-USB B hembra con <b>anclajes pasantes en la carcasa</b>: las versiones solo de montaje "
+        "superficial se arrancan de la placa al enchufar y desenchufar. Se conectan VBUS y GND; D+, D− e ID quedan "
+        "sin conexión. La carcasa va a masa."),
       B("<b>F2</b> — PTC 1206, I<sub>hold</sub> 1,1 A, V<sub>máx</sub> ≥ 6 V. <b>D6</b> — TVS SMAJ5.0A a masa, después de F2: "
         "si un cargador falla y entrega de más, D6 conduce y F2 corta."),
       B("<b>C3</b> 10 µF / 16 V cerámico sobre +5V_IN. <b>LED2</b> verde \"5V\" con R9 1 kΩ."),
@@ -375,7 +383,8 @@ h += [P("7. Bloques en detalle", h1),
         "a ese pin, para los picos del WiFi. El módulo recibe ≈ 4,6 V, la misma condición en que funciona con su "
         "propio USB. D3 impide que el USB de la computadora alimente al cargador cuando se programa."),
       B("De +5V_IN (antes de D3) salen VSENSOR (por JP1) y LED2."),
-      aviso("Para programar —", "desenchufar los dos cargadores y conectar la computadora al micro-USB del módulo. "
+      aviso("Para programar —", "desenchufar el cargador de 12 V y el de 5 V (de J2), y conectar la computadora al "
+            "micro-USB del módulo. "
             "D3 protege en un sentido, pero si el módulo no tiene diodo propio en su USB, un cargador de 5 V conectado "
             "a la vez podría empujar corriente hacia la computadora. Con el cargador de 12 V desenchufado, además, "
             "la válvula no puede abrir durante la programación."),
@@ -386,15 +395,15 @@ h += [P("7. Bloques en detalle", h1),
           ["Ref.", "Componente", "Conexión"],
           ["Q1", "MOSFET canal N de nivel lógico AO3400A (SOT-23: 1 G, 2 S, 3 D; verificar con la hoja de datos). "
                  "Alternativa para soldar a mano: IRLB8721PbF (TO-220).",
-           "Drenador → J4.2 · Fuente → GND · Compuerta → R1"],
+           "Drenador → J3.2 · Fuente → GND · Compuerta → R1"],
           ["R1", "100 Ω", "GPIO26 → compuerta"],
           ["R2", "10 kΩ", "Compuerta → GND"],
-          ["D4", "1N4007 (THT) o S1M (SMD)", "Cátodo → +12V · Ánodo → J4.2"],
-          ["LED3 + R6", "LED ámbar \"VÁLVULA\" + 4,7 kΩ", "Ánodo por R6 a +12V · cátodo a J4.2: enciende cuando la placa alimenta la válvula"],
-          ["J4", "Bornera 2 polos, 5,08 mm", "1: +12V · 2: VÁLVULA (−)"],
+          ["D4", "1N4007 (THT) o S1M (SMD)", "Cátodo → +12V · Ánodo → J3.2"],
+          ["LED3 + R6", "LED ámbar \"VÁLVULA\" + 4,7 kΩ", "Ánodo por R6 a +12V · cátodo a J3.2: enciende cuando la placa alimenta la válvula"],
+          ["J3", "Bornera 2 polos, 5,08 mm", "1: +12V · 2: VÁLVULA (−)"],
       ], [18, 76, 76]),
       aviso("CRÍTICO —", "R2 es la garantía de seguridad por hardware: sin firmware corriendo, GPIO26 queda en alta impedancia "
-            "y R2 mantiene la compuerta en bajo. D4 es obligatorio y va a menos de 10 mm de J4: sin él, el pico de "
+            "y R2 mantiene la compuerta en bajo. D4 es obligatorio y va a menos de 10 mm de J3: sin él, el pico de "
             "tensión al cerrar la válvula reinicia el ESP32.", critico=True),
       P("A 2 A, Q1 disipa ≈ 0,16 W: no necesita disipador. LED3 separa dos fallas que hoy se confunden: si enciende y la "
         "cerveza no sale bien, el problema es de la válvula o de la presión (mínimo 0,2 bar); si no enciende, es de la "
@@ -406,12 +415,12 @@ h += [P("7.4 Entrada del caudalímetro", h2),
         "sin depender de cómo esté construida la salida del sensor por dentro."),
       tabla([
           ["Ref.", "Componente", "Conexión"],
-          ["J5", "Bornera 3 polos, 3,81 o 5,08 mm, enchufable preferentemente",
+          ["J4", "Bornera 3 polos, 3,81 o 5,08 mm, enchufable preferentemente",
            "1: V+ (ROJO) → VSENSOR · 2: GND (NEGRO) · 3: SEÑAL (AMARILLO)"],
           ["JP1", "Puente de soldadura de 3 pads", "Pad 1 = +5V_IN · pad 2 = VSENSOR · pad 3 = 3V3. De fábrica cerrado 1-2 (5 V)"],
-          ["C8", "100 nF", "VSENSOR → GND, junto a J5"],
+          ["C8", "100 nF", "VSENSOR → GND, junto a J4"],
           ["R3", "10 kΩ", "SEÑAL → VSENSOR (pull-up)"],
-          ["D5", "Protección ESD unidireccional, V<sub>RWM</sub> 5–6 V (p. ej. PESD5V0S1BA)", "SEÑAL → GND, pegado a J5"],
+          ["D5", "Protección ESD unidireccional, V<sub>RWM</sub> 5–6 V (p. ej. PESD5V0S1BA)", "SEÑAL → GND, pegado a J4"],
           ["R4", "1 kΩ", "SEÑAL → entrada de U2"],
           ["C5", "4,7 nF", "Entrada de U2 → GND"],
           ["U2", "74LVC1G17, buffer Schmitt, SOT-23-5 (1 NC, 2 A, 3 GND, 4 Y, 5 VCC)", "VCC = 3V3 · A = filtro · Y → GPIO27"],
@@ -425,7 +434,7 @@ h += [P("7.4 Entrada del caudalímetro", h2),
         "aunque U2 esté alimentado a 3,3 V: por eso el sensor puede ir a 5 V sin arriesgar el ESP32."),
 
       P("7.5 Detección de 12 V", h2),
-      B("<b>R13</b> 100 kΩ desde +12V y <b>R14</b> 22 kΩ a masa; el punto medio va a GPIO36 con <b>C9</b> 100 nF a masa."),
+      B("<b>R11</b> 100 kΩ desde +12V y <b>R12</b> 22 kΩ a masa; el punto medio va a GPIO36 con <b>C9</b> 100 nF a masa."),
       B("Con 11,4 V en el bus quedan ≈ 2,06 V en el pin; con 14 V, ≈ 2,5 V. Dentro del rango útil del ADC con atenuación de "
         "11 dB. GPIO36 es solo entrada y pertenece al ADC1, que funciona con el WiFi encendido."),
       B("Con el ESP32 sin alimentar y 12 V presentes, entran menos de 0,1 mA al pin por la protección interna: aceptable."),
@@ -441,7 +450,7 @@ h += [P("7.4 Entrada del caudalímetro", h2),
         "parpadea en el portal. <b>No azul</b>: su tensión directa (≈ 3 V) no deja margen a 3,3 V. GPIO2 es pin de "
         "arranque; una carga a masa es compatible (el módulo ya trae su propio LED ahí)."),
       B("<b>SW2 RESET</b> (opcional) — pulsador entre EN y masa, en paralelo con el del módulo."),
-      B("<b>J6</b> (sin montar) — tira 1 × 8, 2,54 mm, en el orden del módulo MFRC522: SDA (GPIO5), SCK (18), MOSI (23), "
+      B("<b>J5</b> (sin montar) — tira 1 × 8, 2,54 mm, en el orden del módulo MFRC522: SDA (GPIO5), SCK (18), MOSI (23), "
         "MISO (19), IRQ (sin conexión), GND, RST (22), 3,3 V. Verificar contra el módulo. <b>El lector va a 3,3 V: a 5 V se quema.</b>"),
 
       P("7.7 Puntos de prueba", h2),
@@ -459,32 +468,31 @@ h += [P("7.4 Entrada del caudalímetro", h2),
 
 redes = [
     ["Red", "Conecta"],
-    ["VIN12", "J1 centro, J2.1, F1.1"],
+    ["VIN12", "J1.1 (+), F1.1"],
     ["VIN12_F", "F1.2, D1 ánodo"],
-    ["+12V", "D1 cátodo, D2 cátodo, C1 +, C2, R8.1, R6.1, R13.1, D4 cátodo, J4.1, TP1"],
-    ["VBUS", "J3 VBUS, F2.1"],
+    ["+12V", "D1 cátodo, D2 cátodo, C1 +, C2, R8.1, R6.1, R11.1, D4 cátodo, J3.1, TP1"],
+    ["VBUS", "J2 VBUS, F2.1"],
     ["+5V_IN", "F2.2, D6 cátodo, C3, R9.1, D3 ánodo, JP1 pad 1, TP2"],
     ["+5V_ESP", "D3 cátodo, C4 +, U1 5V"],
-    ["+3V3", "U1 3V3, U2 VCC (5), C6, R5.1, JP1 pad 3, J6.8, TP3"],
-    ["VSENSOR", "JP1 pad 2, J5.1, R3.1, C8"],
-    ["CC1 / CC2", "J3 CC1 – R11.1 · J3 CC2 – R12.1 (resistencias separadas)"],
+    ["+3V3", "U1 3V3, U2 VCC (5), C6, R5.1, JP1 pad 3, J5.8, TP3"],
+    ["VSENSOR", "JP1 pad 2, J4.1, R3.1, C8"],
     ["GATE_DRV", "U1 P26, R1.1, TP6"],
     ["GATE", "R1.2, Q1 compuerta, R2.1"],
-    ["VALV_NEG", "J4.2, Q1 drenador, D4 ánodo, LED3 cátodo"],
+    ["VALV_NEG", "J3.2, Q1 drenador, D4 ánodo, LED3 cátodo"],
     ["LED3_A", "R6.2, LED3 ánodo"],
-    ["FLOW_RAW", "J5.3, R3.2, D5 cátodo, R4.1"],
+    ["FLOW_RAW", "J4.3, R3.2, D5 cátodo, R4.1"],
     ["FLOW_RC", "R4.2, C5, U2 A (2)"],
     ["FLOW", "U2 Y (4), U1 P27, TP7"],
-    ["SENSE12", "R13.2, R14.1, C9, U1 P36, TP8"],
+    ["SENSE12", "R11.2, R12.1, C9, U1 P36, TP8"],
     ["CFG", "U1 P14, R5.2, C7, R10.1"],
     ["CFG_SW", "R10.2, SW1"],
     ["SRV", "U1 P2, R7.1"],
     ["LED4_A", "R7.2, LED4 ánodo"],
     ["LED1_A / LED2_A", "R8.2 – LED1 ánodo · R9.2 – LED2 ánodo"],
     ["EN", "U1 EN, SW2"],
-    ["SPI (sin montar)", "J6.1 – P5 · J6.2 – P18 · J6.3 – P23 · J6.4 – P19 · J6.7 – P22 · J6.5 sin conexión"],
-    ["GND", "J1 manga, J2.2, J3 GND y blindaje, R11.2, R12.2, D2 ánodo, D6 ánodo, D5 ánodo, C1 −, C2, C3, C4 −, C5, "
-            "C6, C7, C8, C9, Q1 fuente, R2.2, R14.2, U1 todos los GND, U2 GND (3), J5.2, J6.6, SW1, SW2, "
+    ["SPI (sin montar)", "J5.1 – P5 · J5.2 – P18 · J5.3 – P23 · J5.4 – P19 · J5.7 – P22 · J5.5 sin conexión"],
+    ["GND", "J1.2 (−), J2 GND y carcasa, D2 ánodo, D6 ánodo, D5 ánodo, C1 −, C2, C3, C4 −, C5, "
+            "C6, C7, C8, C9, Q1 fuente, R2.2, R12.2, U1 todos los GND, U2 GND (3), J4.2, J5.6, SW1, SW2, "
             "cátodos de LED1, LED2 y LED4, TP4, TP5"],
 ]
 
@@ -494,11 +502,11 @@ h += [P("8. Lista de conexiones", h1),
       tabla(redes, [34, 136], mono_cols=(0,)),
 
       P("9. Conectores y serigrafía", h1),
-      B("<b>Todos los conectores externos sobre un mismo borde</b>: J1/J2, J3, J4 y J5. Así se cablea prolijo hacia el "
+      B("<b>Todos los conectores externos sobre un mismo borde</b>: J1, J2, J3 y J4. Así se cablea prolijo hacia el "
         "gabinete y el panel lleva los recortes en una sola cara."),
       B("Rotular cada conector con su función y su tensión: \"12 V VÁLVULA\", \"5 V USB\", \"VÁLVULA\", \"CAUDAL\". "
-        "Marcas \"+\" y \"−\" en J2 y J4."),
-      B("En J5: <b>ROJO · NEGRO · AMARILLO</b>, además de V+ · GND · SEÑAL. La placa tiene que decir dónde va cada cable "
+        "Marcas \"+\" y \"−\" en J1 y J3."),
+      B("En J4: <b>ROJO · NEGRO · AMARILLO</b>, además de V+ · GND · SEÑAL. La placa tiene que decir dónde va cada cable "
         "sin consultar este documento."),
       B("Referencia de cada componente, marca de pin 1, dirección de los diodos, nombre de cada LED y de cada TP, y "
         "la posición por defecto de JP1."),
@@ -506,13 +514,13 @@ h += [P("8. Lista de conexiones", h1),
       ]
 
 h += [P("10. Reglas de diseño del impreso", h1),
-      N(1, "<b>Lazo de potencia de la válvula</b> (J4 → D4 → Q1 → masa → J1/J2) corto y ancho. D4 a menos de 10 mm de J4."),
+      N(1, "<b>Lazo de potencia de la válvula</b> (J3 → D4 → Q1 → masa → J1) corto y ancho. D4 a menos de 10 mm de J3."),
       N(2, "<b>Ancho de pistas</b>: +12V y válvula ≥ 1,5 mm con cobre de 1 oz; +5V ≥ 0,8 mm; señales 0,25–0,3 mm."),
-      N(3, "<b>Masa</b>: plano continuo en la capa inferior. La fuente de Q1 se une a la masa de J1/J2 por un camino directo; "
+      N(3, "<b>Masa</b>: plano continuo en la capa inferior. La fuente de Q1 se une a la masa de J1 por un camino directo; "
            "la corriente de la válvula no pasa por debajo del ESP32 ni de U2. Las masas de 12 V y de 5 V se unen en un "
-           "solo punto cercano a J1/J2."),
+           "solo punto cercano a J1."),
       N(4, "<b>Antena</b>: ver sección 6. Nada metálico cerca: conectores, electrolíticos, tornillos."),
-      N(5, "<b>Filtrar en el borde</b>: D5, R3, R4, C5 y U2 cerca de J5, donde entra el ruido del cable largo."),
+      N(5, "<b>Filtrar en el borde</b>: D5, R3, R4, C5 y U2 cerca de J4, donde entra el ruido del cable largo."),
       N(6, "<b>C4 pegado al pin 5V del módulo</b> y C6 a menos de 3 mm de U2."),
       N(7, "Todos los componentes SMD en la cara superior (montaje de fábrica de una sola cara). Pasivos no menores que 0805."),
       N(8, "Agujeros de montaje sin conexión, con 3 mm libres de cobre alrededor."),
@@ -529,12 +537,15 @@ h += [P("10. Reglas de diseño del impreso", h1),
           ["Acabado", "HASL sin plomo o ENIG"],
           ["Test eléctrico", "Sí"],
           ["Cantidad del prototipo", "5 placas; montaje SMD de fábrica en al menos 2"],
-          ["Montaje a mano", "Solo componentes pasantes: J1/J2, J4, J5, tiras hembra, SW1, SW2, C1, C4"],
+          ["Montaje a mano", "Solo componentes pasantes: J1, J3, J4, tiras hembra, SW1, SW2, C1, C4"],
       ], [48, 122]),
 
       P("12. Gabinete, cableado e instalación", h1),
       B("<b>Gabinete plástico (ABS o policarbonato), nunca metálico</b>: el metal bloquea el WiFi. IP54 o superior."),
-      B("Recortes en una sola cara para el jack, el USB-C y las borneras, o un prensacables (PG7 o PG9) por cable."),
+      B("Recortes en una sola cara para el micro-USB de la placa y las borneras, o un prensacables (PG7 o PG9) por cable."),
+      B("<b>Cables pelados del cargador de 12 V</b>: con <b>puntera crimpada</b> (terminal tubular) en cada punta. Nunca "
+        "estañados: el estaño cede bajo el tornillo con el tiempo y el contacto se afloja. Identificar el positivo con el "
+        "tester antes de atornillar."),
       B("LEDs visibles desde afuera (ventana o guías de luz). Pulsador CONFIG accesible pero hundido. Micro-USB del "
         "módulo accesible con la tapa abierta."),
       B("Montado <b>por encima</b> de la línea de cerveza fría: la condensación gotea hacia abajo."),
@@ -568,21 +579,19 @@ bom = [
     ["R4, R9, R10", "3", "Resistencia", "1 kΩ", "0805"],
     ["R6, R8", "2", "Resistencia", "4,7 kΩ", "0805"],
     ["R7", "1", "Resistencia", "470 Ω", "0805"],
-    ["R11, R12", "2", "Resistencia", "5,1 kΩ", "0805"],
-    ["R13", "1", "Resistencia 1 %", "100 kΩ", "0805"],
-    ["R14", "1", "Resistencia 1 %", "22 kΩ", "0805"],
+    ["R11", "1", "Resistencia 1 %", "100 kΩ", "0805"],
+    ["R12", "1", "Resistencia 1 %", "22 kΩ", "0805"],
     ["LED1, LED2", "2", "LED verde", "12V, 5V", "0805 o 3 mm"],
     ["LED3", "1", "LED ámbar", "VÁLVULA", "0805 o 3 mm"],
     ["LED4", "1", "LED verde o ámbar", "SERVICIO (no azul)", "0805 o 3 mm"],
     ["SW1", "1", "Pulsador táctil", "CONFIG", "6×6 mm THT"],
     ["SW2", "1", "Pulsador táctil (opcional)", "RESET", "6×6 mm THT"],
     ["JP1", "1", "Puente de soldadura", "3 pads, cerrado 1-2", "—"],
-    ["J1", "1", "Jack DC hembra (o J2)", "5,5 × 2,1 mm, centro +, ≥ 3 A", "THT"],
-    ["J2", "1", "Bornera (o J1)", "2 polos", "5,08 mm"],
-    ["J3", "1", "Receptáculo USB-C", "Solo alimentación, 6 pines, anclaje pasante", "SMD + THT"],
-    ["J4", "1", "Bornera", "2 polos", "5,08 mm"],
-    ["J5", "1", "Bornera", "3 polos, enchufable preferentemente", "3,81 o 5,08 mm"],
-    ["J6", "1", "Tira macho (sin montar)", "1×8", "2,54 mm"],
+    ["J1", "1", "Bornera a tornillo (12 V)", "2 polos", "5,08 mm"],
+    ["J2", "1", "Micro-USB B hembra (5 V)", "Con anclajes pasantes en la carcasa", "SMD + THT"],
+    ["J3", "1", "Bornera", "2 polos", "5,08 mm"],
+    ["J4", "1", "Bornera", "3 polos, enchufable preferentemente", "3,81 o 5,08 mm"],
+    ["J5", "1", "Tira macho (sin montar)", "1×8", "2,54 mm"],
     ["TP1–TP8", "8", "Punto de prueba", "TP4 y TP5 tipo lazo", "—"],
     ["H1–H4", "4", "Agujero de montaje", "M3, Ø 3,2 mm", "—"],
 ]
@@ -617,29 +626,26 @@ h += [P("14. Cambios de firmware necesarios", h1),
 h += [P("15. Datos a confirmar antes de fabricar", h1),
       P("Requieren medir o leer las piezas reales. Ninguno se completó con suposiciones."),
       tabla([
-          ["#", "Dato", "Cómo obtenerlo", "Qué define"],
-          ["1", "Corriente de la válvula, que sea de 12 V DC (no alterna) y su tensión mínima",
+          ["#", "Dato", "Estado", "Cómo obtenerlo", "Qué define"],
+          ["1", "Corriente de la válvula, que sea de 12 V DC (no alterna) y su tensión mínima", "<b>Pendiente</b>",
            "Etiqueta (W ÷ 12 V) o tester en serie con la válvula abierta",
            "F1, Q1, pistas. Si fuera de alterna, esta etapa no sirve. Si pide 12 V mínimo, D1 se reemplaza por una protección sin caída"],
-          ["2", "Conector del cargador de 12 V",
-           "Mirar la ficha: diámetro (5,5 × 2,1 o 5,5 × 2,5) y el símbolo de polaridad de la etiqueta. Si son cables sueltos, bornera",
-           "J1 o J2, y el diámetro del jack"],
-          ["3", "Corriente del cargador de 12 V", "Etiqueta", "Tiene que cubrir 1,5 × la válvula"],
-          ["4", "Cargador de 5 V: corriente y tipo de cable",
-           "Etiqueta. Si el cable es fijo y termina en micro-USB, hace falta otro cargador o cambiar J3",
-           "J3"],
-          ["5", "Modelo del caudalímetro y su rango de alimentación", "Etiqueta u hoja de datos del vendedor",
+          ["2", "Conector del cargador de 12 V", "Resuelto", "Cables pelados", "Bornera J1"],
+          ["3", "Corriente del cargador de 12 V", "<b>Pendiente</b>", "Etiqueta", "Tiene que cubrir 1,5 × la válvula"],
+          ["4", "Cable del cargador de 5 V", "Resuelto", "Fijo, termina en micro-USB", "Micro-USB J2"],
+          ["5", "Corriente del cargador de 5 V", "<b>Pendiente</b>", "Etiqueta", "Mínimo 1 A; si da menos, cambiarlo"],
+          ["6", "Modelo del caudalímetro y su rango de alimentación", "<b>Pendiente</b>", "Etiqueta u hoja de datos del vendedor",
            "Posición de fábrica de JP1"],
-          ["6", "Si el conteo actual es real o incluye ruido",
+          ["7", "Si el conteo actual es real o incluye ruido", "<b>Pendiente</b>",
            "Servir la misma cantidad medida tres veces y comparar pulsos: más de 5 % de diferencia es ruido. "
            "Con el sensor quieto 5 min el conteo no se mueve",
            "Confianza en la calibración (hoy 12 820 pulsos/L, unas 28 veces lo típico de un YF-S201)"],
-          ["7", "Separación entre filas del módulo, y si tiene diodo en su USB",
+          ["8", "Separación entre filas del módulo, y si tiene diodo en su USB", "<b>Pendiente</b>",
            "Calibre (se espera 22,86 mm); diodo entre el USB y el pin 5V, con el tester en modo diodo",
            "Huella; si se puede programar con el cargador de 5 V puesto"],
-          ["8", "Gabinete: modelo y medidas interiores", "Elegirlo primero",
+          ["9", "Gabinete: modelo y medidas interiores", "<b>Pendiente</b>", "Elegirlo primero",
            "Contorno de la placa, agujeros, altura, recortes del panel"],
-      ], [7, 42, 66, 55]),
+      ], [7, 38, 19, 54, 52]),
       ]
 
 h += [P("16. Plan de pruebas de la placa", h1),
@@ -648,7 +654,7 @@ h += [P("16. Plan de pruebas de la placa", h1),
           ["Prueba", "Condiciones", "Resultado esperado"],
           ["1. En frío", "Sin cargadores ni módulo, tester en continuidad",
            "Sin continuidad entre +12V, +5V_IN, +3V3 y GND, ni entre +12V y +5V_IN"],
-          ["2. Solo 12 V", "Cargador de 12 V, sin módulo",
+          ["2. Solo 12 V", "Cargador de 12 V, sin módulo. Antes: identificar el positivo del cable pelado con el tester",
            "LED1 encendido, LED2 y LED3 apagados. TP1 ≈ 11,4 V. TP8 ≈ 2,06 V"],
           ["3. Solo 5 V", "Cargador de 5 V, sin módulo",
            "LED2 encendido, LED1 y LED3 apagados. TP2 entre 4,75 y 5,25 V. Pin 5V del zócalo ≈ 4,6 V"],
@@ -689,6 +695,9 @@ h += [P("16. Plan de pruebas de la placa", h1),
                          "pueden cruzar. Detección de 12 V en GPIO36. Filtro del caudal recalculado (C5 de 10 a 4,7 nF). "
                          "Resistencia en serie con el botón CONFIG. Separación y posiciones de pines del módulo relevadas. "
                          "Lista de conexiones completa. Requisitos de cargadores, cableado, fabricación, entregables y pruebas."],
+          ["Borrador 3", "Conectores de alimentación según los cargadores reales: bornera para el de 12 V (cables pelados) y "
+                         "micro-USB para el de 5 V (cable fijo). Se quitan el jack y las resistencias CC del USB-C. "
+                         "Punteras en los cables pelados. Datos a confirmar con su estado."],
       ], [26, 144]),
       ]
 
