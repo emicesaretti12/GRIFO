@@ -256,13 +256,13 @@ def contenido():
               ["RESET", "EN", "A18", "Entrada", "En paralelo con el pulsador del módulo."],
               ["+5V_ESP", "5V", "A1", "Alim.", "Desde D3."],
               ["+3V3", "3V3", "A19", "Alim.", "Salida del LDO del módulo. Carga externa < 20 mA."],
-              ["GND", "GND", "B13, B19", "Alim.", "Todos los GND del módulo a masa."],
+              ["GND", "GND", "A6, B13, B19", "Alim.", "Los tres GND del módulo a masa."],
               ["SPI (J5, sin montar)", "5, 18, 19, 22, 23", "B10, B11, B12, B17, B18", "—", "SDA, SCK, MISO, RST, MOSI."],
               ["Sin conexión", "0, 12, 15, 6–11", "—", "—", "Pines de arranque y de flash."],
           ], [30, 24, 26, 20, 70], mono_cols=(1, 2)),
 
           P("6. Notas de diseño por bloque", h1),
-          P("<b>Entrada 12 V.</b> J1 → F1 (PTC, I<sub>hold</sub> 2 A) → D1 (Schottky serie 5 A / 40 V) → +12V. D2 TVS SMBJ15A; "
+          P("<b>Entrada 12 V.</b> J1 → F1 (PTC, I<sub>hold</sub> 2 A) → D1 (Schottky serie 5 A / 40 V; ≈ 1 W a 2 A) → +12V. D2 TVS SMBJ15A; "
             "C1 470 µF / 25 V, C2 100 nF. Tensión en la válvula ≈ 11,4 V a plena carga."),
           P("<b>Entrada 5 V.</b> J2 micro-USB B con anclajes THT; solo VBUS y GND (D+, D− e ID sin conexión: un cargador "
             "de carga rápida no puede negociar más de 5 V). → F2 (PTC, I<sub>hold</sub> 1,1 A) → D6 TVS SMAJ5.0A → +5V_IN → "
@@ -319,9 +319,9 @@ def contenido():
         ["D2", "1", "TVS", "SMBJ15A", "SMB"],
         ["D3", "1", "Schottky", "SS34 (3 A, 40 V)", "SMA"],
         ["D4", "1", "Rueda libre", "S1M / 1N4007", "SMA / DO-41"],
-        ["D5", "1", "ESD", "PESD5V0S1BA", "SOD-323"],
+        ["D5", "1", "ESD unidireccional", "V<sub>RWM</sub> ≥ 5,5 V, I<sub>R</sub> ≤ 1 µA", "SOD-323"],
         ["D6", "1", "TVS", "SMAJ5.0A", "SMA"],
-        ["F1", "1", "PTC", "I<sub>hold</sub> 2 A, ≥ 16 V", "1812"],
+        ["F1", "1", "PTC", "I<sub>hold</sub> 2 A, V<sub>máx</sub> ≥ 16 V", "2920"],
         ["F2", "1", "PTC", "I<sub>hold</sub> 1,1 A, ≥ 6 V", "1206"],
         ["C1", "1", "Electrolítico", "470 µF 25 V", "Radial"],
         ["C4", "1", "Electrolítico", "100 µF 16 V", "Radial"],
@@ -351,7 +351,8 @@ def contenido():
           tabla(bom, [22, 10, 38, 58, 42], mono_cols=(0,))]
 
     h += [P("9. Requisitos de layout", h1),
-          N(1, "Lazo de potencia J3 → Q1 → masa → J1 mínimo. D4 a menos de 10 mm de J3."),
+          N(1, "Lazo de potencia J3 → Q1 → masa → J1 mínimo. D4 a menos de 10 mm de J3. D1 y F1 con ≥ 2 cm² de cobre "
+               "de disipación (D1 disipa ≈ 1 W con la válvula a 2 A)."),
           N(2, "Ancho de pista: +12V y válvula ≥ 1,5 mm; +5V ≥ 0,8 mm; señal 0,25–0,3 mm."),
           N(3, "Plano de masa continuo en la capa inferior. Retorno de la válvula sin pasar bajo U1 ni U2; unión de masas de "
                "12 V y 5 V en un punto junto a J1."),

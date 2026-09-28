@@ -166,11 +166,11 @@ col(TINTA); lw(1.2); c.rect(20, 20, W - 40, H - 40)
 bloque(34, 540, 440, 270, "A · ENTRADA 12 V (electroválvula)")
 j1 = conector(52, 760, [(1, "+12V"), (2, "GND")], "J1", "bornera 5,08", ancho=40, paso=40)
 y12 = j1[1][1]
-comp("PTC", j1[1], (160, y12), "F1", "PTC 2 A hold")
+comp("PTC", j1[1], (160, y12), "F1", "PTC 2 A · 2920")
 comp("DS", (160, y12), (215, y12), "D1", "SS54")
 wire((215, y12), (462, y12))
 pwr(462, y12, "+12V")
-gnd(*j1[2])
+gnd(*j1[2]); tp(j1[2][0], j1[2][1], "TP4", dx=16, dy=10); tp(j1[2][0], j1[2][1], "TP5", dx=16, dy=-26)
 tp(200 + 25, y12, "TP1")
 yg = 670
 for x in (236, 280, 320, 360, 404): dot(x, y12)
@@ -218,7 +218,7 @@ txt(bx + bw / 2, by + bh - 20, "U1", 9, "Sans-B", "c")
 txt(bx + bw / 2, by + bh - 32, "NodeMCU ESP-32S v1.1", 6.8, "Sans", "c")
 txt(bx + bw / 2, by + bh - 42, "zócalo 2 × 19, 2,54 mm", 6.0, "Sans", "c", TENUE)
 txt(bx + bw / 2, by + 14, "Pos.: A/B = fila, n = desde el USB", 5.6, "Sans", "c", TENUE)
-izq = [("5V", "A1", "+5V_ESP"), ("3V3", "A19", "+3V3"), ("GND", "B13", "GND"), ("GND", "B19", "GND"),
+izq = [("5V", "A1", "+5V_ESP"), ("3V3", "A19", "+3V3"), ("GND", "A6", "GND"), ("GND", "B13", "GND"), ("GND", "B19", "GND"),
        ("EN", "A18", "EN"), ("GPIO36", "A17", "SENSE12")]
 der = [("GPIO26", "A10", "GATE_DRV"), ("GPIO27", "A9", "FLOW"), ("GPIO14", "A8", "CFG"), ("GPIO2", "B5", "SRV"),
        ("GPIO5", "B10", "SPI_SDA"), ("GPIO18", "B11", "SPI_SCK"), ("GPIO23", "B18", "SPI_MOSI"),
@@ -326,7 +326,7 @@ comp("C", (160, yvs), (160, 190), "C8", "100n", "l"); gnd(160, 190)
 wire(j4[3], (275, ys))
 dot(200, ys); dot(260, ys)
 comp("R", (260, yvs), (260, ys), "R3", "10k")
-comp("DZ", (200, ys - 60), (200, ys), "D5", "ESD 5V", "l"); gnd(200, ys - 60)
+comp("DZ", (200, ys - 60), (200, ys), "D5", "ESD ≥5,5V", "l"); gnd(200, ys - 60)
 comp("R", (275, ys), (335, ys), "R4", "1k")
 wire((335, ys), (400, ys)); dot(355, ys)
 comp("C", (355, ys), (355, ys - 60), "C5", "4n7", "l"); gnd(355, ys - 60)
@@ -365,7 +365,7 @@ notas = [
     "3. D4 a menos de 10 mm de J3. Lazo J3 → Q1 → GND → J1 mínimo.",
     "4. D5, R3, R4, C5 y U2 junto a J4. C4 junto al pin 5V de U1.",
     "5. NM = no montar. JP1 de fábrica en 1-2 (VSENSOR = 5 V).",
-    "6. LED4: V_F ≤ 2,2 V (no azul). R11/R12 al 1 %.",
+    "6. LED4: V_F ≤ 2,2 V (no azul). R11/R12 al 1 %. D1 y F1 con ≥ 2 cm² de cobre.",
     "7. Mando de válvula activo alto (GPIO26 = 1 → válvula energizada).",
 ]
 for i, s in enumerate(notas):
