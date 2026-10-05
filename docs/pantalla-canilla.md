@@ -69,6 +69,21 @@ chromium-browser --kiosk --incognito=false \
 
 ---
 
+## Probarla sin hardware
+
+```
+https://grifo-phi.vercel.app/#/pantalla?demo
+```
+
+Simula una tirada completa en bucle (canilla libre, tu turno, sirviendo con
+una pausa a la mitad, ticket) sin ESP32, sin tarjeta y sin tocar la base: no
+llama a Supabase ni guarda nada en el dispositivo. El pie dice
+"Demostración" para que nadie la confunda con una canilla real.
+
+Se puede cambiar la cerveza: `?demo&color=2a160b&nombre=Stout&vaso=500`.
+
+---
+
 ## Qué muestra
 
 La pantalla tiene dos partes que no compiten:

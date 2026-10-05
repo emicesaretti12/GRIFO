@@ -10,6 +10,7 @@ import Pinta from './Pinta'
 import type { Modo } from './pinta/motor'
 import { useNFC, porQueNoHayNFC } from '../lib/useNFC'
 import { mensajeDeError } from '../lib/tipos'
+import { leerDemo, estadoDemo } from './demo'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Pantalla de una canilla, para correr en modo kiosco en la tablet que está al
@@ -58,13 +59,17 @@ function leerConfig(): { grifo: number; token: string } | null {
 const litros = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 1 })
 
 export default function Kiosco() {
-  const [config, setConfig] = useState(leerConfig)
+  // En demostración no hay canilla vinculada: el estado sale de un simulador y
+  // no se toca ni la base ni lo guardado en el dispositivo.
+  const [demo] = useState(leerDemo)
+  const [config, setConfig] = useState(() => demo ? { grifo: 0, token: 'demo' } : leerConfig())
   const [estado, setEstado] = useState<Estado | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [escena, setEscena] = useState(0)
   const sinRed = useRef(0)
 
   useEffect(() => {
+    if (demo) return
     const q = new URLSearchParams(location.hash.split('?')[1] ?? '')
     const grifo = Number(q.get('grifo'))
     const token = q.get('token')
@@ -74,10 +79,11 @@ export default function Kiosco() {
       setConfig(nueva)
       history.replaceState(null, '', location.pathname + '#/pantalla')
     }
-  }, [])
+  }, [demo])
 
   const consultar = useCallback(async () => {
     if (!config) return
+    if (demo) { setEstado(estadoDemo(demo) as Estado); return }
     const { data, error: err } = await supabase.rpc('pantalla_estado', {
       p_grifo: config.grifo, p_token: config.token,
     })
@@ -96,7 +102,7 @@ export default function Kiosco() {
       return
     }
     setError(null); setEstado(r)
-  }, [config])
+  }, [config, demo])
 
   // ── El lector NFC de la tablet ───────────────────────────────────────────
   // Acá la tablet deja de ser una pantalla y pasa a ser el lector: es la que
@@ -273,7 +279,7 @@ export default function Kiosco() {
           {/* El lector hay que encenderlo con un toque: el navegador exige un
               gesto para pedir el permiso de NFC, y no lo da al cargar la página.
               Una vez encendido queda escaneando solo. */}
-          {!error && estado && g!.listo && !s && nfc.soportado && nfc.estado !== 'escaneando' && (
+          {!demo && !error && estado && g!.listo && !s && nfc.soportado && nfc.estado !== 'escaneando' && (
             <button className="k-encender" onClick={() => void nfc.empezar()}>
               <ContactlessPayment size={30} weight="regular" aria-hidden="true" />
               <span>
@@ -299,7 +305,7 @@ export default function Kiosco() {
               : nfc.estado === 'escaneando'
                 ? <span className="k-marca bien">Lector listo</span>
                 : <span className="k-marca mal">Lector apagado</span>}
-            <span>{s ? s.tarjeta : `Canilla ${config.grifo}`}</span>
+            <span>{demo ? 'Demostración' : s ? s.tarjeta : `Canilla ${config.grifo}`}</span>
           </p>
         </footer>
       </section>
