@@ -129,7 +129,7 @@ del público.
 
 ### Cómo está hecha
 
-- **Canvas, en dos lienzos.** El de atrás (la barra, el bokeh, el mostrador) se
+- **3D con WebGL (Three.js), con respaldo 2D.** La escena es un modelo: el vidrio refracta (material con transmisión), el cromo refleja un entorno de bar armado con paneles de luz, todo arroja sombra y la cerveza tiñe la bandeja con una luz ámbar. La pared del bar es un plano dentro de la escena, porque el vidrio solo refracta lo que está en la escena. Si la tablet no tiene WebGL, se usa el motor 2D (`motor.ts`). En el 2D: **dos lienzos.** El de atrás (la barra, el bokeh, el mostrador) se
   pinta una vez. El de adelante se redibuja 60 veces por segundo, pero todo lo
   que no se mueve (la torre, el vidrio, la bandeja, las texturas de espuma y del
   chorro) se pinta una sola vez en lienzos aparte y en cada cuadro solo se copia.

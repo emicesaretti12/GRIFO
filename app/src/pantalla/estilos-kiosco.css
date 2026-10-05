@@ -36,12 +36,13 @@
 .k-num { font-variant-numeric: tabular-nums; }
 
 /* ── El panel ─────────────────────────────────────────────────────────────── */
-/* Apaisado: a la derecha de la escena. Vertical: debajo. La proporción es la
-   misma que usa el motor para ubicar la canilla: 54 %. */
+/* Apaisado: a la derecha de la escena (54 %). Vertical, que es como está la
+   tablet en la barra: debajo (58 %). Son las mismas proporciones que usa el
+   motor para encuadrar la canilla. */
 .k-panel {
   position: absolute; z-index: 1;
   display: flex; flex-direction: column;
-  top: 54%; left: 0; right: 0; bottom: 0;
+  top: 58%; left: 0; right: 0; bottom: 0;
   padding: 0 clamp(20px, 6vw, 56px) clamp(16px, 2.6vh, 34px);
   gap: clamp(10px, 1.8vh, 22px);
 }
@@ -296,6 +297,15 @@
 .kiosco-config .nota { margin: 18px 0 0; font-size: 13.5px; }
 
 /* ── Vertical: el alto es lo que manda ────────────────────────────────────── */
+/* El texto queda sobre el mostrador de madera: una sombra de abajo hacia
+   arriba le da contraste sin cortar la escena con un recuadro. */
+@media (max-aspect-ratio: 21/20) {
+  .k-panel::before {
+    content: ""; position: absolute; inset: -14% 0 0 0; z-index: -1;
+    background: linear-gradient(180deg, rgba(10, 8, 6, 0), rgba(10, 8, 6, .72) 22%, rgba(10, 8, 6, .86));
+    pointer-events: none;
+  }
+}
 /* Con la tablet parada el panel tiene menos de la mitad del alto: los tamaños
    salen del alto (vh) y no del lado corto, o el ticket no entra. */
 @media (max-aspect-ratio: 21/20) {
@@ -309,6 +319,9 @@
   .k-cifras dd { font-size: clamp(26px, 3.5vh, 48px); }
   .k-cifras dt { font-size: clamp(13px, 1.5vh, 17px); }
   .k-centro { gap: clamp(10px, 1.6vh, 20px); }
+  /* Mientras alguien sirve o mira su ticket, la descripción de la cerveza
+     sobra: el lugar es para sus números. */
+  .k-panel.ocupado .k-desc, .k-panel.ocupado .k-ficha { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

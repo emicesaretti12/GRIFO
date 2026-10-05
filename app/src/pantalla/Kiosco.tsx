@@ -225,7 +225,7 @@ export default function Kiosco() {
       <Pinta modo={modo} ml={ml} vaso={vaso} color={color} etiqueta={g?.nombre ?? ''}
              sesion={sesion} alContar={alContar} />
 
-      <section className="k-panel">
+      <section className={s || u ? 'k-panel ocupado' : 'k-panel'}>
         <header className="k-cerveza">
           {g?.imagen_url && <img className="k-logo" src={g.imagen_url} alt={`Logo de ${g.nombre}`} />}
           <h1 className="k-nombre">{g?.nombre ?? 'GRIFO'}</h1>
