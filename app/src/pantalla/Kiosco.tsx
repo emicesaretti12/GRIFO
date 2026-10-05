@@ -1,20 +1,29 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import '@fontsource-variable/big-shoulders-display'
+import '@fontsource-variable/archivo'
+import { ContactlessPayment, WarningCircle, WifiSlash } from '@phosphor-icons/react'
 import { supabase } from '../lib/supabase'
 import { pesos, volumen } from '../lib/plata'
-import FondoCerveza, { type FondoAPI } from './FondoCerveza'
 import { veredicto, punteria } from './veredicto'
 import './estilos-kiosco.css'
-import Recipiente from './Recipiente'
-import Tirada from './Tirada'
+import Pinta from './Pinta'
+import type { Modo } from './pinta/motor'
 import { useNFC, porQueNoHayNFC } from '../lib/useNFC'
 import { mensajeDeError } from '../lib/tipos'
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Pantalla de una canilla, para correr en modo kiosco en la tablet / monitor
-// que está al lado del grifo.
+// Pantalla de una canilla, para correr en modo kiosco en la tablet que está al
+// lado del grifo.
 //
 // SE CONECTA SOLA con el link/QR que da el panel, y borra el token de la barra
 // de direcciones: la pantalla está a la vista de todos. Ver docs/pantalla-canilla.md
+//
+// ── Una sola cosa protagonista ───────────────────────────────────────────────
+// La escena (la torre, la canilla y el vaso) queda montada todo el tiempo y es
+// la que cuenta lo que pasa: se apaga, espera, sirve, decanta. El texto al
+// costado cambia, la escena no se desmonta nunca. Por eso pasar de "tu turno" a
+// "sirviendo" a "el ticket" se ve como un mismo vaso que se llena, y no como
+// tres pantallas distintas.
 // ─────────────────────────────────────────────────────────────────────────────
 
 type Grifo = {
@@ -46,15 +55,14 @@ function leerConfig(): { grifo: number; token: string } | null {
   } catch { return null }
 }
 
+const litros = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 1 })
+
 export default function Kiosco() {
   const [config, setConfig] = useState(leerConfig)
   const [estado, setEstado] = useState<Estado | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [pops, setPops] = useState(0)
   const [escena, setEscena] = useState(0)
   const sinRed = useRef(0)
-  const fondo = useRef<FondoAPI>(null)
-  const ultimaVista = useRef<string | null>(null)
 
   useEffect(() => {
     const q = new URLSearchParams(location.hash.split('?')[1] ?? '')
@@ -127,7 +135,7 @@ export default function Kiosco() {
                     /could not find the function/i.test(err.message ?? '')
       setAvisoNfc(falta
         ? 'Falta instalar el backend: corré 26-sesion-activa.sql en Supabase.'
-        : `No se pudo abrir la sesión — ${err.message}`)
+        : `No se pudo abrir la sesión: ${err.message}`)
       return
     }
     const r = data as { ok: boolean; motivo?: string; cliente?: string | null }
@@ -138,8 +146,8 @@ export default function Kiosco() {
       return
     }
 
-    // No esperamos al sondeo de 2 s: el cliente acaba de apoyar la tarjeta y
-    // tiene que ver su nombre ahora.
+    // No esperamos al sondeo: el cliente acaba de apoyar la tarjeta y tiene
+    // que ver su nombre ahora.
     await consultar()
   }, [config, consultar])
 
@@ -162,262 +170,238 @@ export default function Kiosco() {
     return () => clearInterval(id)
   }, [config, consultar, sirviendo])
 
-  // Estallido dorado cuando aparece un ticket nuevo — una sola vez por tirada.
-  useEffect(() => {
-    const u = estado?.ultima
-    if (u && u.cerrada_en !== ultimaVista.current) {
-      ultimaVista.current = u.cerrada_en
-      fondo.current?.celebrar()
-    }
-  }, [estado?.ultima])
-
-  // Con la canilla libre vamos rotando qué se muestra: la cerveza, el podio del
-  // día, la invitación a jugar. Una pantalla fija se vuelve invisible en un día.
+  // Con la canilla libre se va rotando qué se muestra al costado: la invitación,
+  // el precio del vaso, el podio del día. Una pantalla fija se vuelve invisible
+  // en un día.
   useEffect(() => {
     if (sirviendo || estado?.ultima) return
-    const id = setInterval(() => setEscena(e => e + 1), 8000)
+    const id = setInterval(() => setEscena(e => e + 1), 9000)
     return () => clearInterval(id)
   }, [sirviendo, estado?.ultima])
+
+  // ── El contador que sube con el vaso ─────────────────────────────────────
+  // Lo escribe la escena directo en el DOM, cuadro a cuadro. Pasarlo por el
+  // estado de React re-renderizaría toda la pantalla 60 veces por segundo.
+  const contado = useRef(0)
+  const datos = useRef({ precio: 0, maximo: 0 })
+  const refMl = useRef<HTMLSpanElement>(null)
+  const refGastado = useRef<HTMLSpanElement>(null)
+  const refQueda = useRef<HTMLSpanElement>(null)
+  const pintarContador = useCallback(() => {
+    const ml = contado.current
+    const { precio, maximo } = datos.current
+    if (refMl.current) refMl.current.textContent = String(ml)
+    if (refGastado.current) refGastado.current.textContent = pesos(Math.ceil((ml * precio) / 1000))
+    if (refQueda.current) refQueda.current.textContent = volumen(Math.max(0, maximo - ml))
+  }, [])
+  const alContar = useCallback((ml: number) => { contado.current = ml; pintarContador() }, [pintarContador])
+  useLayoutEffect(() => { pintarContador() })
 
   if (!config) return <Config onListo={setConfig} />
 
   const g = estado?.grifo
-  const color = g?.color ?? '#c8811f'
+  const color = g?.color ?? '#d9a21b'
   const s = estado?.sesion ?? null
   const u = estado?.ultima ?? null
   const cli = estado?.cliente ?? null
   const vaso = g?.ml_vaso ?? 473
+  datos.current = { precio: g?.precio_litro_centavos ?? 0, maximo: s?.ml_maximos ?? 0 }
 
-  const llenado = s ? Math.min(1, s.ml_parcial / Math.max(1, s.ml_maximos)) : (u ? 1 : 0.14)
-  const energia = s ? (s.ml_parcial > 0 ? 1 : 0.4) : 0.1
-  const restante = s ? Math.max(0, s.ml_maximos - s.ml_parcial) : 0
-  const gastado = s && g ? Math.ceil((s.ml_parcial * g.precio_litro_centavos) / 1000) : 0
+  const fuera = !!error || (estado != null && !g!.listo)
+  const modo: Modo = !estado || fuera ? 'apagada'
+    : s ? (s.ml_parcial > 0 ? 'sirviendo' : 'lista')
+    : u ? 'servida'
+    : 'exhibicion'
+  const ml = s ? s.ml_parcial : u ? u.ml_servidos : 0
+  const sesion = s ? `s${s.id}` : u ? `u${u.cerrada_en}` : null
+
+  // Si el estilo es igual al nombre, decirlo dos veces es ruido.
+  const estilo = g?.estilo && g.estilo.trim().toLowerCase() !== g.nombre.trim().toLowerCase() ? g.estilo : null
+  const ficha = [g?.abv != null ? `${litros.format(g.abv)} % alc.` : null, g?.ibu != null ? `${g.ibu} IBU` : null]
+    .filter(Boolean).join('   ')
 
   return (
-    <div className="kiosco">
-      <FondoCerveza ref={fondo} color={color} llenado={llenado} energia={energia}
-                    alReventar={setPops} />
+    <div className="kiosco" style={{ '--cerveza': color } as React.CSSProperties}>
+      <Pinta modo={modo} ml={ml} vaso={vaso} color={color} etiqueta={g?.nombre ?? ''}
+             sesion={sesion} alContar={alContar} />
 
-      <div className="kiosco-capa">
-        <header className="kiosco-arriba">
-          {g?.imagen_url
-            ? <img className="kiosco-logo" src={g.imagen_url} alt="" />
-            : <div className="kiosco-logo marcador" style={{ background: color }}>🍺</div>}
-          <div>
-            <div className="kiosco-nombre">{g?.nombre ?? 'Conectando…'}</div>
-            {g?.estilo && <div className="kiosco-estilo">{g.estilo}</div>}
-            <div className="kiosco-datos">
-              {g?.abv != null && <span>{g.abv}% alc.</span>}
-              {g?.ibu != null && <span>{g.ibu} IBU</span>}
-              {g?.descripcion && <span>{g.descripcion}</span>}
-            </div>
-          </div>
+      <section className="k-panel">
+        <header className="k-cerveza">
+          {g?.imagen_url && <img className="k-logo" src={g.imagen_url} alt={`Logo de ${g.nombre}`} />}
+          <h1 className="k-nombre">{g?.nombre ?? 'GRIFO'}</h1>
+          {(estilo || g?.descripcion) && (
+            <p className="k-desc">{[estilo, g?.descripcion].filter(Boolean).join('. ')}</p>
+          )}
+          {ficha && <p className="k-ficha">{ficha}</p>}
         </header>
 
-        <main className="kiosco-medio">
+        <div className="k-centro">
           {error ? (
-            <div>
-              <div className="kiosco-cartel">Fuera de servicio</div>
-              <div className="kiosco-sub">{error}</div>
-            </div>
+            <Aviso clave="error" icono={<WifiSlash size="1em" weight="regular" />}
+                   titulo="Fuera de servicio" texto={error} />
           ) : !estado ? (
-            <div className="kiosco-cartel kiosco-late">Conectando…</div>
-          ) : !g!.listo ? (
-            <div>
-              <div className="kiosco-cartel">Fuera de servicio</div>
-              <div className="kiosco-sub">Esta canilla no está habilitada.</div>
+            <div className="k-estado" key="conectando">
+              <p className="k-titulo k-respira">Conectando</p>
             </div>
+          ) : !g!.listo ? (
+            <Aviso clave="apagada" icono={<WarningCircle size="1em" weight="regular" />}
+                   titulo="Fuera de servicio" texto="Esta canilla no está habilitada." />
           ) : s ? (
-            s.ml_parcial > 0
-              ? <Sirviendo ml={s.ml_parcial} vaso={vaso} gastado={gastado}
-                          restante={restante} color={color} />
-              : <Bienvenida saldo={s.saldo_centavos} maximo={s.ml_maximos}
-                            cliente={cli} color={color} />
+            s.ml_parcial > 0 ? (
+              <div className="k-estado" key="sirviendo">
+                <p className="k-contador" aria-live="off">
+                  <span ref={refMl} className="k-num" /><span className="k-unidad">ml</span>
+                </p>
+                <p className="k-sub">
+                  {s.ml_parcial > vaso ? `Vas por el vaso ${Math.ceil(s.ml_parcial / vaso)}` : `El vaso es de ${vaso} ml`}
+                </p>
+                <dl className="k-cifras">
+                  <div><dt>Llevás</dt><dd><span ref={refGastado} /></dd></div>
+                  <div><dt>Te quedan</dt><dd><span ref={refQueda} /></dd></div>
+                </dl>
+              </div>
+            ) : (
+              <Bienvenida saldo={s.saldo_centavos} maximo={s.ml_maximos} cliente={cli} />
+            )
           ) : u ? (
-            <Ticket ultima={u} vaso={vaso} cliente={cli} color={color} />
+            <Ticket ultima={u} vaso={vaso} cliente={cli} />
           ) : (
             <Libre escena={escena} ranking={estado.ranking} vaso={vaso}
-                   precio={g!.precio_litro_centavos} pops={pops} />
+                   precio={g!.precio_litro_centavos} />
           )}
-        </main>
 
-        {avisoNfc && <div className="nfc-aviso">{avisoNfc}</div>}
+          {/* El lector hay que encenderlo con un toque: el navegador exige un
+              gesto para pedir el permiso de NFC, y no lo da al cargar la página.
+              Una vez encendido queda escaneando solo. */}
+          {!error && estado && g!.listo && !s && nfc.soportado && nfc.estado !== 'escaneando' && (
+            <button className="k-encender" onClick={() => void nfc.empezar()}>
+              <ContactlessPayment size={30} weight="regular" aria-hidden="true" />
+              <span>
+                <strong>Encender el lector</strong>
+                <small>{nfc.error ?? 'Un toque cuando abre el bar'}</small>
+              </span>
+            </button>
+          )}
+        </div>
 
-        {/* El lector hay que encenderlo con un toque: el navegador exige un
-            gesto para pedir el permiso de NFC, y no lo da al cargar la página.
-            Una vez encendido queda escaneando solo. */}
-        {!error && estado && g!.listo && !s && nfc.soportado && nfc.estado !== 'escaneando' && (
-          <button className="nfc-encender" onClick={() => void nfc.empezar()}>
-            <span className="nfc-onda">📲</span>
-            <span>
-              <strong>Tocá para encender el lector</strong>
-              <small>{nfc.error ?? 'Una sola vez, cuando abre el bar'}</small>
-            </span>
-          </button>
-        )}
+        {avisoNfc && <p className="k-alerta" role="alert">{avisoNfc}</p>}
 
-        <footer className="kiosco-abajo">
-          <div className="kiosco-precio">
-            {g ? pesos(g.precio_litro_centavos) : '—'} <small>el litro</small>
-            {g && <span style={{ opacity: .6, fontSize: '.5em', marginLeft: 10 }}>
-              vaso de {vaso} ml · {pesos(Math.ceil((vaso * g.precio_litro_centavos) / 1000))}
-            </span>}
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <footer className="k-pie">
+          {g ? (
+            <p className="k-precio">
+              <span className="k-num">{pesos(g.precio_litro_centavos)}</span> el litro
+              <span className="k-vaso">Vaso de {vaso} ml: {pesos(Math.ceil((vaso * g.precio_litro_centavos) / 1000))}</span>
+            </p>
+          ) : <span />}
+          <p className="k-estado-red">
             {!nfc.soportado
-              ? <span className="kiosco-tag mal" title={porQueNoHayNFC()}>Sin NFC</span>
+              ? <span className="k-marca mal" title={porQueNoHayNFC()}>Sin NFC</span>
               : nfc.estado === 'escaneando'
-                ? <span className="kiosco-tag bien">Lector activo</span>
-                : <span className="kiosco-tag mal">Lector apagado</span>}
-            {error
-              ? <span className="kiosco-tag mal">Sin conexión</span>
-              : s
-                ? <span className="kiosco-tag bien">{s.tarjeta}</span>
-                : <span className="kiosco-tag">Canilla {config.grifo}</span>}
-          </div>
+                ? <span className="k-marca bien">Lector listo</span>
+                : <span className="k-marca mal">Lector apagado</span>}
+            <span>{s ? s.tarjeta : `Canilla ${config.grifo}`}</span>
+          </p>
         </footer>
-      </div>
+      </section>
 
-      {pops > 0 && !sirviendo && (
-        <div className="kiosco-pops">{pops} burbujas reventadas 🫧</div>
-      )}
       <div className="kiosco-version">{__VERSION__}</div>
     </div>
   )
 }
 
-/* ── Canilla libre: va rotando qué mostrar ────────────────────────────────── */
-function Libre({ escena, ranking, vaso, precio, pops }: {
-  escena: number; ranking: Puesto[]; vaso: number; precio: number; pops: number
+function Aviso({ clave, icono, titulo, texto }: {
+  clave: string; icono: React.ReactNode; titulo: string; texto: string
 }) {
-  // Con podio son tres escenas; sin podio, dos.
+  return (
+    <div className="k-estado" key={clave}>
+      <p className="k-titulo"><span className="k-icono">{icono}</span>{titulo}</p>
+      <p className="k-sub">{texto}</p>
+    </div>
+  )
+}
+
+/* ── Canilla libre: va rotando qué decir al costado ───────────────────────── */
+function Libre({ escena, ranking, vaso, precio }: {
+  escena: number; ranking: Puesto[]; vaso: number; precio: number
+}) {
   const escenas = ranking.length > 0 ? 3 : 2
   const cual = escena % escenas
 
   if (cual === 0) return (
-    <div className="kiosco-rota" key="a">
-      <div className="kiosco-cartel">Apoyá tu tarjeta</div>
-      <div className="kiosco-sub kiosco-late">en el lector de abajo</div>
+    <div className="k-estado" key="invita">
+      <p className="k-titulo">Apoyá tu tarjeta</p>
+      <p className="k-sub k-con-icono">
+        <ContactlessPayment size="1.3em" weight="regular" aria-hidden="true" />
+        Acercala al dorso de la tablet
+      </p>
     </div>
   )
 
   if (cual === 1) return (
-    <div className="kiosco-rota" key="b">
-      <div className="kiosco-sub">Un vaso de {vaso} ml</div>
-      <div className="kiosco-cifra">{pesos(Math.ceil((vaso * precio) / 1000))}</div>
-      <div className="kiosco-sub">
-        {pops > 0
-          ? `Ya reventaste ${pops} burbujas mientras esperás`
-          : 'Tocá la pantalla mientras esperás 🫧'}
-      </div>
+    <div className="k-estado" key="precio">
+      <p className="k-sub">Un vaso de {vaso} ml</p>
+      <p className="k-grande k-num">{pesos(Math.ceil((vaso * precio) / 1000))}</p>
+      <p className="k-sub">Pagás lo que servís, al mililitro.</p>
     </div>
   )
 
   return (
-    <div className="kiosco-rota" key="c">
-      <div className="kiosco-sub" style={{ marginBottom: 14 }}>Los que más tomaron hoy acá</div>
-      <div className="kiosco-podio">
-        {ranking.map((p, i) => (
-          <div className="p" key={p.tarjeta}>
-            <span className="medalla">{['🥇', '🥈', '🥉'][i]}</span>
+    <div className="k-estado" key="podio">
+      <p className="k-sub">Los que más tomaron hoy en esta canilla</p>
+      <ol className="k-podio">
+        {ranking.map(p => (
+          <li key={p.tarjeta}>
             <span className="quien">{p.tarjeta}</span>
-            <span className="cuanto">{volumen(p.ml)}</span>
-          </div>
+            <span className="cuanto k-num">{volumen(p.ml)}</span>
+          </li>
         ))}
-      </div>
+      </ol>
     </div>
   )
 }
 
 /* ── Tarjeta apoyada, todavía sin servir ──────────────────────────────────── */
-function Bienvenida({ saldo, maximo, cliente, color }: {
-  saldo: number; maximo: number; cliente: Cliente | null; color: string
+function Bienvenida({ saldo, maximo, cliente }: {
+  saldo: number; maximo: number; cliente: Cliente | null
 }) {
   const saludo = !cliente || cliente.es_primera
-    ? { t: '¡Bienvenido!', s: 'Es tu primera acá. Abrí el grifo cuando quieras' }
+    ? { t: 'Bienvenido', s: 'Es tu primera cerveza acá.' }
     : cliente.veces < 5
-      ? { t: '¡Hola de nuevo!', s: `Es tu cerveza número ${cliente.veces + 1} acá` }
-      : { t: '¡Qué gusto verte!', s: `Van ${cliente.veces} cervezas y ${volumen(cliente.ml_total)} en total` }
+      ? { t: 'Hola de nuevo', s: `Es tu cerveza número ${cliente.veces + 1} acá.` }
+      : { t: 'Qué bueno verte', s: `Van ${cliente.veces} cervezas y ${volumen(cliente.ml_total)} en total.` }
 
   return (
-    <div className="kiosco-rota">
-      {/* Con el vaso vacío la escena ya está en su gesto de arranque: inclinado
-          bajo la canilla, esperando. No hace falta decir "listo". */}
-      <Tirada llenado={0} sirviendo={false} color={color} />
-      <div className="kiosco-cartel">{saludo.t}</div>
-      <div className="kiosco-sub kiosco-late">{saludo.s}</div>
-      <div className="kiosco-fila">
-        <div className="kiosco-dato">
-          <div className="et">Tu saldo</div>
-          <div className="va">{pesos(saldo)}</div>
-        </div>
-        <div className="kiosco-dato">
-          <div className="et">Te alcanza para</div>
-          <div className="va">{volumen(maximo)}</div>
-        </div>
-      </div>
+    <div className="k-estado" key="bienvenida">
+      <p className="k-titulo">{saludo.t}</p>
+      <p className="k-sub">{saludo.s}</p>
+      <dl className="k-cifras">
+        <div><dt>Tu saldo</dt><dd className="k-num">{pesos(saldo)}</dd></div>
+        <div><dt>Te alcanza para</dt><dd className="k-num">{volumen(maximo)}</dd></div>
+      </dl>
+      {/* La válvula ya está abierta: lo que falta lo hace el cliente. */}
+      <p className="k-accion">Abrí la canilla y serví</p>
     </div>
   )
 }
 
-/* ── Sirviendo: el medidor de puntería ────────────────────────────────────── */
-function Sirviendo({ ml, vaso, gastado, restante, color }: {
-  ml: number; vaso: number; gastado: number; restante: number; color: string
-}) {
-  const cerca = Math.abs(ml - vaso) / vaso < 0.05
-  return (
-    <div>
-      {/* El vaso del cantinero se llena contra el vaso de referencia. Pasado
-          eso sigue subiendo igual, pero la escena ya dijo lo suyo. */}
-      <Tirada llenado={ml / Math.max(1, vaso)} sirviendo color={color} />
-      <div className="kiosco-sub" style={{ marginTop: 10 }}>
-        {cerca ? '¡Ahí está la medida justa!' : `apuntá a los ${vaso} ml`}
-      </div>
-      <div className="kiosco-fila">
-        <div className="kiosco-dato">
-          <div className="et">Llevás gastado</div>
-          <div className="va">{pesos(gastado)}</div>
-        </div>
-        <div className="kiosco-dato">
-          <div className="et">Te queda</div>
-          <div className="va">{volumen(restante)}</div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/* ── Ticket con el veredicto ──────────────────────────────────────────────── */
-function Ticket({ ultima, vaso, cliente, color }: {
-  ultima: Ultima; vaso: number; cliente: Cliente | null; color: string
+/* ── El ticket, con el veredicto ──────────────────────────────────────────── */
+function Ticket({ ultima, vaso, cliente }: {
+  ultima: Ultima; vaso: number; cliente: Cliente | null
 }) {
   const v = veredicto(ultima.ml_servidos, vaso)
   const p = punteria(ultima.ml_servidos, vaso)
   return (
-    <div className="kiosco-rota">
-      {/* Acá sí va el recipiente y no el cantinero: mientras sirve, lo que
-          importa es el gesto; al terminar, lo que importa es CUÁNTO — y para
-          eso el vaso que se vuelve jarra dice más que un número. */}
-      <Recipiente ml={ultima.ml_servidos} vasoMl={vaso} color={color} />
-      <div className="kiosco-veredicto">{v.titulo}</div>
-      <div className="kiosco-sub">{v.sub} · {p}% de puntería</div>
-      <div className="kiosco-cifra">{ultima.ml_servidos}<small>ml</small></div>
-      <div className="kiosco-fila">
-        <div className="kiosco-dato">
-          <div className="et">Te cobramos</div>
-          <div className="va">{pesos(ultima.costo_centavos)}</div>
-        </div>
-        <div className="kiosco-dato">
-          <div className="et">Te queda</div>
-          <div className="va">{pesos(ultima.saldo_final_centavos)}</div>
-        </div>
+    <div className="k-estado" key="ticket">
+      <p className="k-titulo">{v.titulo}</p>
+      <p className="k-sub">{v.sub}. {p} % de puntería.</p>
+      <p className="k-contador"><span className="k-num">{ultima.ml_servidos}</span><span className="k-unidad">ml</span></p>
+      <dl className="k-cifras">
+        <div><dt>Te cobramos</dt><dd className="k-num">{pesos(ultima.costo_centavos)}</dd></div>
+        <div><dt>Te queda</dt><dd className="k-num">{pesos(ultima.saldo_final_centavos)}</dd></div>
         {cliente && cliente.veces > 1 && (
-          <div className="kiosco-dato">
-            <div className="et">Llevás acá</div>
-            <div className="va">{volumen(cliente.ml_total)}</div>
-          </div>
+          <div><dt>Llevás acá</dt><dd className="k-num">{volumen(cliente.ml_total)}</dd></div>
         )}
-      </div>
+      </dl>
     </div>
   )
 }
@@ -430,13 +414,19 @@ function Config({ onListo }: { onListo: (c: { grifo: number; token: string }) =>
 
   return (
     <div className="kiosco">
-      <FondoCerveza color="#c8811f" llenado={0.2} energia={0.15} />
+      <Pinta modo="apagada" ml={0} vaso={473} color="#d9a21b" etiqueta="GRIFO" sesion={null} />
       <div className="kiosco-config">
-        <div className="caja">
+        <form className="caja" onSubmit={e => {
+          e.preventDefault()
+          if (!valido) return
+          const c = { grifo: Number(grifo), token: token.trim() }
+          localStorage.setItem(CLAVE, JSON.stringify(c))
+          onListo(c)
+        }}>
           <h1>Vincular esta pantalla</h1>
           <p>
             Lo más fácil es escanear el QR que da el panel en
-            <strong> Canillas → Token</strong>: se configura sola y no hay nada
+            <strong> Canillas, Token</strong>: se configura sola y no hay nada
             que tipear. Si preferís, cargalo a mano.
           </p>
 
@@ -448,18 +438,14 @@ function Config({ onListo }: { onListo: (c: { grifo: number; token: string }) =>
           <input id="t" value={token} placeholder="8537a4ed…" autoComplete="off"
                  onChange={e => setToken(e.target.value)} />
 
-          <button disabled={!valido} onClick={() => {
-            const c = { grifo: Number(grifo), token: token.trim() }
-            localStorage.setItem(CLAVE, JSON.stringify(c))
-            onListo(c)
-          }}>Vincular</button>
+          <button type="submit" disabled={!valido}>Vincular</button>
 
-          <div className="error" style={{ background: 'rgba(255,255,255,.07)', borderColor: 'rgba(255,255,255,.16)' }}>
+          <p className="nota">
             El token se guarda solo en este dispositivo. Si lo perdés o se
             compromete, rotalo desde el panel: la pantalla y el ESP32 de esta
             canilla se desconectan juntos.
-          </div>
-        </div>
+          </p>
+        </form>
       </div>
       <div className="kiosco-version">{__VERSION__}</div>
     </div>

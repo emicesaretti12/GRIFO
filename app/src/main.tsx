@@ -1,7 +1,10 @@
-import { StrictMode } from 'react'
+import { StrictMode, Suspense, lazy } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
-import Kiosco from './pantalla/Kiosco'
+// La pantalla de la canilla va aparte: trae su motor de dibujo y sus
+// tipografías, que la app de gestión no necesita, y la tablet no descarga la
+// gestión.
+const Kiosco = lazy(() => import('./pantalla/Kiosco'))
 import Movil from './movil/Movil'
 import './estilos.css'
 
@@ -20,6 +23,6 @@ const ruta = location.hash.startsWith('#/pantalla') ? 'pantalla'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {ruta === 'pantalla' ? <Kiosco /> : ruta === 'movil' ? <Movil /> : <App />}
+    {ruta === 'pantalla' ? <Suspense fallback={null}><Kiosco /></Suspense> : ruta === 'movil' ? <Movil /> : <App />}
   </StrictMode>
 )

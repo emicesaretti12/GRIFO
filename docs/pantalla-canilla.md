@@ -71,66 +71,79 @@ chromium-browser --kiosk --incognito=false \
 
 ## Qué muestra
 
-| Estado | Qué se ve |
-|---|---|
-| **Libre** | Rota cada 8 s entre "Apoyá tu tarjeta", el precio del vaso, y el podio del día |
-| **Autorizado** | Saludo según su historia, saldo y cuántos mL le alcanzan |
-| **Sirviendo** | El **medidor de puntería**: los mL que lleva contra el vaso de referencia |
-| **Ticket** | Durante 25 s: el veredicto, la puntería, lo cobrado y lo que le queda |
+La pantalla tiene dos partes que no compiten:
+
+- **La escena**: una torre de canilla cromada, la manija con el nombre de la
+  cerveza, un vaso de pinta sobre la bandeja de goteo y la barra de noche
+  detrás. Está montada todo el tiempo y es la que cuenta qué pasa.
+- **El panel**: el nombre de la cerveza, el estado y el precio. A la derecha si
+  la tablet está acostada; abajo si está parada.
+
+| Estado | La escena | El panel |
+|---|---|---|
+| **Libre** | Una pinta llena, asentada, con burbujas subiendo | Rota cada 9 s: "Apoyá tu tarjeta", el precio del vaso, el podio del día |
+| **Tu turno** | Entra un vaso vacío y sube la luz sobre la canilla | Saludo según tu historia, saldo, cuánto te alcanza, "Abrí la canilla y serví" |
+| **Sirviendo** | Se abre la manija, cae el chorro y el vaso se llena con lo medido | Los mL subiendo con el vaso, lo gastado, lo que te queda |
+| **Ticket** | Se cierra la manija, gotea el pico y la cerveza decanta | El veredicto, la puntería, lo cobrado y lo que te queda |
+| **Fuera de servicio** | Vaso vacío, luces bajas | Qué pasa, en castellano |
+
+### La escena muestra lo que mide la canilla
+
+No hay temporizadores. Todo sale de los mililitros que manda el ESP32:
+
+- **La manija se abre cuando la medición sube** y se cierra cuando deja de subir
+  durante 2,4 s. El ESP32 informa como mucho una vez por segundo y la pantalla
+  consulta cada medio segundo, así que con un umbral más corto el chorro
+  parpadearía. 2,4 s es menos que los 3 s que espera el propio ESP32 para dar la
+  tirada por cortada.
+- **El vaso se llena con el volumen, no con la altura.** Una pinta es un cono
+  truncado: el mismo volumen ocupa menos altura arriba, donde es más ancha.
+- **Entre dato y dato, el vaso sigue subiendo** al caudal que venía midiendo,
+  para no avanzar a saltos. Pero **qué vaso es lo decide solo lo medido**: un
+  vaso de 473 ml nunca "se pasa" a los 458 por una predicción.
+- **Si te servís más de un vaso**, el lleno se va hacia adelante y se apoya uno
+  vacío. El panel dice "Vas por el vaso 2".
+- **El contador de mililitros y de plata nunca va adelante de lo medido.** El
+  vaso puede adelantarse un poco porque es dibujo; la plata, no.
+
+Los detalles que la hacen creíble: la cerveza es más oscura en los bordes y más
+clara en el centro, mientras se sirve se enturbia de microburbujas que decantan
+de abajo hacia arriba al cortar, hay hilos de burbujas que salen siempre del
+mismo punto del fondo, la espuma de una cerveza negra es tostada, el vidrio se
+empaña solo donde hay cerveza fría del otro lado, y la luz que atraviesa la
+cerveza tiñe de ámbar la bandeja.
 
 ### Lo que la hace divertida
 
-Una pantalla que solo informa se vuelve invisible en un día. Estas cuatro cosas
-son las que hacen que la gente la mire dos veces:
-
-**El medidor de puntería.** Mientras servís, un aro se llena hacia el vaso de
-referencia (473 ml por defecto, configurable por canilla) y **se pone verde
-cuando estás en la medida justa**. Convierte servirse en un pequeño desafío.
-
-**El veredicto.** Al terminar, un cartel según qué tan cerca quedaste:
-*"¡Pinta perfecta!"* con 100% de puntería, *"Generosa"*, *"¡Sed de verdad!"*,
-*"Leyenda"* si te serviste una jarra. Un número solo no genera nada; un
-veredicto sí.
+**El veredicto.** Al terminar, según qué tan cerca quedaste del vaso: *"Pinta
+perfecta"*, *"Generosa"*, *"Sed de verdad"*, *"Leyenda"* si te serviste una
+jarra. Un número solo no genera nada; un veredicto sí.
 
 **El podio del día.** Con la canilla libre, rota a mostrar quiénes más tomaron
-hoy **en esa canilla**, con las tarjetas enmascaradas. Le da algo para mirar a
-quien espera y un motivo para volver a quien está segundo.
+hoy **en esa canilla**, con las tarjetas enmascaradas.
 
-**Te reconoce.** Al apoyar la tarjeta el saludo cambia según tu historia: la
-primera vez te da la bienvenida; de la quinta en adelante te dice cuántas
-cervezas y cuántos litros llevás en el bar.
-
-Y de fondo, tocar la pantalla revienta las burbujas que estén cerca, con un
-contador. Es un detalle tonto que hace que la gente juegue mientras espera.
+**Te reconoce.** Al apoyar la tarjeta el saludo cambia según tu historia.
 
 El número de tarjeta va **enmascarado** (`····C3D4`). Es una pantalla a la vista
-del público: nadie tiene por qué ver el número completo de la tarjeta ajena.
+del público.
 
----
+### Cómo está hecha
 
-## El fondo animado
-
-Un canvas a pantalla completa con la cerveza de **esa** canilla, en el color que
-le cargaste: el líquido sube según cuánto lleva servido, las burbujas nacen del
-fondo y suben, y arriba se forma espuma.
-
-**Es interactivo:** al tocar la pantalla se revientan las burbujas cercanas, salen
-chispas y se dibuja una onda. Es una pantalla en una barra — la gente la va a
-tocar, y que haga algo lindo cuando lo hacen es la diferencia entre un cartel y
-algo que se mira dos veces.
-
-Al terminar una tirada dispara un **estallido dorado**, una sola vez por
-servida.
-
-Detalles que importan:
-
-- **Canvas, no CSS.** Son cientos de partículas a 60 fps. Con elementos del DOM
-  el navegador recalcularía estilos y layout en cada cuadro; en canvas es una
-  sola superficie que se repinta.
-- **El nivel persigue al objetivo en vez de saltar.** Un vaso que da un brinco
-  cuando llega un dato nuevo se ve roto, aunque el dato sea correcto.
-- **Respeta `prefers-reduced-motion`**: si el sistema pide menos movimiento, el
-  líquido queda quieto y no hay burbujas.
+- **Canvas, en dos lienzos.** El de atrás (la barra, el bokeh, el mostrador) se
+  pinta una vez. El de adelante se redibuja 60 veces por segundo, pero todo lo
+  que no se mueve (la torre, el vidrio, la bandeja, las texturas de espuma y del
+  chorro) se pinta una sola vez en lienzos aparte y en cada cuadro solo se copia.
+- **El motor no pasa por React.** Vive en `app/src/pantalla/pinta/motor.ts`;
+  React solo le pasa los datos. El contador de mililitros lo escribe el motor
+  directo en el DOM: por el estado de React, la pantalla se re-renderizaría 60
+  veces por segundo.
+- **Si la tablet no da abasto**, después de 2 s por debajo de ~38 cuadros por
+  segundo dibuja a densidad 1. Se ve apenas menos nítido y vuelve a ser fluido.
+- **Respeta `prefers-reduced-motion`**: el chorro y la manija siguen indicando
+  el estado, pero sin ondulación, sin vetas que corren, con menos burbujas, y el
+  cambio de vaso es un fundido en vez de un desplazamiento.
+- **Los colores salen del color que cargás en el panel.** Con uno alcanza: los
+  bordes, el centro, el brillo y la espuma se derivan de ese tono.
 
 ---
 
@@ -141,7 +154,7 @@ solo liquida al final.** El servidor no se entera de nada mientras se sirve, as�
 que la pantalla no tendría cómo mostrar el vaso llenándose.
 
 Por eso hay una tercera RPC, `reportar_progreso(sesion, ml, pulsos, token)`, que
-el firmware llama cada ~500 ms mientras sirve.
+el firmware llama cada ~1 s mientras sirve.
 
 **Es puramente informativa: no toca plata ni cambia el estado de la sesión.** Si
 esa llamada se pierde, no pasa absolutamente nada — la liquidación sigue siendo

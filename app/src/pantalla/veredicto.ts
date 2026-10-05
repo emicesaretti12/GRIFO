@@ -11,12 +11,12 @@ export function veredicto(ml: number, vaso: number): { titulo: string; sub: stri
   if (r < 0.45) return { titulo: 'Media medida', sub: 'Te quedaste con ganas' }
 
   // La zona de la puntería: cerca del vaso exacto
-  if (r >= 0.97 && r <= 1.03) return { titulo: '¡Pinta perfecta!', sub: 'Servida al milímetro' }
-  if (r >= 0.92 && r <= 1.08) return { titulo: '¡Casi perfecta!', sub: 'Por poquito' }
+  if (r >= 0.97 && r <= 1.03) return { titulo: 'Pinta perfecta', sub: 'Servida al milímetro' }
+  if (r >= 0.92 && r <= 1.08) return { titulo: 'Casi perfecta', sub: 'Por poquito' }
   if (r < 0.92) return { titulo: 'Bien servida', sub: 'Un poco corta' }
 
   if (r <= 1.6) return { titulo: 'Generosa', sub: 'Nadie te va a juzgar' }
-  if (r <= 2.5) return { titulo: '¡Sed de verdad!', sub: 'Más de dos vasos de una' }
+  if (r <= 2.5) return { titulo: 'Sed de verdad', sub: 'Más de dos vasos de una' }
   return { titulo: 'Leyenda', sub: 'Eso fue una jarra' }
 }
 

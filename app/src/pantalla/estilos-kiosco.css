@@ -1,320 +1,318 @@
-/* Pantalla de canilla en modo kiosco: se mira de lejos y de pie, así que todo
-   es grande, de alto contraste y sin nada en lo que se pueda clickear por
-   error. Fondo oscuro fijo — una pantalla en una barra no cambia de tema. */
+/* Pantalla de canilla en modo kiosco.
+
+   Se mira de pie, a un metro o más, en un bar con poca luz. Eso decide todo:
+   tipos grandes, alto contraste, nada que se pueda tocar por error y un único
+   protagonista, que es la escena de la tirada. El texto acompaña al costado y
+   no compite con ella: sin tarjetas, sin chips, sin colores propios. El único
+   acento es el color de la cerveza de esa canilla, que viene de los datos.
+
+   Tema oscuro fijo: una pantalla en una barra no cambia de tema. */
 
 .kiosco {
+  --noche: #0e1316;
+  --texto: #f2ede3;
+  --tenue: #a3aeb3;
+  --linea: rgba(242, 237, 227, .14);
+  --ok: #86d1a8;
+  --mal: #ec9184;
+  /* El acento sale del color de la cerveza, aclarado lo suficiente para leerse
+     sobre la noche: una Stout no puede dejar el texto invisible. */
+  --acento: color-mix(in oklab, var(--cerveza, #d9a21b) 62%, #fff4dc);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --display: "Big Shoulders Display Variable", "Archivo Variable", system-ui, sans-serif;
+
   position: fixed; inset: 0; overflow: hidden;
-  background: #0b0a09; color: #fff;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--noche); color: var(--texto);
+  font-family: "Archivo Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
   user-select: none; -webkit-user-select: none;
   touch-action: manipulation;
 }
-.kiosco-fondo { position: absolute; inset: 0; width: 100%; height: 100%; }
+.kiosco p, .kiosco h1, .kiosco dl, .kiosco dd, .kiosco ol { margin: 0; }
 
-.kiosco-capa {
-  position: relative; z-index: 1;
-  height: 100%; display: flex; flex-direction: column;
-  padding: clamp(20px, 4vh, 48px) clamp(20px, 4vw, 64px);
-  text-shadow: 0 2px 18px rgba(0,0,0,.55);
+.pinta, .pinta-lienzo { position: absolute; inset: 0; width: 100%; height: 100%; }
+.pinta { z-index: 0; }
+
+.k-num { font-variant-numeric: tabular-nums; }
+
+/* ── El panel ─────────────────────────────────────────────────────────────── */
+/* Apaisado: a la derecha de la escena. Vertical: debajo. La proporción es la
+   misma que usa el motor para ubicar la canilla: 54 %. */
+.k-panel {
+  position: absolute; z-index: 1;
+  display: flex; flex-direction: column;
+  top: 54%; left: 0; right: 0; bottom: 0;
+  padding: 0 clamp(20px, 6vw, 56px) clamp(16px, 2.6vh, 34px);
+  gap: clamp(10px, 1.8vh, 22px);
+}
+@media (min-aspect-ratio: 21/20) {
+  .k-panel {
+    top: 0; left: 54%;
+    padding: clamp(28px, 6vh, 72px) clamp(28px, 4.4vw, 76px) clamp(22px, 4vh, 48px) clamp(12px, 1.6vw, 28px);
+    gap: clamp(14px, 2.4vh, 28px);
+  }
+  /* Una sombra hacia la derecha: el texto se apoya sobre algo más oscuro que
+     el bokeh, sin que se note un recuadro. */
+  .k-panel::before {
+    content: ""; position: absolute; inset: 0 0 0 -12%; z-index: -1;
+    background: linear-gradient(90deg, rgba(14, 19, 22, 0), rgba(14, 19, 22, .62) 34%, rgba(14, 19, 22, .74));
+    pointer-events: none;
+  }
 }
 
-.kiosco-arriba { display: flex; align-items: center; gap: clamp(14px, 2vw, 26px); }
-.kiosco-logo {
-  width: clamp(64px, 9vw, 128px); height: clamp(64px, 9vw, 128px);
-  border-radius: 20px; object-fit: cover; flex: none;
-  background: rgba(255,255,255,.08); box-shadow: 0 8px 40px rgba(0,0,0,.45);
+/* ── La cerveza ───────────────────────────────────────────────────────────── */
+.k-logo {
+  width: clamp(52px, 6vmin, 76px); height: clamp(52px, 6vmin, 76px);
+  border-radius: 18px; object-fit: cover; display: block;
+  margin-bottom: clamp(10px, 1.6vh, 18px);
+  box-shadow: 0 10px 30px rgba(4, 8, 10, .5);
 }
-.kiosco-logo.marcador { display: grid; place-items: center; font-size: clamp(32px, 5vw, 62px); }
-
-.kiosco-nombre { font-size: clamp(30px, 5vw, 68px); font-weight: 800; letter-spacing: -.03em; line-height: 1.02; }
-.kiosco-estilo { font-size: clamp(14px, 1.6vw, 22px); opacity: .82; margin-top: 4px; }
-.kiosco-datos { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; font-size: clamp(12px, 1.3vw, 17px); opacity: .72; }
-.kiosco-datos span { background: rgba(255,255,255,.12); padding: 3px 11px; border-radius: 999px; }
-
-.kiosco-medio { flex: 1; display: grid; place-items: center; text-align: center; }
-
-.kiosco-cartel { font-size: clamp(26px, 4.4vw, 60px); font-weight: 700; letter-spacing: -.02em; }
-.kiosco-sub { font-size: clamp(15px, 1.9vw, 26px); opacity: .78; margin-top: 10px; }
-
-.kiosco-cifra {
-  font-size: clamp(64px, 15vw, 210px); font-weight: 800;
-  letter-spacing: -.05em; line-height: .95; font-variant-numeric: tabular-nums;
-}
-.kiosco-cifra small { font-size: .32em; font-weight: 700; opacity: .7; margin-left: .12em; }
-
-.kiosco-fila { display: flex; gap: clamp(20px, 5vw, 72px); justify-content: center; flex-wrap: wrap; margin-top: clamp(12px, 2vh, 28px); }
-.kiosco-dato .et { font-size: clamp(12px, 1.3vw, 17px); opacity: .7; }
-.kiosco-dato .va { font-size: clamp(24px, 3.4vw, 48px); font-weight: 700; font-variant-numeric: tabular-nums; }
-
-.kiosco-abajo {
-  display: flex; align-items: flex-end; justify-content: space-between;
-  gap: 20px; font-size: clamp(13px, 1.5vw, 20px);
-}
-.kiosco-precio { font-size: clamp(20px, 2.6vw, 38px); font-weight: 800; }
-.kiosco-precio small { font-size: .5em; font-weight: 600; opacity: .72; }
-
-.kiosco-tag {
-  display: inline-flex; align-items: center; gap: 8px;
-  background: rgba(255,255,255,.14); padding: 6px 14px; border-radius: 999px;
-  font-size: clamp(12px, 1.3vw, 16px); font-weight: 600;
-}
-.kiosco-tag.mal  { background: rgba(208,59,59,.9) }
-.kiosco-tag.bien { background: rgba(12,163,12,.85) }
-
-@keyframes kpulso { 0%,100% { opacity: .55 } 50% { opacity: 1 } }
-.kiosco-late { animation: kpulso 2.4s ease-in-out infinite; }
-@media (prefers-reduced-motion: reduce) { .kiosco-late { animation: none } }
-
-/* Barra de progreso del vaso */
-.kiosco-barra { width: min(760px, 82vw); height: 16px; border-radius: 999px; background: rgba(255,255,255,.18); overflow: hidden; margin: 18px auto 0; }
-.kiosco-barra > i { display: block; height: 100%; border-radius: 999px; background: #fff; transition: width .3s ease-out; }
-
-/* Configuración inicial */
-.kiosco-config { position: relative; z-index: 1; min-height: 100%; display: grid; place-items: center; padding: 24px; }
-.kiosco-config .caja { width: 100%; max-width: 440px; background: rgba(20,18,16,.94); border: 1px solid rgba(255,255,255,.16); border-radius: 18px; padding: 26px; }
-.kiosco-config h1 { margin: 0 0 6px; font-size: 22px; }
-.kiosco-config p { margin: 0 0 18px; opacity: .75; font-size: 14px; line-height: 1.5; }
-.kiosco-config label { display: block; font-size: 13px; font-weight: 600; opacity: .8; margin: 12px 0 6px; }
-.kiosco-config input {
-  width: 100%; padding: 12px 14px; border-radius: 10px; font-size: 16px;
-  border: 1px solid rgba(255,255,255,.24); background: rgba(255,255,255,.07); color: #fff;
-}
-.kiosco-config button {
-  width: 100%; margin-top: 18px; padding: 14px; border: 0; border-radius: 10px;
-  background: #c8811f; color: #14100c; font-size: 16px; font-weight: 700; cursor: pointer;
-}
-.kiosco-config button:disabled { opacity: .45; cursor: not-allowed; }
-.kiosco-config .error { background: rgba(208,59,59,.22); border: 1px solid rgba(208,59,59,.5); padding: 10px 12px; border-radius: 10px; font-size: 14px; margin-top: 14px; }
-
-/* ── Medidor de puntería ─────────────────────────────────────────────────── */
-.kiosco-aro { position: relative; display: grid; place-items: center; }
-.kiosco-aro svg { transform: rotate(-90deg); }
-.kiosco-aro .adentro {
-  position: absolute; inset: 0; display: grid; place-items: center; text-align: center;
-}
-.kiosco-aro .n { font-size: clamp(44px, 8vw, 108px); font-weight: 800; letter-spacing: -.04em; line-height: 1; font-variant-numeric: tabular-nums; }
-.kiosco-aro .u { font-size: clamp(13px, 1.5vw, 20px); opacity: .75; margin-top: 6px; }
-
-/* ── Panel rotativo del estado libre ─────────────────────────────────────── */
-@keyframes kentra { from { opacity: 0; transform: translateY(14px) } to { opacity: 1; transform: none } }
-.kiosco-rota { animation: kentra .5s ease-out; }
-@media (prefers-reduced-motion: reduce) { .kiosco-rota { animation: none } }
-
-.kiosco-podio { display: flex; flex-direction: column; gap: 10px; width: min(560px, 84vw); margin: 0 auto; }
-.kiosco-podio .p {
-  display: flex; align-items: center; gap: 14px;
-  background: rgba(255,255,255,.13); border-radius: 14px;
-  padding: clamp(9px, 1.4vh, 15px) clamp(14px, 2vw, 22px);
-  font-size: clamp(15px, 2vw, 24px);
-}
-.kiosco-podio .medalla { font-size: 1.25em; }
-.kiosco-podio .quien { flex: 1; text-align: left; font-family: ui-monospace, Menlo, monospace; letter-spacing: .06em; }
-.kiosco-podio .cuanto { font-weight: 800; font-variant-numeric: tabular-nums; }
-
-.kiosco-pops {
-  position: absolute; bottom: clamp(16px, 3vh, 34px); left: 50%; transform: translateX(-50%);
-  font-size: clamp(12px, 1.4vw, 17px); opacity: .6; z-index: 2; pointer-events: none;
-}
-
-.kiosco-veredicto { font-size: clamp(24px, 4vw, 56px); font-weight: 800; letter-spacing: -.02em; }
-.kiosco-version {
-  position: absolute; bottom: 6px; right: 10px; z-index: 3;
-  font-size: 10px; opacity: .3; font-family: ui-monospace, Menlo, monospace;
-}
-
-/* ═════════════════════════════════════════════════════════════════════════════
-   EL VASO
-   Todo lo que se mueve usa `transform` y `opacity`: son las dos cosas que el
-   navegador anima sin rehacer el layout. Animar `height` o `top` lo obligaría a
-   recalcular la página sesenta veces por segundo, y en la tablet de la canilla
-   eso se ve entrecortado.
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-.vaso-caja { position: relative; width: min(82vw, 340px); margin: 0 auto; }
-
-/* ── El resplandor del color de la cerveza ────────────────────────────────── */
-/* Es lo que hace que la pantalla se sienta encendida y no impresa. Crece con el
-   llenado: cuanta más cerveza hay, más "presencia" tiene el recipiente. */
-.vaso-halo {
-  position: absolute;
-  inset: -14% -22%;
-  border-radius: 50%;
-  filter: blur(26px);
-  pointer-events: none;
-  transition: opacity .6s ease;
-  z-index: 0;
-}
-.vaso-svg, .vaso-cifra, .vaso-ascenso { position: relative; z-index: 1; }
-
-/* ── El ascenso a jarra ───────────────────────────────────────────────────── */
-/* Entra con un rebote corto y se va sola. No hay nada que cerrar: en una
-   canilla las manos están ocupadas, y un cartel que hay que despachar es peor
-   que no tenerlo. */
-.vaso-ascenso {
-  position: absolute;
-  top: -6px; left: 50%;
-  transform: translateX(-50%);
-  white-space: nowrap;
-  background: linear-gradient(135deg, #ffd479, #ffb02e);
-  color: #3a2408;
+.k-nombre {
+  font-family: var(--display);
   font-weight: 800;
-  font-size: clamp(15px, 4.4vw, 19px);
-  padding: 10px 18px;
-  border-radius: 999px;
-  box-shadow: 0 10px 28px rgba(255, 176, 46, .45);
-  animation: vaso-cartel 2.2s cubic-bezier(.2, .8, .3, 1) forwards;
+  font-size: clamp(46px, 8.4vmin, 112px);
+  line-height: .9;
+  letter-spacing: .004em;
+  text-wrap: balance;
 }
-.vaso-ascenso .ico { margin-right: 6px; }
-
-@keyframes vaso-cartel {
-  0%   { opacity: 0; transform: translateX(-50%) translateY(14px) scale(.7); }
-  14%  { opacity: 1; transform: translateX(-50%) translateY(0)    scale(1.08); }
-  22%  {             transform: translateX(-50%) translateY(0)    scale(1); }
-  82%  { opacity: 1; transform: translateX(-50%) translateY(0)    scale(1); }
-  100% { opacity: 0; transform: translateX(-50%) translateY(-12px) scale(.94); }
+.k-desc {
+  margin-top: clamp(8px, 1.2vh, 14px) !important;
+  font-size: clamp(16px, 2.1vmin, 23px);
+  line-height: 1.35;
+  color: var(--tenue);
+  max-width: 34ch;
+  text-wrap: pretty;
 }
-
-/* ── La entrada del recipiente nuevo ──────────────────────────────────────── */
-/* El cambio de vaso a jarra tiene que sentirse como un logro, no como un
-   parpadeo. Entra un poco grande y se asienta: es el gesto que el ojo lee como
-   "apareció algo mejor". */
-.vaso-entra { animation: vaso-aparecer .52s cubic-bezier(.18, .9, .26, 1.02); }
-
-@keyframes vaso-aparecer {
-  0%   { opacity: 0; transform: scale(.78) translateY(16px); }
-  55%  { opacity: 1; transform: scale(1.05) translateY(-4px); }
-  100% { opacity: 1; transform: scale(1) translateY(0); }
-}
-
-.vaso-svg {
-  width: 100%; height: auto; display: block;
-  filter: drop-shadow(0 20px 38px rgba(0, 0, 0, .5));
-}
-
-/* El nivel sube suave. Medio segundo es el punto justo: más rápido salta de un
-   valor al otro, más lento se despega de lo que está saliendo. */
-.vaso-nivel { transition: transform .55s cubic-bezier(.22, .61, .36, 1); }
-
-/* ── Burbujas ─────────────────────────────────────────────────────────────── */
-/* Suben, se agrandan y se desvanecen antes de llegar arriba, como las de
-   verdad: la presión baja a medida que ascienden. */
-.vaso-burbuja {
-  animation-name: vaso-subir;
-  animation-timing-function: cubic-bezier(.45, 0, .75, .3);
-  animation-iteration-count: infinite;
-  will-change: transform, opacity;
-}
-
-@keyframes vaso-subir {
-  0%   { transform: translateY(0)      scale(.5); opacity: 0; }
-  10%  {                                          opacity: .8; }
-  80%  {                                          opacity: .55; }
-  100% { transform: translateY(-190px) scale(1.35); opacity: 0; }
-}
-
-/* ── Espuma ───────────────────────────────────────────────────────────────── */
-/* Las burbujas de la cresta laten desfasadas: el borde nunca queda quieto ni se
-   mueve todo junto. */
-.vaso-cresta {
-  animation: vaso-latir 2.6s ease-in-out infinite;
-  transform-box: fill-box;
-  transform-origin: center;
-  will-change: transform;
-}
-
-@keyframes vaso-latir {
-  0%, 100% { transform: scale(1); }
-  50%      { transform: scale(1.1); }
-}
-
-/* ── La marca y el número ─────────────────────────────────────────────────── */
-.vaso-marca-linea { transition: stroke .3s; }
-
-.vaso-cifra { text-align: center; margin-top: 12px; line-height: 1; transition: color .3s; }
-.vaso-cifra .n {
-  font-size: clamp(46px, 14vw, 76px);
-  font-weight: 800;
-  letter-spacing: -.02em;
-  /* Ancho fijo por dígito: sin esto el número tiembla al cambiar, porque el
-     `1` es más angosto que el `8`. */
+.k-ficha {
+  margin-top: 6px !important;
+  font-size: clamp(14px, 1.8vmin, 19px);
+  font-weight: 560;
+  color: var(--tenue);
+  white-space: pre;
   font-variant-numeric: tabular-nums;
 }
-.vaso-cifra .u { display: block; font-size: 17px; font-weight: 600; opacity: .6; margin-top: 6px; }
-.vaso-cifra.justo { color: #8ef29b; }
 
-/* Quien pidió menos movimiento en su sistema, menos movimiento. El vaso se
-   sigue llenando: lo que se apaga es lo decorativo. */
-@media (prefers-reduced-motion: reduce) {
-  .vaso-burbuja, .vaso-cresta, .vaso-entra { animation: none; }
-  .vaso-ascenso { animation: none; opacity: 1; }
+/* ── El estado ────────────────────────────────────────────────────────────── */
+.k-centro {
+  flex: 1; min-height: 0;
+  /* `safe`: si el contenido no entra, se corre hacia abajo en vez de taparle
+     la cabeza al nombre de la cerveza. */
+  display: flex; flex-direction: column; justify-content: safe center;
+  gap: clamp(14px, 2.4vh, 28px);
+}
+.k-estado { display: flex; flex-direction: column; gap: clamp(6px, 1.1vh, 12px); }
+
+/* Cada cambio de estado entra escalonado, 45 ms entre renglón y renglón. Es
+   la única coreografía del texto: la escena ya tiene el movimiento. */
+@keyframes k-entra { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@keyframes k-funde { from { opacity: 0; } to { opacity: 1; } }
+.k-estado > * { animation: k-entra 320ms var(--ease-out) both; }
+.k-estado > :nth-child(2) { animation-delay: 45ms; }
+.k-estado > :nth-child(3) { animation-delay: 90ms; }
+.k-estado > :nth-child(4) { animation-delay: 135ms; }
+.k-estado > :nth-child(5) { animation-delay: 180ms; }
+
+.k-titulo {
+  font-family: var(--display);
+  font-weight: 760;
+  font-size: clamp(38px, 7vmin, 86px);
+  line-height: .95;
+  text-wrap: balance;
+  display: flex; align-items: center; gap: .3em;
+}
+.k-icono { display: inline-flex; color: var(--mal); font-size: .8em; }
+.k-sub {
+  font-size: clamp(17px, 2.3vmin, 25px);
+  line-height: 1.35;
+  color: var(--tenue);
+  max-width: 36ch;
+  text-wrap: pretty;
+}
+.k-con-icono { display: flex; align-items: center; gap: .45em; color: var(--texto); }
+.k-con-icono svg { color: var(--acento); flex: none; }
+
+.k-contador {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: clamp(92px, 17vmin, 210px);
+  line-height: .82;
+  letter-spacing: -.01em;
+  display: flex; align-items: baseline;
+}
+.k-contador .k-num { min-width: 2.2ch; }
+.k-unidad { font-size: .3em; font-weight: 640; color: var(--tenue); margin-left: .14em; }
+
+.k-grande {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: clamp(66px, 12vmin, 150px);
+  line-height: .9;
 }
 
-/* ── El lector NFC de la tablet ─────────────────────────────────────────────
-   El navegador no entrega el permiso de NFC al cargar la página: exige un
-   gesto. Así que hay un botón, y una vez tocado desaparece hasta el próximo
-   arranque de la tablet. */
-.nfc-encender {
-  position: absolute; left: 50%; bottom: 13%; transform: translateX(-50%);
+.k-cifras {
+  display: flex; flex-wrap: wrap;
+  column-gap: clamp(26px, 4vw, 64px); row-gap: 10px;
+  margin-top: clamp(4px, 1vh, 12px) !important;
+}
+.k-cifras dt { font-size: clamp(14px, 1.9vmin, 19px); color: var(--tenue); }
+.k-cifras dd {
+  font-family: var(--display);
+  font-weight: 720;
+  font-size: clamp(30px, 5vmin, 58px);
+  line-height: 1;
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.k-accion {
+  margin-top: clamp(6px, 1.4vh, 16px) !important;
+  font-size: clamp(19px, 2.6vmin, 28px);
+  font-weight: 640;
+  color: var(--acento);
+}
+
+.k-podio { list-style: none; padding: 0; counter-reset: puesto; display: grid; gap: clamp(8px, 1.4vh, 14px); max-width: 30ch; }
+.k-podio li {
+  counter-increment: puesto;
+  display: grid; grid-template-columns: 1.6em 1fr auto; align-items: baseline; gap: 10px;
+  font-size: clamp(20px, 2.8vmin, 30px);
+}
+.k-podio li::before {
+  content: counter(puesto);
+  font-family: var(--display); font-weight: 800; color: var(--acento);
+}
+.k-podio .quien { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k-podio .cuanto { font-family: var(--display); font-weight: 720; }
+
+@keyframes k-respira { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
+.k-respira { animation: k-respira 2.4s ease-in-out infinite !important; }
+
+/* ── Encender el lector ──────────────────────────────────────────────────── */
+.k-encender {
+  align-self: flex-start;
   display: flex; align-items: center; gap: 14px;
-  padding: 16px 24px; border: 0; border-radius: 999px; cursor: pointer;
-  background: rgba(255, 255, 255, .12);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, .25);
-  color: #fff; font: inherit; text-align: left;
-  animation: nfc-respira 2.8s ease-in-out infinite;
+  min-height: 64px;
+  padding: 12px 22px 12px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--linea);
+  background: rgba(242, 237, 227, .07);
+  color: var(--texto);
+  font: inherit; text-align: left;
+  cursor: pointer;
+  transition: transform 140ms var(--ease-out), background-color 200ms ease;
+  animation: k-entra 320ms var(--ease-out) both;
 }
-.nfc-encender:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
-.nfc-encender strong { display: block; font-size: 19px; font-weight: 650; }
-.nfc-encender small  { display: block; font-size: 13.5px; opacity: .7; margin-top: 2px; }
-.nfc-onda { font-size: 30px; line-height: 1; flex: none; }
-
-@keyframes nfc-respira {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(255,255,255,.22); }
-  50%      { box-shadow: 0 0 0 16px rgba(255,255,255,0); }
+.k-encender svg { color: var(--acento); flex: none; }
+.k-encender strong { display: block; font-size: clamp(17px, 2.2vmin, 21px); font-weight: 650; }
+.k-encender small { display: block; font-size: clamp(13px, 1.7vmin, 15px); color: var(--tenue); margin-top: 2px; }
+.k-encender:active { transform: scale(.97); }
+.k-encender:focus-visible { outline: 3px solid var(--acento); outline-offset: 3px; }
+@media (hover: hover) and (pointer: fine) {
+  .k-encender:hover { background: rgba(242, 237, 227, .12); }
 }
 
-.nfc-aviso {
-  position: absolute; left: 50%; top: 11%; transform: translateX(-50%);
-  max-width: 78vw; padding: 14px 22px; border-radius: 14px;
-  background: rgba(20, 8, 8, .82); backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 140, 140, .45);
-  color: #ffd9d9; font-size: 20px; font-weight: 600; text-align: center;
+.k-alerta {
+  padding: 12px 16px;
+  border-left: 3px solid var(--mal);
+  background: rgba(236, 145, 132, .12);
+  border-radius: 0 10px 10px 0;
+  font-size: clamp(15px, 2vmin, 19px);
+  line-height: 1.35;
+  max-width: 44ch;
+  animation: k-entra 320ms var(--ease-out) both;
+}
+
+/* ── Pie ──────────────────────────────────────────────────────────────────── */
+.k-pie {
+  display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+  gap: 10px 24px;
+  padding-top: clamp(10px, 1.6vh, 18px);
+  border-top: 1px solid var(--linea);
+}
+.k-precio { font-size: clamp(14px, 1.8vmin, 18px); color: var(--tenue); }
+.k-precio .k-num {
+  font-family: var(--display); font-weight: 760;
+  font-size: clamp(24px, 3.6vmin, 38px);
+  color: var(--texto);
+  margin-right: .25em;
+}
+.k-vaso { display: block; margin-top: 2px; }
+.k-estado-red {
+  display: flex; align-items: center; gap: 16px;
+  font-size: clamp(13px, 1.7vmin, 16px); color: var(--tenue);
+}
+/* El punto es estado real del lector, no decoración. */
+.k-marca { display: inline-flex; align-items: center; gap: 7px; }
+.k-marca::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.k-marca.bien { color: var(--ok); }
+.k-marca.mal { color: var(--mal); }
+
+.kiosco-version {
+  position: absolute; bottom: 4px; right: 8px; z-index: 2;
+  font-size: 10px; opacity: .28; font-variant-numeric: tabular-nums;
+}
+
+/* ── Vinculación inicial ──────────────────────────────────────────────────── */
+.kiosco-config {
+  position: relative; z-index: 1; min-height: 100%;
+  display: grid; place-items: center; padding: 24px;
+}
+/* Apaisado: el formulario va donde después va el panel, no encima de la canilla. */
+@media (min-aspect-ratio: 21/20) {
+  .kiosco-config { place-items: center end; padding-right: clamp(28px, 6vw, 96px); }
+}
+/* Vertical: abajo, sobre el mostrador. */
+@media (max-aspect-ratio: 21/20) {
+  .kiosco-config { place-items: end center; padding-bottom: clamp(24px, 6vh, 64px); }
+}
+.kiosco-config .caja {
+  width: 100%; max-width: 460px;
+  background: rgba(14, 19, 22, .9);
+  border: 1px solid var(--linea); border-radius: 20px;
+  padding: 28px;
+  box-shadow: 0 30px 80px rgba(2, 5, 7, .6);
+  user-select: text; -webkit-user-select: text;
+}
+.kiosco-config h1 { font-family: var(--display); font-weight: 760; font-size: 34px; line-height: 1; margin-bottom: 10px; }
+.kiosco-config p { color: var(--tenue); font-size: 15px; line-height: 1.5; margin-bottom: 18px; }
+.kiosco-config label { display: block; font-size: 14px; font-weight: 600; margin: 14px 0 6px; }
+.kiosco-config input {
+  width: 100%; box-sizing: border-box;
+  padding: 13px 14px; border-radius: 12px; font: inherit; font-size: 16px;
+  border: 1px solid rgba(242, 237, 227, .26); background: rgba(242, 237, 227, .06); color: var(--texto);
+}
+.kiosco-config input::placeholder { color: rgba(163, 174, 179, .8); }
+.kiosco-config input:focus-visible { outline: 3px solid var(--acento); outline-offset: 1px; }
+.kiosco-config button {
+  width: 100%; margin-top: 20px; min-height: 52px;
+  border: 0; border-radius: 12px;
+  background: #e2b75a; color: #1a1206;
+  font: inherit; font-size: 17px; font-weight: 700; cursor: pointer;
+  transition: transform 140ms var(--ease-out);
+}
+.kiosco-config button:active:not(:disabled) { transform: scale(.98); }
+.kiosco-config button:disabled { opacity: .45; cursor: not-allowed; }
+.kiosco-config button:focus-visible { outline: 3px solid var(--texto); outline-offset: 3px; }
+.kiosco-config .nota { margin: 18px 0 0; font-size: 13.5px; }
+
+/* ── Vertical: el alto es lo que manda ────────────────────────────────────── */
+/* Con la tablet parada el panel tiene menos de la mitad del alto: los tamaños
+   salen del alto (vh) y no del lado corto, o el ticket no entra. */
+@media (max-aspect-ratio: 21/20) {
+  .k-nombre { font-size: clamp(36px, 5.2vh, 76px); }
+  .k-desc { font-size: clamp(14px, 1.75vh, 21px); margin-top: 6px !important; }
+  .k-ficha { font-size: clamp(13px, 1.5vh, 17px); }
+  .k-titulo { font-size: clamp(32px, 4.6vh, 64px); }
+  .k-sub { font-size: clamp(15px, 1.8vh, 22px); }
+  .k-contador { font-size: clamp(72px, 10vh, 150px); }
+  .k-grande { font-size: clamp(56px, 8vh, 120px); }
+  .k-cifras dd { font-size: clamp(26px, 3.5vh, 48px); }
+  .k-cifras dt { font-size: clamp(13px, 1.5vh, 17px); }
+  .k-centro { gap: clamp(10px, 1.6vh, 20px); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .nfc-encender { animation: none; }
-}
-
-/* ── La tirada: la canilla y el vaso ───────────────────────────────────── */
-.tir {
-  width: min(52vh, 300px);
-  height: auto;
-  display: block;
-  margin: 0 auto;
-  filter: drop-shadow(0 18px 26px rgba(0, 0, 0, .35));
-}
-
-/* Las gotas caen con el chorro. Dos, desfasadas, alcanzan para que se lea
-   movimiento sin que parezca una cascada. */
-.tir-gota { fill: #fff6dd; opacity: .9; }
-.tir-gota.g1 { animation: tir-cae 560ms linear infinite; }
-.tir-gota.g2 { animation: tir-cae 560ms linear infinite 280ms; }
-
-@keyframes tir-cae {
-  from { transform: translateY(0);   opacity: 0; }
-  22%  { opacity: .9; }
-  to   { transform: translateY(14px); opacity: 0; }
-}
-
-/* La condensación respira apenas. Es lo único que se mueve cuando no sirve, y
-   es lo que separa un dibujo de una captura de pantalla. */
-.tir-frio { opacity: .5; animation: tir-respira 5.5s ease-in-out infinite; }
-
-@keyframes tir-respira {
-  0%, 100% { opacity: .38; }
-  50%      { opacity: .62; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .tir-gota, .tir-frio { animation: none; }
+  .k-estado > *, .k-encender, .k-alerta { animation-name: k-funde; }
+  .k-respira { animation: none !important; }
+  .k-encender { transition: background-color 200ms ease; }
 }
