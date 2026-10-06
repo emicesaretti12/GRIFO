@@ -142,6 +142,24 @@ hoy **en esa canilla**, con las tarjetas enmascaradas.
 El número de tarjeta va **enmascarado** (`····C3D4`). Es una pantalla a la vista
 del público.
 
+### Lo cinematográfico
+
+- **La cámara cuenta qué pasa**: con la canilla libre gira despacio alrededor de
+  la pinta; en tu turno se acerca; mientras servís baja y sigue el nivel de la
+  cerveza; en el ticket se aleja para mostrar el vaso. Transiciones de más de un
+  segundo y un balanceo de cámara en mano apenas perceptible.
+- **Brillo (bloom)** en los reflejos del cromo y la espuma, un haz de luz suave
+  desde la luz principal y polvo flotando que brilla al cruzar el haz.
+- **Gotas de condensación** que resbalan por el vidrio frío, frenando y
+  soltándose como una gota de verdad.
+- **Destellos dorados** cuando la tirada queda a ±3 % del vaso.
+- **En el panel**: contador de mililitros con rodillos, ondas en "Apoyá tu
+  tarjeta" y una pasada de luz dorada sobre el veredicto.
+
+En la demostración, el pie dice qué motor está dibujando: "3D", "3D liviano"
+(la tablet no daba abasto y se apagaron el brillo y las sombras) o "2D" (sin
+WebGL).
+
 ### Cómo está hecha
 
 - **3D con WebGL (Three.js), con respaldo 2D.** La escena es un modelo: el vidrio refracta (material con transmisión), el cromo refleja un entorno de bar armado con paneles de luz, todo arroja sombra y la cerveza tiñe la bandeja con una luz ámbar. La pared del bar es un plano dentro de la escena, porque el vidrio solo refracta lo que está en la escena. Si la tablet no tiene WebGL, se usa el motor 2D (`motor.ts`). En el 2D: **dos lienzos.** El de atrás (la barra, el bokeh, el mostrador) se

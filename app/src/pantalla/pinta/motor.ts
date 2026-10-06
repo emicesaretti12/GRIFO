@@ -214,11 +214,11 @@ export class Motor {
     this.dpr = this.calidad === 'baja' ? 1 : Math.min(2, window.devicePixelRatio || 1)
 
     // Apaisado: la escena a la izquierda. Vertical: arriba. El panel de texto
-    // ocupa el resto, con las mismas proporciones en el CSS (54 % y 58 %).
+    // ocupa el resto, con las mismas proporciones en el CSS (54 % y 60 %).
     const apaisado = cssW / cssH > 1.05
     const area: Rect = apaisado
       ? { x0: 0, y0: 0, x1: cssW * 0.54, y1: cssH }
-      : { x0: 0, y0: 0, x1: cssW, y1: cssH * 0.58 }
+      : { x0: 0, y0: 0, x1: cssW, y1: cssH * 0.6 }
     const aw = area.x1 - area.x0, ah = area.y1 - area.y0
     // La manija abierta sobresale por arriba del espacio de la escena: se le
     // deja aire para que la punta nunca toque el borde de la pantalla.

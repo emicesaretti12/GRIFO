@@ -1,4 +1,8 @@
 import * as THREE from 'three'
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import { css, mezclar, paleta, type Paleta, type RGB } from './color'
 import type { Entrada } from './motor'
 
@@ -214,6 +218,29 @@ function texturaManija(nombre: string, p: Paleta): THREE.CanvasTexture {
   return t
 }
 
+/** Un punto de luz suave, para el polvo y los destellos. */
+function texturaPunto(): THREE.CanvasTexture {
+  const { c, x } = lienzo(64, 64)
+  const g = x.createRadialGradient(32, 32, 0, 32, 32, 32)
+  g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.25, 'rgba(255,255,255,0.55)'); g.addColorStop(1, 'rgba(255,255,255,0)')
+  x.fillStyle = g; x.fillRect(0, 0, 64, 64)
+  return new THREE.CanvasTexture(c)
+}
+
+/** El haz de luz: se desvanece hacia los bordes y hacia la punta. */
+function texturaHaz(): THREE.CanvasTexture {
+  const { c, x } = lienzo(256, 256)
+  const v = x.createLinearGradient(0, 0, 0, 256)
+  v.addColorStop(0, 'rgba(255,255,255,0)'); v.addColorStop(0.25, 'rgba(255,255,255,0.9)')
+  v.addColorStop(0.75, 'rgba(255,255,255,0.6)'); v.addColorStop(1, 'rgba(255,255,255,0)')
+  x.fillStyle = v; x.fillRect(0, 0, 256, 256)
+  x.globalCompositeOperation = 'destination-in'
+  const h = x.createLinearGradient(0, 0, 256, 0)
+  h.addColorStop(0, 'rgba(0,0,0,0)'); h.addColorStop(0.5, 'rgba(0,0,0,1)'); h.addColorStop(1, 'rgba(0,0,0,0)')
+  x.fillStyle = h; x.fillRect(0, 0, 256, 256)
+  return new THREE.CanvasTexture(c)
+}
+
 /** El entorno que reflejan el cromo y el vidrio: una barra de noche. Paneles
  *  de luz cálida, una ventana fría atrás y luces chicas en el fondo. */
 function entornoBar(renderer: THREE.WebGLRenderer): THREE.Texture {
@@ -309,6 +336,28 @@ export class Motor3D {
    *  la escena: el vidrio refracta lo que hay en la escena, y un fondo pintado
    *  aparte (en otro lienzo) el vidrio no lo ve: el vaso vacío salía blanco. */
   private pared: THREE.Mesh | null = null
+
+  // ── Lo cinematográfico ────────────────────────────────────────────────────
+  // El post-procesado (el brillo de los reflejos), la cámara que se mueve
+  // según lo que pasa, el haz de luz con polvo flotando, las gotas que se
+  // deslizan por el vidrio y los destellos de una pinta perfecta. Nada de esto
+  // es información: es lo que hace que la escena se sienta viva.
+  private compositor: EffectComposer | null = null
+  private brillo: UnrealBloomPass | null = null
+  private base = { d: 10, objetivo: new THREE.Vector3(), aw: 1, ah: 1 }
+  private cam = { giro: 0, dist: 1, y: 1.62 }
+  private haz: THREE.Mesh
+  private ejeHaz = new THREE.Vector3(0, -1, 0)
+  private polvo: THREE.Points
+  private polvoVel: Float32Array
+  private gotasVidrio: THREE.InstancedMesh
+  private resbalan: { ang: number; y: number; v: number; pausa: number; k: number }[] = []
+  private proxGota = 1
+  private chispas: THREE.Points
+  private chispasVida: Float32Array
+  private chispasVel: Float32Array
+  private festejado: string | null = null
+  tipo: '3D' | '3D liviano' = '3D'
 
   private angulo = MANIJA_CERRADA
   private velAngulo = 0
@@ -465,6 +514,75 @@ export class Motor3D {
     this.salpicaM = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 8, 6), this.matChorro, 48)
     this.salpicaM.count = 0
     this.escena.add(this.gotasM, this.salpicaM)
+
+    // La cámara entra en la escena para llevar colgada la pared del fondo.
+    this.escena.add(this.camara)
+
+    // ── Haz de luz desde la luz principal hacia el vaso ───────────────────
+    const desde = this.luzClave.position.clone()
+    const hacia = new THREE.Vector3(0.1, 0.6, 0)
+    const largoHaz = desde.distanceTo(hacia)
+    // Un plano que gira sobre su eje para mirar siempre a la cámara: un cono
+    // tendría bordes duros donde se lo ve de costado, y no hay forma de
+    // difuminarlos. El plano sí, porque sus bordes son los de la textura.
+    const geoHaz = new THREE.PlaneGeometry(1.7, largoHaz)
+    geoHaz.translate(0, -largoHaz / 2, 0)
+    this.haz = new THREE.Mesh(geoHaz, new THREE.MeshBasicMaterial({
+      color: 0xffcf96, alphaMap: texturaHaz(), transparent: true, opacity: 0.03,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    }))
+    this.haz.position.copy(desde)
+    this.ejeHaz = hacia.clone().sub(desde).normalize()
+    this.escena.add(this.haz)
+
+    // ── Polvo flotando en la luz ──────────────────────────────────────────
+    const N = 260
+    const pos = new Float32Array(N * 3), col = new Float32Array(N * 3)
+    this.polvoVel = new Float32Array(N * 3)
+    const rp = azar(555)
+    for (let i = 0; i < N; i++) {
+      pos[i * 3] = (rp() - 0.5) * 3.4; pos[i * 3 + 1] = rp() * 3.6; pos[i * 3 + 2] = (rp() - 0.5) * 2.6
+      this.polvoVel[i * 3] = (rp() - 0.5) * 0.03; this.polvoVel[i * 3 + 1] = 0.01 + rp() * 0.03; this.polvoVel[i * 3 + 2] = (rp() - 0.5) * 0.03
+    }
+    const geoPolvo = new THREE.BufferGeometry()
+    geoPolvo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+    geoPolvo.setAttribute('color', new THREE.BufferAttribute(col, 3))
+    const punto = texturaPunto()
+    this.polvo = new THREE.Points(geoPolvo, new THREE.PointsMaterial({
+      size: 0.028, map: punto, vertexColors: true, transparent: true, depthWrite: false,
+      blending: THREE.AdditiveBlending, sizeAttenuation: true,
+    }))
+    this.polvo.frustumCulled = false
+    this.escena.add(this.polvo)
+
+    // ── Gotas que resbalan por el vidrio frío ─────────────────────────────
+    this.gotasVidrio = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 16, 12),
+      new THREE.MeshStandardMaterial({ color: 0xeaf6ff, roughness: 0.02, metalness: 0, envMapIntensity: 2.6 }), 12)
+    this.gotasVidrio.count = 0
+    this.gotasVidrio.frustumCulled = false
+    this.escena.add(this.gotasVidrio)
+
+    // ── Destellos de la pinta perfecta ────────────────────────────────────
+    const M = 90
+    const geoCh = new THREE.BufferGeometry()
+    geoCh.setAttribute('position', new THREE.BufferAttribute(new Float32Array(M * 3), 3))
+    this.chispasVida = new Float32Array(M)
+    this.chispasVel = new Float32Array(M * 3)
+    this.chispas = new THREE.Points(geoCh, new THREE.PointsMaterial({
+      size: 0.07, map: punto, color: 0xffd479, transparent: true, depthWrite: false,
+      blending: THREE.AdditiveBlending, sizeAttenuation: true, opacity: 0,
+    }))
+    this.chispas.frustumCulled = false
+    this.escena.add(this.chispas)
+
+    // ── Post-procesado: el brillo de los reflejos ─────────────────────────
+    // Es lo que separa un render de una foto de producto: el cromo y la
+    // espuma "encienden". Si la tablet no da abasto, es lo primero que se va.
+    this.compositor = new EffectComposer(r)
+    this.compositor.addPass(new RenderPass(this.escena, this.camara))
+    this.brillo = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.28, 0.4, 0.97)
+    this.compositor.addPass(this.brillo)
+    this.compositor.addPass(new OutputPass())
   }
 
   // ── API (la misma que el motor 2D) ─────────────────────────────────────────
@@ -475,12 +593,12 @@ export class Motor3D {
     this.renderer.setPixelRatio(this.dpr)
     this.renderer.setSize(cssW, cssH, false)
 
-    // La escena ocupa el 58 % de arriba con la tablet parada, o el 54 % de la
+    // La escena ocupa el 60 % de arriba con la tablet parada, o el 54 % de la
     // izquierda acostada. La cámara se arma para esa zona y el resto de la
     // pantalla (donde va el texto) sigue siendo el mismo mostrador.
     const apaisado = cssW / cssH > 1.05
     const aw = apaisado ? cssW * 0.54 : cssW
-    const ah = apaisado ? cssH : cssH * 0.58
+    const ah = apaisado ? cssH : cssH * 0.6
     const c = this.camara
     c.aspect = aw / ah
     const alto = Math.max(3.95, 2.25 / c.aspect)
@@ -490,6 +608,12 @@ export class Motor3D {
     c.lookAt(objetivo)
     c.setViewOffset(aw, ah, 0, 0, cssW, cssH)
     c.updateProjectionMatrix()
+    this.base = { d, objetivo, aw, ah }
+    if (this.compositor) {
+      this.compositor.setPixelRatio(this.dpr)
+      this.compositor.setSize(cssW, cssH)
+      this.brillo?.resolution.set(cssW / 2, cssH / 2)
+    }
 
     this.pintarFondo()
     this.ponerPared(d, aw, ah)
@@ -535,12 +659,15 @@ export class Motor3D {
         this.lento = ms > 30 ? this.lento + ms / 1000 : Math.max(0, this.lento - ms / 2000)
         if (this.lento > 2) {
           this.calidad = 'baja'
+          this.tipo = '3D liviano'
           this.renderer.shadowMap.enabled = false
+          this.compositor = null
           this.medir(this.cssW, this.cssH, this.reducido)
         }
       }
       this.avanzar(dt)
-      this.renderer.render(this.escena, this.camara)
+      if (this.compositor) this.compositor.render()
+      else this.renderer.render(this.escena, this.camara)
     }
     this.raf = requestAnimationFrame(paso)
   }
@@ -668,6 +795,133 @@ export class Motor3D {
     this.luzClave.intensity = 150 * this.luz
     const nivelActivo = activo ? activo.nivel : 0
     this.luzCerveza.intensity = acercar(this.luzCerveza.intensity, Math.min(1, nivelActivo * 3) * 1.6 * this.luz, 0.4, dt)
+    this.cine(dt, activo)
+  }
+
+  // ── La cámara, la luz y lo que flota ──────────────────────────────────────
+  private cine(dt: number, activo: Vaso | undefined) {
+    const e = this.entrada
+    const t = this.reloj
+    const quieto = this.reducido
+
+    // La cámara cuenta qué pasa: con la canilla libre gira despacio alrededor
+    // de la pinta, como un aviso; en tu turno se acerca; mientras servís baja
+    // y sigue el nivel de la cerveza; en el ticket se aleja un poco para
+    // mostrar el vaso entero. Todo con transiciones de más de un segundo: es
+    // cámara de cine, no de videojuego.
+    const nivelY = activo ? FONDO + alturaDe(activo.nivel) : 0.5
+    let meta = { giro: 0, dist: 1, y: 1.62 }
+    if (e.modo === 'exhibicion') meta = { giro: quieto ? 0.05 : 0.05 + Math.sin(t * 0.11) * 0.22, dist: 0.86, y: 1.42 }
+    else if (e.modo === 'lista') meta = { giro: -0.08, dist: 0.84, y: 1.4 }
+    else if (e.modo === 'sirviendo') meta = { giro: quieto ? 0 : Math.sin(t * 0.21) * 0.05, dist: 0.72, y: Math.max(1.12, Math.min(1.55, nivelY + 0.5)) }
+    else if (e.modo === 'servida') meta = { giro: quieto ? 0.1 : 0.1 + Math.sin(t * 0.09) * 0.12, dist: 0.8, y: 1.3 }
+    const tau = quieto ? 0.01 : 1.6
+    this.cam.giro = acercar(this.cam.giro, meta.giro, tau, dt)
+    this.cam.dist = acercar(this.cam.dist, meta.dist, tau, dt)
+    this.cam.y = acercar(this.cam.y, meta.y, tau, dt)
+    const o = this.base.objetivo
+    const mira = new THREE.Vector3(o.x, this.cam.y, o.z)
+    const dir = DIR_CAM.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), this.cam.giro)
+    // Un balanceo de cámara en mano, apenas perceptible: lo quieto se ve render.
+    const mano = quieto ? 0 : 0.012
+    this.camara.position.copy(mira).addScaledVector(dir, this.base.d * this.cam.dist)
+      .add(new THREE.Vector3(Math.sin(t * 0.7) * mano, Math.sin(t * 0.9 + 1) * mano, 0))
+    this.camara.lookAt(mira)
+
+    // El haz: su eje va de la luz al vaso y gira sobre ese eje para dar la
+    // cara a la cámara. Respira con la luz de escenario.
+    const abajo = this.ejeHaz
+    const hastaCam = this.camara.position.clone().sub(this.haz.position)
+    const lado = new THREE.Vector3().crossVectors(abajo, hastaCam).normalize()
+    const frente = new THREE.Vector3().crossVectors(lado, abajo).normalize()
+    this.haz.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(lado, abajo.clone().negate(), frente))
+    const mh = this.haz.material as THREE.MeshBasicMaterial
+    mh.opacity = 0.02 + this.luz * 0.025
+
+    // ── Polvo: deriva lenta; brilla más cuanto más cerca del haz ──────────
+    const pp = this.polvo.geometry.getAttribute('position') as THREE.BufferAttribute
+    const pc = this.polvo.geometry.getAttribute('color') as THREE.BufferAttribute
+    const L = this.luzClave.position, eje = new THREE.Vector3(0.1, 0.6, 0).sub(L).normalize()
+    const q = new THREE.Vector3(), w = new THREE.Vector3()
+    for (let i = 0; i < pp.count; i++) {
+      let x = pp.getX(i), y = pp.getY(i), z = pp.getZ(i)
+      if (!quieto) {
+        x += (this.polvoVel[i * 3] + Math.sin(t * 0.3 + i) * 0.01) * dt
+        y += this.polvoVel[i * 3 + 1] * dt
+        z += (this.polvoVel[i * 3 + 2] + Math.cos(t * 0.27 + i) * 0.01) * dt
+        if (y > 3.7) y = 0
+        pp.setXYZ(i, x, y, z)
+      }
+      q.set(x, y, z).sub(L)
+      w.copy(eje).multiplyScalar(q.dot(eje))
+      const lejos = q.sub(w).length()
+      const k = Math.max(0, 1 - lejos / 1.1) * (0.35 + 0.65 * this.luz) * (0.6 + 0.4 * Math.sin(t * 2 + i * 1.7))
+      pc.setXYZ(i, 1 * k, 0.78 * k, 0.5 * k)
+    }
+    pp.needsUpdate = true; pc.needsUpdate = true
+
+    // ── Gotas que resbalan por el vidrio ──────────────────────────────────
+    // Se pegan, se sueltan, vuelven a frenar: así baja una gota de verdad.
+    const g = activo && activo.t >= 1 && !activo.saliendo ? activo : undefined
+    if (g && g.frio > 0.6 && g.nivel > 0.25 && !quieto) {
+      this.proxGota -= dt
+      if (this.proxGota <= 0 && this.resbalan.length < 12) {
+        this.proxGota = 1.2 + Math.random() * 2.2
+        const sup = FONDO + alturaDe(g.nivel)
+        this.resbalan.push({ ang: ANG + (Math.random() - 0.5) * 1.9, y: sup - 0.04 - Math.random() * 0.25, v: 0, pausa: 0.4, k: 0.7 + Math.random() * 0.6 })
+      }
+    }
+    if (!g) this.resbalan = []
+    for (const d of this.resbalan) {
+      if (d.pausa > 0) { d.pausa -= dt; d.v = 0 }
+      else {
+        d.v = Math.min(0.32, d.v + dt * 0.9)
+        d.y -= d.v * dt
+        if (Math.random() < dt * 0.8) d.pausa = 0.15 + Math.random() * 0.7
+      }
+    }
+    this.resbalan = this.resbalan.filter(d => d.y > 0.06)
+    this.gotasVidrio.count = this.resbalan.length
+    this.resbalan.forEach((d, i) => {
+      const r = rExt(d.y) + 0.005
+      this.dummy.position.set(Math.sin(d.ang) * r, d.y, Math.cos(d.ang) * r)
+      this.dummy.rotation.set(0, d.ang, 0)
+      const estira = 1 + d.v * 1.6
+      this.dummy.scale.set(0.011 * d.k, 0.016 * d.k * estira, 0.006 * d.k)
+      this.dummy.updateMatrix()
+      this.gotasVidrio.setMatrixAt(i, this.dummy.matrix)
+    })
+    this.gotasVidrio.instanceMatrix.needsUpdate = true
+
+    // ── Destellos: una pinta servida al milímetro se festeja ──────────────
+    const vaso = Math.max(50, e.vaso)
+    const clave = e.modo === 'servida' ? `${e.sesion}` : null
+    if (clave && clave !== this.festejado && Math.abs(e.ml / vaso - 1) <= 0.03 && activo) {
+      this.festejado = clave
+      const tope = FONDO + alturaDe(activo.nivel) + activo.espuma
+      const cp = this.chispas.geometry.getAttribute('position') as THREE.BufferAttribute
+      for (let i = 0; i < cp.count; i++) {
+        const a = Math.random() * Math.PI * 2, r = R_BOCA * (0.6 + Math.random() * 0.6)
+        cp.setXYZ(i, Math.sin(a) * r, tope + Math.random() * 0.1, Math.cos(a) * r)
+        this.chispasVel[i * 3] = Math.sin(a) * (0.2 + Math.random() * 0.5)
+        this.chispasVel[i * 3 + 1] = 0.6 + Math.random() * 1.2
+        this.chispasVel[i * 3 + 2] = Math.cos(a) * (0.2 + Math.random() * 0.5)
+        this.chispasVida[i] = 1.2 + Math.random() * 0.8
+      }
+    }
+    const cp = this.chispas.geometry.getAttribute('position') as THREE.BufferAttribute
+    let vivas = 0
+    for (let i = 0; i < cp.count; i++) {
+      if (this.chispasVida[i] <= 0) continue
+      vivas++
+      this.chispasVida[i] -= dt
+      this.chispasVel[i * 3 + 1] -= 0.9 * dt
+      cp.setXYZ(i, cp.getX(i) + this.chispasVel[i * 3] * dt, cp.getY(i) + this.chispasVel[i * 3 + 1] * dt, cp.getZ(i) + this.chispasVel[i * 3 + 2] * dt)
+    }
+    cp.needsUpdate = true
+    const mc = this.chispas.material as THREE.PointsMaterial
+    mc.opacity = vivas ? Math.min(1, Math.max(...Array.from(this.chispasVida)) / 0.8) : 0
+    if (this.brillo) this.brillo.strength = 0.22 + (vivas ? 0.1 : 0) + this.luz * 0.08
   }
 
   private impacto(v: Vaso | undefined): number {
@@ -861,7 +1115,7 @@ export class Motor3D {
     const alto = this.cssH * u * 1.02
     const ancho = this.cssW * u * 1.02
     if (this.pared) {
-      this.escena.remove(this.pared)
+      this.pared.removeFromParent()
       this.pared.geometry.dispose()
       const m = this.pared.material as THREE.MeshBasicMaterial
       m.map?.dispose(); m.dispose()
@@ -871,17 +1125,11 @@ export class Motor3D {
     const pared = new THREE.Mesh(new THREE.PlaneGeometry(ancho, alto),
       new THREE.MeshBasicMaterial({ map: tex, toneMapped: false, depthWrite: false }))
     pared.renderOrder = -1
-    // El centro de la pantalla está corrido respecto del centro de la zona de
-    // la escena: el plano se corre igual para que el fondo cubra todo.
-    const adelante = new THREE.Vector3(); c.getWorldDirection(adelante)
-    const derecha = new THREE.Vector3().crossVectors(adelante, c.up).normalize()
-    const arriba = new THREE.Vector3().crossVectors(derecha, adelante).normalize()
-    const pxAUnidad = u
-    pared.position.copy(c.position).addScaledVector(adelante, D)
-      .addScaledVector(derecha, (this.cssW / 2 - aw / 2) * pxAUnidad)
-      .addScaledVector(arriba, -(this.cssH / 2 - ah / 2) * pxAUnidad)
-    pared.quaternion.copy(c.quaternion)
-    this.escena.add(pared)
+    // Va colgada de la cámara: cuando la cámara se mueve, el fondo la sigue
+    // como un telón lejano. El centro de la pantalla está corrido respecto del
+    // de la zona de la escena, y el plano se corre igual.
+    pared.position.set((this.cssW / 2 - aw / 2) * u, -(this.cssH / 2 - ah / 2) * u, -D)
+    c.add(pared)
     this.pared = pared
   }
 

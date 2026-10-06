@@ -37,12 +37,12 @@
 
 /* ── El panel ─────────────────────────────────────────────────────────────── */
 /* Apaisado: a la derecha de la escena (54 %). Vertical, que es como está la
-   tablet en la barra: debajo (58 %). Son las mismas proporciones que usa el
+   tablet en la barra: debajo (60 %). Son las mismas proporciones que usa el
    motor para encuadrar la canilla. */
 .k-panel {
   position: absolute; z-index: 1;
   display: flex; flex-direction: column;
-  top: 58%; left: 0; right: 0; bottom: 0;
+  top: 60%; left: 0; right: 0; bottom: 0;
   padding: 0 clamp(20px, 6vw, 56px) clamp(16px, 2.6vh, 34px);
   gap: clamp(10px, 1.8vh, 22px);
 }
@@ -324,7 +324,37 @@
   .k-panel.ocupado .k-desc, .k-panel.ocupado .k-ficha { display: none; }
 }
 
+/* ── Contador de rodillos ─────────────────────────────────────────────────── */
+/* Cada dígito es una ventana de 1em sobre una tira 0-9. La transición se
+   re-apunta sola cuando llega otro valor a mitad de camino. */
+.k-dig { display: inline-block; height: .86em; overflow: hidden; vertical-align: top; }
+.k-tira { display: flex; flex-direction: column; transition: transform 380ms var(--ease-out); will-change: transform; }
+.k-tira > span { display: block; height: .86em; line-height: .86; text-align: center; }
+
+/* ── Ondas de "acercá la tarjeta" ─────────────────────────────────────────── */
+.k-onda { position: relative; display: inline-grid; place-items: center; flex: none; }
+.k-onda::before, .k-onda::after {
+  content: ""; position: absolute; inset: -6px; border-radius: 50%;
+  border: 2px solid var(--acento); opacity: 0;
+  animation: k-onda 2.6s var(--ease-out) infinite;
+}
+.k-onda::after { animation-delay: 1.3s; }
+@keyframes k-onda { 0% { transform: scale(.6); opacity: .7; } 100% { transform: scale(2.6); opacity: 0; } }
+
+/* ── El veredicto se lleva un destello ────────────────────────────────────── */
+/* Una sola pasada de luz dorada sobre el texto, dos veces: es el momento raro
+   y festejado de la pantalla, no algo que se repita. */
+.k-destello {
+  background: linear-gradient(100deg, var(--texto) 38%, #ffe2a0 48%, #fff6dc 50%, #ffe2a0 52%, var(--texto) 62%) 0 0 / 300% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: k-entra 320ms var(--ease-out) both, k-destello 1.8s 0.35s var(--ease-out) 2 both !important;
+}
+@keyframes k-destello { from { background-position: 100% 0; } to { background-position: 0 0; } }
+
 @media (prefers-reduced-motion: reduce) {
+  .k-tira { transition: none; }
+  .k-onda::before, .k-onda::after { animation: none; }
+  .k-destello { animation: k-funde 320ms ease both !important; background-position: 100% 0; }
   .k-estado > *, .k-encender, .k-alerta { animation-name: k-funde; }
   .k-respira { animation: none !important; }
   .k-encender { transition: background-color 200ms ease; }

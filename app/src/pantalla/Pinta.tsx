@@ -13,9 +13,11 @@ type Props = Entrada & {
    *  Sirve para que el contador de texto suba junto con el líquido sin
    *  re-renderizar React 60 veces por segundo. */
   alContar?: (ml: number) => void
+  /** Qué motor quedó andando: "3D", "3D liviano" o "2D". */
+  alMotor?: (tipo: string) => void
 }
 
-export default function Pinta({ alContar, ...entrada }: Props) {
+export default function Pinta({ alContar, alMotor, ...entrada }: Props) {
   const caja = useRef<HTMLDivElement>(null)
   const escena = useRef<HTMLCanvasElement>(null)
   const fondo = useRef<HTMLCanvasElement>(null)
@@ -23,6 +25,8 @@ export default function Pinta({ alContar, ...entrada }: Props) {
   const [plano, setPlano] = useState(false)
   const contar = useRef(alContar)
   contar.current = alContar
+  const avisar = useRef(alMotor)
+  avisar.current = alMotor
 
   useEffect(() => {
     let m: Motor | Motor3D
@@ -53,7 +57,12 @@ export default function Pinta({ alContar, ...entrada }: Props) {
       .then(() => m.repintarManija())
       .catch(() => {})
     m.iniciar()
+    // El 3D puede pasar a liviano si la tablet no da abasto: se vuelve a mirar.
+    const informar = () => avisar.current?.(m instanceof Motor3D ? m.tipo : '2D')
+    informar()
+    const cada = setInterval(informar, 3000)
     return () => {
+      clearInterval(cada)
       ro.disconnect()
       reducido.removeEventListener('change', medir)
       m.detener()

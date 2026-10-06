@@ -58,6 +58,26 @@ function leerConfig(): { grifo: number; token: string } | null {
 
 const litros = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 1 })
 
+/** Contador de rodillos: cada dígito es una tira 0-9 que se desliza hasta su
+ *  número, como un contador mecánico. Se arma a mano en el DOM porque cambia
+ *  muchas veces por segundo; por React re-renderizaría la pantalla entera. */
+function pintarRodillo(el: HTMLElement, n: number) {
+  const txt = String(Math.max(0, Math.round(n)))
+  if (el.childElementCount !== txt.length) {
+    el.replaceChildren(...[...txt].map(() => {
+      const d = document.createElement('span'); d.className = 'k-dig'
+      const tira = document.createElement('span'); tira.className = 'k-tira'
+      for (let i = 0; i <= 9; i++) { const c = document.createElement('span'); c.textContent = String(i); tira.append(c) }
+      d.append(tira); return d
+    }))
+    el.setAttribute('aria-label', txt)
+  }
+  ;[...txt].forEach((c, i) => {
+    const tira = el.children[i].firstElementChild as HTMLElement
+    tira.style.transform = `translateY(${-Number(c) * 10}%)`
+  })
+}
+
 export default function Kiosco() {
   // En demostración no hay canilla vinculada: el estado sale de un simulador y
   // no se toca ni la base ni lo guardado en el dispositivo.
@@ -66,6 +86,9 @@ export default function Kiosco() {
   const [estado, setEstado] = useState<Estado | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [escena, setEscena] = useState(0)
+  // Qué está dibujando la escena: en la demostración se muestra, para saber si
+  // la tablet usa el 3D o cayó al 2D.
+  const [motor, setMotor] = useState('cargando')
   const sinRed = useRef(0)
 
   useEffect(() => {
@@ -196,7 +219,7 @@ export default function Kiosco() {
   const pintarContador = useCallback(() => {
     const ml = contado.current
     const { precio, maximo } = datos.current
-    if (refMl.current) refMl.current.textContent = String(ml)
+    if (refMl.current) pintarRodillo(refMl.current, ml)
     if (refGastado.current) refGastado.current.textContent = pesos(Math.ceil((ml * precio) / 1000))
     if (refQueda.current) refQueda.current.textContent = volumen(Math.max(0, maximo - ml))
   }, [])
@@ -204,6 +227,7 @@ export default function Kiosco() {
   useLayoutEffect(() => { pintarContador() })
 
   if (!config) return <Config onListo={setConfig} />
+
 
   const g = estado?.grifo
   const color = g?.color ?? '#d9a21b'
@@ -229,7 +253,7 @@ export default function Kiosco() {
   return (
     <div className="kiosco" style={{ '--cerveza': color } as React.CSSProperties}>
       <Pinta modo={modo} ml={ml} vaso={vaso} color={color} etiqueta={g?.nombre ?? ''}
-             sesion={sesion} alContar={alContar} />
+             sesion={sesion} alContar={alContar} alMotor={setMotor} />
 
       <section className={s || u ? 'k-panel ocupado' : 'k-panel'}>
         <header className="k-cerveza">
@@ -305,7 +329,7 @@ export default function Kiosco() {
               : nfc.estado === 'escaneando'
                 ? <span className="k-marca bien">Lector listo</span>
                 : <span className="k-marca mal">Lector apagado</span>}
-            <span>{demo ? 'Demostración' : s ? s.tarjeta : `Canilla ${config.grifo}`}</span>
+            <span>{demo ? `Demostración, ${motor}` : s ? s.tarjeta : `Canilla ${config.grifo}`}</span>
           </p>
         </footer>
       </section>
@@ -337,7 +361,9 @@ function Libre({ escena, ranking, vaso, precio }: {
     <div className="k-estado" key="invita">
       <p className="k-titulo">Apoyá tu tarjeta</p>
       <p className="k-sub k-con-icono">
-        <ContactlessPayment size="1.3em" weight="regular" aria-hidden="true" />
+        {/* Las ondas llaman la atención desde lejos: es la única invitación a
+            hacer algo que tiene la pantalla, y nadie lee de lejos. */}
+        <span className="k-onda"><ContactlessPayment size="1.3em" weight="regular" aria-hidden="true" /></span>
         Acercala al dorso de la tablet
       </p>
     </div>
@@ -398,7 +424,7 @@ function Ticket({ ultima, vaso, cliente }: {
   const p = punteria(ultima.ml_servidos, vaso)
   return (
     <div className="k-estado" key="ticket">
-      <p className="k-titulo">{v.titulo}</p>
+      <p className="k-titulo k-destello">{v.titulo}</p>
       <p className="k-sub">{v.sub}. {p} % de puntería.</p>
       <p className="k-contador"><span className="k-num">{ultima.ml_servidos}</span><span className="k-unidad">ml</span></p>
       <dl className="k-cifras">
