@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { Motor, type Entrada } from './pinta/motor'
 
 // La escena de la canilla: dos lienzos a pantalla completa. Atrás, la
-// contrabarra (se pinta una vez); adelante, el vaso personaje en estilo anime.
+// contrabarra (se pinta una vez); adelante, el vaso personaje en estilo caricatura.
 // Toda la lógica está en el motor: acá solo se le pasan los datos y se le
 // avisa cuando cambia el tamaño.
 

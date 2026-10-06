@@ -88,7 +88,7 @@ Se puede cambiar la cerveza: `?demo&color=2a160b&nombre=Stout&vaso=500`.
 
 La pantalla tiene dos partes que no compiten:
 
-- **La escena**, en estilo anime: una torre de canilla cromada, la manija con el
+- **La escena**, en estilo caricatura moderna (el de Cartoon Network): una torre de canilla cromada, la manija con el
   nombre de la cerveza y, sobre la bandeja de goteo, el protagonista: **un vaso
   con cara** que reacciona a lo que pasa. Detrás, la contrabarra con botellas.
 - **El panel**: el nombre de la cerveza, el estado y el precio. A la derecha si
@@ -96,11 +96,11 @@ La pantalla tiene dos partes que no compiten:
 
 | Estado | La escena | El panel |
 |---|---|---|
-| **Libre** | El vaso lleno hace de vidriera: canta, guiña, salta, mira para los costados | Rota cada 9 s: "Apoyá tu tarjeta", el precio del vaso, el podio del día |
-| **Tu turno** | Entra saltando un vaso vacío, golpe de cámara con "!", ojos de estrella | Saludo según tu historia, saldo, cuánto te alcanza, "Abrí la canilla y serví" |
-| **Sirviendo** | Se abre la manija, cae el chorro y el vaso se llena con lo medido, feliz; cerca del límite transpira | Los mL subiendo con el vaso, lo gastado, lo que te queda |
+| **Libre** | El vaso lleno hace de vidriera: saluda, canta, salta, mira para los costados | Rota cada 9 s: "Apoyá tu tarjeta", el precio del vaso, el podio del día |
+| **Tu turno** | Entra saltando un vaso vacío, estallido amarillo detrás con "!", brazos arriba | Saludo según tu historia, saldo, cuánto te alcanza, "Abrí la canilla y serví" |
+| **Sirviendo** | Se abre la manija, cae el chorro y el vaso se llena con lo medido, aplaudiendo; cerca del límite aprieta los dientes y transpira | Los mL subiendo con el vaso, lo gastado, lo que te queda |
 | **En pausa** | Espera mirando la canilla y parpadea | Igual que sirviendo |
-| **Ticket** | Pinta perfecta: salta, ojos de estrella y papelitos. Si no, sonrisa, guiño y un corazón | El veredicto, la puntería, lo cobrado y lo que te queda |
+| **Ticket** | Pinta perfecta: salta con los brazos arriba, estallido y papelitos. Si no, sonríe, saluda y tira un corazón | El veredicto, la puntería, lo cobrado y lo que te queda |
 | **Fuera de servicio** | El vaso duerme (Zzz y burbujita), luces bajas | Qué pasa, en castellano |
 
 ### La escena muestra lo que mide la canilla
@@ -140,24 +140,30 @@ hoy **en esa canilla**, con las tarjetas enmascaradas.
 El número de tarjeta va **enmascarado** (`····C3D4`). Es una pantalla a la vista
 del público.
 
-### El estilo: anime
+### El estilo: caricatura moderna
 
-- **Dibujo animado, no foto.** Contorno grueso de tinta, colores planos y una
-  sombra dura (cel shading). Se lee de lejos en un bar oscuro y le da
-  personalidad a cada canilla: el iris de los ojos toma el color de la cerveza.
-- **Física de dibujo animado.** El vaso se estira al saltar y se aplasta al
-  caer (squash & stretch); la cerveza se sacude con cada salto; la manija rebota
-  como un resorte y deja líneas de movimiento.
-- **Recursos del anime**: rayos de fondo que giran más rápido cuando pasa algo,
-  líneas de concentración (集中線) en los momentos fuertes, golpe de zoom y
-  temblor en la pinta perfecta, rubor con rayitas, gota de sudor, notas
-  musicales, estrellitas y papelitos.
-- **La contrabarra**: estantes con botellas y trama de puntos de manga, pintada
-  una sola vez.
+El de las series actuales de Cartoon Network: contornos gruesos, formas
+geométricas simples y colores planos y brillantes.
+
+- **Sin degradés ni detalles finos.** Cada cosa es un color plano con, como
+  mucho, una franja de sombra y una de brillo. Se lee de lejos en un bar.
+- **El personaje tiene contorno; el fondo no.** Así el vaso y la canilla se
+  despegan solos de la pared.
+- **El vaso con cara**: ojos blancos con un punto negro, cejas sueltas que
+  cambian con el humor, brazos de fideo con manos redondas. Saluda, aplaude,
+  levanta los brazos, se agarra la cara cuando está por llenarse.
+- **Física de dibujo animado.** Se estira al saltar, se aplasta al caer y
+  levanta polvo; la cerveza se sacude; los brazos llegan tarde a su pose; la
+  manija rebota como un resorte y deja rayitas de movimiento.
+- **Recursos clásicos**: rayos que giran detrás en los momentos fuertes, la
+  estrella amarilla de impacto, golpe de zoom y temblor en la pinta perfecta,
+  gota de sudor, notas musicales, corazones, estrellitas y papelitos.
+- **La pared**: verde agua con estantes de botellas de colores, zócalo de
+  tablas y un círculo de luz detrás del vaso. Se pinta una sola vez.
 - **En el panel**: contador de mililitros con rodillos, ondas en "Apoyá tu
   tarjeta" y una pasada de luz dorada sobre el veredicto.
 
-En la demostración, el pie dice "Demostración, animado".
+En la demostración, el pie dice "Demostración, caricatura".
 
 ### Cómo está hecha
 
@@ -174,7 +180,8 @@ En la demostración, el pie dice "Demostración, animado".
 - **Respeta `prefers-reduced-motion`**: las caras siguen contando el estado,
   pero sin saltos, sin rayos girando, sin golpes de cámara ni papelitos.
 - **Los colores salen del color que cargás en el panel.** Con uno alcanza: la
-  sombra, el brillo, la espuma y los ojos se derivan de ese tono.
+  sombra, el brillo y la espuma se derivan de ese tono. Con una cerveza negra,
+  la cara lleva un borde crema para que se lea igual.
 
 ---
 
