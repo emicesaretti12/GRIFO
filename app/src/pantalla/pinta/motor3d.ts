@@ -273,7 +273,11 @@ function entornoBar(renderer: THREE.WebGLRenderer): THREE.Texture {
 }
 
 // ── Estado de un vaso ──────────────────────────────────────────────────────
-type Burbuja = { ang: number; y: number; r: number; arrastre: number; fase: number }
+/** `rad` es la fracción del radio: 1 = pegada al vidrio, menos = adentro. */
+type Burbuja = { ang: number; y: number; r: number; arrastre: number; fase: number; rad: number }
+/** Hilos de burbujas: salen siempre del mismo punto del fondo, como en un vaso
+ *  de verdad (una imperfección del vidrio donde nuclea el gas). */
+const HILOS = [{ ang: 0.3, rad: 0.35 }, { ang: 1.4, rad: 0.62 }, { ang: -0.6, rad: 0.5 }, { ang: 2.6, rad: 0.2 }]
 type Vaso = {
   clave: string
   t: number
@@ -345,6 +349,7 @@ export class Motor3D {
   private compositor: EffectComposer | null = null
   private brillo: UnrealBloomPass | null = null
   private base = { d: 10, objetivo: new THREE.Vector3(), aw: 1, ah: 1 }
+  private parado: boolean | null = null
   private cam = { giro: 0, dist: 1, y: 1.62 }
   private haz: THREE.Mesh
   private ejeHaz = new THREE.Vector3(0, -1, 0)
@@ -414,16 +419,26 @@ export class Motor3D {
     // ── Materiales ────────────────────────────────────────────────────────
     const cromo = new THREE.MeshStandardMaterial({ color: 0xf2f4f6, metalness: 1, roughness: 0.07 })
     const acero = new THREE.MeshStandardMaterial({ color: 0xd8dde0, metalness: 1, roughness: 0.32 })
+    // ── El vidrio: solo sus reflejos ──────────────────────────────────────
+    // Lo que refracta de verdad ahora es la cerveza (abajo). En Three.js un
+    // material con transmisión no ve a otro con transmisión: si el vidrio
+    // refractara, la cerveza adentro no podría hacerlo. Así que el vidrio es
+    // un cuerpo negro que SUMA sus reflejos (mezcla aditiva): lo que se ve son
+    // los brillos del entorno y los bordes, que es lo que en una foto delata
+    // al vidrio. Con Fresnel, los bordes reflejan más que el frente.
     this.matVidrio = new THREE.MeshPhysicalMaterial({
-      color: 0xffffff, metalness: 0, roughness: 0.012, transmission: 1, thickness: 0.05, ior: 1.5,
-      specularIntensity: 0.85, clearcoat: 1, clearcoatRoughness: 0.04, envMapIntensity: 1.5,
-      attenuationColor: new THREE.Color(0xe6fff2), attenuationDistance: 2.5,
+      color: 0x000000, metalness: 0, roughness: 0.02, ior: 1.5,
+      specularIntensity: 1, clearcoat: 1, clearcoatRoughness: 0.02, envMapIntensity: 1.9,
+      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
       bumpMap: texturaRocio(), bumpScale: 0.0,
     })
     this.matEspuma = new THREE.MeshStandardMaterial({ color: 0xfffaf0, roughness: 0.82, bumpMap: texturaEspuma(), bumpScale: 1.6, side: THREE.DoubleSide })
+    // El chorro también es líquido de verdad: refracta y toma color por espesor.
     this.matChorro = new THREE.MeshPhysicalMaterial({
-      color: 0xd9a21b, emissive: 0xffc860, emissiveMap: this.texVetas, emissiveIntensity: 0.9,
-      roughness: 0.06, clearcoat: 1,
+      color: 0xffffff, transmission: 1, thickness: 0.09, ior: 1.34, roughness: 0.04,
+      attenuationColor: new THREE.Color(0xd9a21b), attenuationDistance: 0.06,
+      emissive: 0xffc860, emissiveMap: this.texVetas, emissiveIntensity: 0.35,
+      clearcoat: 1, specularIntensity: 1,
     })
     // Todo lo que está DENTRO del vaso tiene que ser opaco: Three.js dibuja lo
     // transparente después del vidrio, y la pared de adelante lo taparía. Lo
@@ -580,7 +595,7 @@ export class Motor3D {
     // espuma "encienden". Si la tablet no da abasto, es lo primero que se va.
     this.compositor = new EffectComposer(r)
     this.compositor.addPass(new RenderPass(this.escena, this.camara))
-    this.brillo = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.28, 0.4, 0.97)
+    this.brillo = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.2, 0.35, 1.3)
     this.compositor.addPass(this.brillo)
     this.compositor.addPass(new OutputPass())
   }
@@ -608,6 +623,12 @@ export class Motor3D {
     c.lookAt(objetivo)
     c.setViewOffset(aw, ah, 0, 0, cssW, cssH)
     c.updateProjectionMatrix()
+    // Al girar la tablet (o al arrancar) la cámara salta al cuadro que le toca
+    // en vez de viajar desde el de la otra orientación.
+    if (this.parado !== !apaisado) {
+      this.parado = !apaisado
+      this.cam = this.parado ? { giro: 0, dist: 1.04, y: 1.74 } : { giro: 0, dist: 1, y: 1.62 }
+    }
     this.base = { d, objetivo, aw, ah }
     if (this.compositor) {
       this.compositor.setPixelRatio(this.dpr)
@@ -815,6 +836,11 @@ export class Motor3D {
     else if (e.modo === 'lista') meta = { giro: -0.08, dist: 0.84, y: 1.4 }
     else if (e.modo === 'sirviendo') meta = { giro: quieto ? 0 : Math.sin(t * 0.21) * 0.05, dist: 0.72, y: Math.max(1.12, Math.min(1.55, nivelY + 0.5)) }
     else if (e.modo === 'servida') meta = { giro: quieto ? 0.1 : 0.1 + Math.sin(t * 0.09) * 0.12, dist: 0.8, y: 1.3 }
+    // Con la tablet parada el cuadro es más ancho que alto para la escena y lo
+    // que manda es la altura: de la barra a la punta de la manija (3,55). Si se
+    // acerca como acostada, la manija sale cortada arriba. Así que parada la
+    // cámara se queda casi en el plano general y solo respira.
+    if (this.parado) meta = { ...meta, dist: Math.max(0.98, meta.dist + 0.2), y: 1.74 + (meta.y - 1.4) * 0.2 }
     const tau = quieto ? 0.01 : 1.6
     this.cam.giro = acercar(this.cam.giro, meta.giro, tau, dt)
     this.cam.dist = acercar(this.cam.dist, meta.dist, tau, dt)
@@ -921,7 +947,7 @@ export class Motor3D {
     cp.needsUpdate = true
     const mc = this.chispas.material as THREE.PointsMaterial
     mc.opacity = vivas ? Math.min(1, Math.max(...Array.from(this.chispasVida)) / 0.8) : 0
-    if (this.brillo) this.brillo.strength = 0.22 + (vivas ? 0.1 : 0) + this.luz * 0.08
+    if (this.brillo) this.brillo.strength = 0.16 + (vivas ? 0.12 : 0) + this.luz * 0.06
   }
 
   private impacto(v: Vaso | undefined): number {
@@ -943,21 +969,27 @@ export class Motor3D {
     v.turbio = recibe ? acercar(v.turbio, 1, 0.35, dt) : acercar(v.turbio, 0, 1.4, dt)
     if (v.nivel > 0.02) v.frio = Math.min(1, v.frio + dt / 7)
 
-    // Burbujas: sobre la cara del líquido que mira la cámara
+    // Burbujas: por todo el volumen (se ven a través de la cerveza, que las
+    // refracta), algunas pegadas al vidrio, y los hilos que nacen del fondo.
     if (alto > 0.03) {
       const mult = this.reducido || this.calidad === 'baja' ? 0.45 : 1
       const r = Math.random
-      const n = (26 + alto * 40 + (recibe ? 160 : 0)) * mult * dt
+      const n = (34 + alto * 50 + (recibe ? 200 : 0)) * mult * dt
       for (let k = 0; k < Math.floor(n) + (r() < n % 1 ? 1 : 0); k++) {
         const arr = recibe && r() < 0.6
+        const pegada = !arr && r() < 0.25
         v.burbujas.push({
-          ang: ANG + (r() - 0.5) * 2.4,
-          y: arr ? sup - 0.02 - r() * 0.12 : FONDO + 0.01 + r() * alto * (r() < 0.4 ? 0.1 : 0.9),
-          r: 0.0035 + r() * 0.006, arrastre: arr ? 0.6 + r() * 0.9 : 0, fase: r() * 6,
+          ang: ANG + (r() - 0.5) * (pegada ? 2.4 : Math.PI * 2),
+          rad: pegada ? 1.02 : arr ? Math.sqrt(r()) * 0.5 : Math.sqrt(r()) * 0.92,
+          y: arr ? sup - 0.02 - r() * 0.16 : FONDO + 0.01 + r() * alto * (r() < 0.4 ? 0.1 : 0.9),
+          r: 0.003 + r() * 0.006, arrastre: arr ? 0.6 + r() * 1.1 : 0, fase: r() * 6,
         })
       }
+      for (const h of HILOS) {
+        if (r() < dt * 9 * mult) v.burbujas.push({ ang: ANG + h.ang, rad: h.rad, y: FONDO + 0.006, r: 0.0022 + r() * 0.0012, arrastre: 0, fase: r() * 6 })
+      }
     }
-    const tope = this.reducido || this.calidad === 'baja' ? 160 : 380
+    const tope = this.reducido || this.calidad === 'baja' ? 200 : 520
     if (v.burbujas.length > tope) v.burbujas.splice(0, v.burbujas.length - tope)
     for (const b of v.burbujas) {
       b.r += dt * 0.0012
@@ -975,14 +1007,16 @@ export class Motor3D {
     }
     v.liquido.visible = v.nivel > 0.004
     v.espumaM.visible = v.nivel > 0.004 && v.espuma > 0.004
-    const p = this.pal
-    v.matLiq.color.copy(color3(mezclar(p.base, [255, 246, 220], v.turbio * 0.22)))
-    v.matLiq.emissiveIntensity = 0.55 + v.turbio * 0.35
+    // Mientras se sirve, la nube de microburbujas difunde la luz: la cerveza se
+    // ve turbia (más rugosa por dentro) y se aclara cuando decanta.
+    v.matLiq.roughness = 0.05 + v.turbio * 0.38
+    v.matLiq.color.copy(color3(mezclar([255, 255, 255], [255, 238, 205], v.turbio * 0.6)))
+    v.matLiq.emissiveIntensity = 0.08 + v.turbio * 0.22
 
     const m = v.burbujasM
     m.count = v.burbujas.length
     v.burbujas.forEach((b, i) => {
-      const rr = rLiq(b.y) + 0.002
+      const rr = b.rad >= 1 ? rLiq(b.y) + 0.002 : rLiq(b.y) * b.rad
       this.dummy.position.set(Math.sin(b.ang) * rr, b.y, Math.cos(b.ang) * rr)
       this.dummy.scale.setScalar(b.r)
       this.dummy.updateMatrix()
@@ -1014,13 +1048,20 @@ export class Motor3D {
       // está adentro (el chorro, las salpicaduras) a la vista a través de la
       // cerveza.
       side: THREE.DoubleSide,
-      color: color3(this.pal.base), roughness: 0.16, clearcoat: 0.6,
-      emissive: color3(this.pal.luz), emissiveMap: this.texLente, emissiveIntensity: 0.55,
+      // ── La cerveza es líquido, no pintura ─────────────────────────────
+      // Transmisión con atenuación: la luz que la atraviesa toma color según
+      // cuánta cerveza cruza. Por eso los bordes salen más oscuros y el centro
+      // más claro sin dibujarlo, y una negra se ve negra porque absorbe más.
+      // Lo que hay detrás (la luz cálida de la contrabarra) se ve a través.
+      color: 0xffffff, transmission: 1, thickness: 0.5, ior: 1.34, roughness: 0.05,
+      attenuationColor: color3(this.pal.base), attenuationDistance: 0.4,
+      specularIntensity: 0.7, clearcoat: 0.4,
+      emissive: color3(this.pal.luz), emissiveMap: this.texLente, emissiveIntensity: 0.08,
     })
     const liquido = new THREE.Mesh(new THREE.BufferGeometry(), matLiq)
     liquido.castShadow = true
     const espumaM = new THREE.Mesh(new THREE.BufferGeometry(), this.matEspuma.clone())
-    const burbujasM = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 8, 6), this.matBurbuja, 420)
+    const burbujasM = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 8, 6), this.matBurbuja, 560)
     burbujasM.count = 0
     burbujasM.frustumCulled = false
     grupo.add(liquido, espumaM, burbujasM, vidrio)
@@ -1080,18 +1121,23 @@ export class Motor3D {
   // ── Color ──────────────────────────────────────────────────────────────────
   private aplicarColor() {
     const p = this.pal
-    this.matChorro.color.copy(color3(p.base))
+    this.matChorro.attenuationColor.copy(color3(p.base))
+    this.matChorro.attenuationDistance = 0.02 + p.luminosidad * 0.09
     this.matChorro.emissive.copy(color3(p.luz))
     this.luzCerveza.color.copy(color3(p.luz))
-    this.matEspuma.color.copy(color3(p.espuma))
+    // Un punto por debajo del blanco: la espuma bajo la luz de arriba se quema
+    // y queda como un disco plano; así se le ven las burbujitas.
+    this.matEspuma.color.copy(color3(p.espuma)).multiplyScalar(0.84)
     for (const v of this.vasos) this.aplicarColorVaso(v)
   }
 
   private aplicarColorVaso(v: Vaso) {
     const p = this.pal
-    v.matLiq.color.copy(color3(p.base))
+    v.matLiq.attenuationColor.copy(color3(p.base))
+    // Más oscura la cerveza, menos distancia recorre la luz antes de apagarse.
+    v.matLiq.attenuationDistance = 0.1 + p.luminosidad * p.luminosidad * 1.6
     v.matLiq.emissive.copy(color3(p.luz))
-    ;(v.espumaM.material as THREE.MeshStandardMaterial).color.copy(color3(p.espuma))
+    ;(v.espumaM.material as THREE.MeshStandardMaterial).color.copy(color3(p.espuma)).multiplyScalar(0.84)
     // En una cerveza negra las burbujas se ven tostadas y apagadas.
     this.matBurbuja.color.copy(color3(mezclar(p.brillo, [255, 250, 240], 0.25 + p.luminosidad * 0.6)))
     this.matBurbuja.emissiveIntensity = 0.1 + p.luminosidad * 0.3
@@ -1167,9 +1213,12 @@ export class Motor3D {
     // refracta el fondo: sin luz detrás, un vaso vacío se ve oscuro.
     const pv = new THREE.Vector3(0, 0.9, -0.4).project(this.camara)
     const gx = (pv.x + 1) / 2 * W, gy = (1 - pv.y) / 2 * H
-    const halo = c.createRadialGradient(gx, gy, 0, gx, gy, m * 0.42)
-    halo.addColorStop(0, 'rgba(255,184,110,0.30)')
-    halo.addColorStop(0.5, 'rgba(255,170,95,0.12)')
+    // Es la luz que atraviesa la cerveza: las fotos de cerveza siempre están
+    // iluminadas desde atrás, y una cerveza translúcida sin luz detrás se apaga.
+    const halo = c.createRadialGradient(gx, gy, 0, gx, gy, m * 0.46)
+    halo.addColorStop(0, 'rgba(255,214,150,0.85)')
+    halo.addColorStop(0.28, 'rgba(255,186,110,0.45)')
+    halo.addColorStop(0.6, 'rgba(255,170,95,0.12)')
     halo.addColorStop(1, 'rgba(255,170,95,0)')
     c.fillStyle = halo
     c.fillRect(0, 0, W, H)

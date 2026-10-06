@@ -306,22 +306,47 @@
     pointer-events: none;
   }
 }
-/* Con la tablet parada el panel tiene menos de la mitad del alto: los tamaños
-   salen del alto (vh) y no del lado corto, o el ticket no entra. */
+/* ── Vertical: todo se mide contra el panel ──────────────────────────────── */
+/* El panel es un contenedor y los tamaños salen de SU alto (cqh) y de su
+   ancho (cqw), no de la pantalla. Antes salían de la pantalla, y en una tablet
+   real (con la barra del navegador, o de 8") el panel tenía menos alto del que
+   se suponía y los renglones se pisaban. Así, el contenido entra siempre: la
+   suma de los tamaños del estado más cargado (el ticket) es ~70 % del panel.
+   Los mínimos en px son chicos a propósito: un mínimo grande es justo lo que
+   hace que no entre. */
 @media (max-aspect-ratio: 21/20) {
-  .k-nombre { font-size: clamp(36px, 5.2vh, 76px); }
-  .k-desc { font-size: clamp(14px, 1.75vh, 21px); margin-top: 6px !important; }
-  .k-ficha { font-size: clamp(13px, 1.5vh, 17px); }
-  .k-titulo { font-size: clamp(32px, 4.6vh, 64px); }
-  .k-sub { font-size: clamp(15px, 1.8vh, 22px); }
-  .k-contador { font-size: clamp(72px, 10vh, 150px); }
-  .k-grande { font-size: clamp(56px, 8vh, 120px); }
-  .k-cifras dd { font-size: clamp(26px, 3.5vh, 48px); }
-  .k-cifras dt { font-size: clamp(13px, 1.5vh, 17px); }
-  .k-centro { gap: clamp(10px, 1.6vh, 20px); }
-  /* Mientras alguien sirve o mira su ticket, la descripción de la cerveza
-     sobra: el lugar es para sus números. */
-  .k-panel.ocupado .k-desc, .k-panel.ocupado .k-ficha { display: none; }
+  .k-panel {
+    container-type: size;
+    gap: 1.2vh;
+    padding: 0 6vw 2.2vh;
+  }
+  .k-nombre { font-size: max(24px, min(11cqh, 13cqw)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .k-desc { font-size: max(12px, 4.2cqh); margin-top: .8cqh !important; }
+  .k-ficha { font-size: max(11px, 3.6cqh); margin-top: .5cqh !important; }
+  .k-centro { gap: 2.4cqh; }
+  .k-estado { gap: 1.1cqh; }
+  .k-titulo { font-size: max(22px, min(10cqh, 12cqw)); }
+  .k-sub { font-size: max(12px, 4.4cqh); }
+  .k-contador { font-size: max(48px, min(26cqh, 34cqw)); }
+  .k-grande { font-size: max(40px, min(18cqh, 22cqw)); }
+  .k-cifras { column-gap: 7cqw; row-gap: 1cqh; margin-top: .6cqh !important; }
+  .k-cifras dt { font-size: max(11px, 3.6cqh); }
+  .k-cifras dd { font-size: max(18px, min(8.5cqh, 9.5cqw)); margin-top: .4cqh; }
+  .k-accion { font-size: max(14px, 5cqh); margin-top: 1cqh !important; }
+  .k-podio { gap: 1.6cqh; }
+  .k-podio li { font-size: max(14px, 5.2cqh); }
+  .k-encender { min-height: max(48px, 13cqh); }
+  .k-encender strong { font-size: max(14px, 4.6cqh); }
+  .k-encender small { font-size: max(11px, 3.4cqh); }
+  .k-alerta { font-size: max(12px, 4cqh); }
+  .k-pie { padding-top: 1.6cqh; gap: 1cqh 6cqw; }
+  .k-precio { font-size: max(11px, 3.4cqh); }
+  .k-precio .k-num { font-size: max(16px, 6cqh); }
+  .k-estado-red { font-size: max(11px, 3.4cqh); }
+  /* Mientras alguien sirve o mira su ticket, el lugar es para SUS números. El
+     nombre de la cerveza ya está en la manija de la canilla. */
+  .k-panel.ocupado .k-cerveza { display: none; }
+  .k-panel.ocupado .k-vaso { display: none; }
 }
 
 /* ── Contador de rodillos ─────────────────────────────────────────────────── */
@@ -339,7 +364,7 @@
   animation: k-onda 2.6s var(--ease-out) infinite;
 }
 .k-onda::after { animation-delay: 1.3s; }
-@keyframes k-onda { 0% { transform: scale(.6); opacity: .7; } 100% { transform: scale(2.6); opacity: 0; } }
+@keyframes k-onda { 0% { transform: scale(.6); opacity: .7; } 100% { transform: scale(1.9); opacity: 0; } }
 
 /* ── El veredicto se lleva un destello ────────────────────────────────────── */
 /* Una sola pasada de luz dorada sobre el texto, dos veces: es el momento raro
