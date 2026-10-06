@@ -1,27 +1,32 @@
 import { css, mezclar, paleta, type Paleta, type RGB } from './color'
 
 // ─────────────────────────────────────────────────────────────────────────────
-// El motor de la tirada: la torre, la canilla y el vaso, dibujados en canvas.
+// El motor de la tirada, en estilo anime: el vaso es un personaje.
 //
 // ── Lo que muestra es lo que pasa ───────────────────────────────────────────
 // El vaso se llena con los mililitros que mide el caudalímetro, no con un
 // temporizador. La manija se abre cuando la medición sube y se cierra cuando
-// deja de subir. Si se pasa de un vaso, el lleno sale de cuadro y entra otro.
+// deja de subir. Si se pasa de un vaso, el lleno se va saltando y entra otro.
+// Lo que cambia con el estilo es la actuación, no los datos: la cara del vaso
+// cuenta en qué está la tirada.
 //
-//   Es una vista, no una animación: el estado vive en el ESP32 y esto lo
-//   dibuja. Si la canilla se traba, la pantalla se traba con ella.
+//   Libre       canta, guiña, salta, mira para los costados (es la vidriera)
+//   Tu turno    ojos de estrella, salta de las ganas, mira la canilla
+//   Sirviendo   ojos felices y boca abierta; cerca del límite, transpira
+//   En pausa    espera mirando la canilla, parpadea
+//   Ticket      pinta perfecta: festejo con papelitos; si no, sonrisa y guiño
+//   Apagada     duerme
 //
-// ── Por qué canvas y por qué así ────────────────────────────────────────────
-// Un líquido son cientos de cosas moviéndose a la vez (burbujas, espuma,
-// salpicaduras). En el DOM cada una sería un nodo con su layout; acá es una
-// superficie que se repinta. Todo lo que no se mueve (la torre, el vidrio, la
-// bandeja, las texturas) se pinta UNA vez en lienzos aparte y en cada cuadro
-// solo se copia. El trabajo por cuadro es lo que de verdad cambia.
+// ── Cómo está hecho ─────────────────────────────────────────────────────────
+// Canvas 2D, todo dibujado con trazos (nada de imágenes): contorno grueso de
+// tinta, colores planos y una sombra dura, como un dibujo animado. Los cuerpos
+// tienen física simple de dibujo animado: resortes para estirar y aplastar
+// (squash & stretch), gravedad para los saltos y un oleaje en la cerveza que
+// responde a los saltos. El fondo (la contrabarra) se pinta una sola vez.
 //
 // ── Unidades ────────────────────────────────────────────────────────────────
 // Todo se dibuja en un espacio fijo de 600 × 1000 unidades y se escala al
-// tamaño real. El vaso mide 460 unidades de alto: ≈ 15 cm, o sea 1 unidad ≈
-// 0,33 mm. Con eso alcanza para que las proporciones sean las de una pinta.
+// tamaño real de la pantalla.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type Modo = 'exhibicion' | 'lista' | 'sirviendo' | 'servida' | 'apagada'
@@ -39,28 +44,32 @@ export type Entrada = {
   sesion: string | null
 }
 
-// ── Geometría (unidades del espacio de la escena) ──────────────────────────
-const S_W = 600
-const S_H = 1000
+// ── Geometría (unidades de la escena) ──────────────────────────────────────
 const GX = 300                 // centro del vaso = eje del pico
-const BOCA_Y = 440
+const BOCA_Y = 470
 const BASE_Y = 900
-const FONDO_Y = 854            // fondo por dentro: la base de una pinta es gruesa
-const R_BOCA = 118
-const R_BASE = 88
-const PARED = 5
-const K = 0.11                 // achatamiento de las elipses: cámara apenas arriba de la boca
-const LLENO_Y = BOCA_Y + 52    // hasta dónde llega el líquido con el vaso lleno
-const PICO_Y = 352
-const PIVOTE = { x: 290, y: 232 }
-const MOSTRADOR_Y = 930
-const BANDEJA = { x0: 150, x1: 450, arriba: 893, frente: 905, abajo: 929 }
-const SALIDA = 300             // cuánto se corre un vaso cuando se lo llevan
-const BAJADA = 46              // desde qué altura se apoya uno nuevo
+const FONDO_Y = 874            // fondo por dentro: la base es gruesa
+const R_BOCA = 124
+const R_BASE = 96
+const PARED = 7
+const LLENO_Y = BOCA_Y + 46
+const CARA_Y = 690
+const PICO_Y = 376
+const PIVOTE = { x: 300, y: 302 }
+const TORRE = { x0: 424, x1: 482, y0: 300, y1: 902 }
+const BRAZO = { y0: 304, y1: 336 }
+const MOSTRADOR_Y = 902
+const BANDEJA = { x0: 158, x1: 442, y0: 884, y1: 904 }
+const SALIDA = 720
+const CAJA = { x0: 20, x1: 580, y0: 92, y1: 952 }  // lo que tiene que entrar siempre
 
-const G = 3400                 // gravedad del chorro, a ojo: la real es demasiado rápida para verse
-const MANIJA_CERRADA = -6 * Math.PI / 180
-const MANIJA_ABIERTA = 30 * Math.PI / 180
+const G = 3400                 // gravedad del chorro
+const SALTO_G = 2600           // gravedad de los saltos: más blanda, de dibujo animado
+const MANIJA_CERRADA = 5 * Math.PI / 180
+const MANIJA_ABIERTA = -32 * Math.PI / 180
+
+const TINTA = '#1c1226'
+const TINTA_RGB: RGB = [28, 18, 38]
 
 const rExt = (y: number) => R_BOCA + (R_BASE - R_BOCA) * (y - BOCA_Y) / (BASE_Y - BOCA_Y)
 const rInt = (y: number) => rExt(Math.max(BOCA_Y, y)) - PARED
@@ -97,11 +106,9 @@ function alturaDe(fraccion: number): number {
 }
 
 // ── Utilidades ─────────────────────────────────────────────────────────────
-type Lienzo = { c: HTMLCanvasElement; x: CanvasRenderingContext2D; r: Rect }
 type Rect = { x0: number; y0: number; x1: number; y1: number }
 
-/** Números pseudoaleatorios con semilla: las texturas salen iguales en cada
- *  carga y no "tiemblan" al redimensionar. */
+/** Números pseudoaleatorios con semilla: el fondo sale igual en cada carga. */
 function azar(semilla: number) {
   let s = semilla >>> 0
   return () => {
@@ -115,29 +122,56 @@ function azar(semilla: number) {
 
 const acercar = (actual: number, objetivo: number, tau: number, dt: number) =>
   actual + (objetivo - actual) * (1 - Math.exp(-dt / Math.max(1e-4, tau)))
+const salida = (t: number) => 1 - Math.pow(1 - t, 3)
+const entrada = (t: number) => t * t * t
+const rnd = Math.random
+const entre = (a: number, b: number) => a + rnd() * (b - a)
 
-/** Curva fuerte de salida/entrada para desplazamientos en pantalla. */
-const suaveInOut = (t: number) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+// ── Estado ─────────────────────────────────────────────────────────────────
+type Cara = 'dormida' | 'feliz' | 'canta' | 'guino' | 'emocionada' | 'recibiendo'
+  | 'nerviosa' | 'esperando' | 'orgullosa' | 'contenta' | 'chau'
 
-// ── Estado de un vaso ──────────────────────────────────────────────────────
-type Burbuja = { x: number; y: number; r: number; vy: number; fase: number; arrastre: number }
+type Burbuja = { x: number; y: number; r: number; v: number; fase: number }
 type Vaso = {
   clave: string
-  /** 0..1 de la entrada (se apoya desde arriba) o de la salida (se lo llevan). */
+  /** 0..1 de la entrada (llega saltando) o de la salida (se va saltando). */
   t: number
   saliendo: boolean
   nivel: number          // 0..1 del volumen de un vaso
   espuma: number         // alto de la espuma, en unidades
-  turbio: number         // 0..1: la nube de microburbujas de cuando se sirve
-  limpioY: number        // hasta dónde ya decantó, desde abajo
-  frio: number           // 0..1: condensación
+  remolino: number       // 0..1: la cerveza revuelta por el chorro
+  frio: number           // 0..1: gotitas de condensación
   burbujas: Burbuja[]
   semilla: number
+  // El cuerpo
+  sq: number; vsq: number      // aplastado (+) o estirado (−)
+  alto: number; valto: number  // salto: negativo es arriba
+  rot: number
+  ola: number; vola: number    // inclinación de la superficie de la cerveza
+  // La cara
+  cara: Cara
+  mirada: { x: number; y: number }
+  mirar: { x: number; y: number }
+  parpadeo: number             // segundos hasta el próximo
+  cerrando: number             // 0..1 de un parpadeo en curso
+  sudor: number
 }
 
-type Gota = { x: number; y: number; vx: number; vy: number; vida: number; r: number }
+type Particula = {
+  tipo: 'nota' | 'z' | 'corazon' | 'chispa' | 'excl' | 'confeti' | 'gota' | 'puf'
+  x: number; y: number; vx: number; vy: number
+  vida: number; max: number
+  rot: number; vr: number; tam: number
+  color: string
+  g: number
+}
+type Flotante = { x: number; y: number; r: number; v: number; fase: number; estrella: boolean }
+type Gota = { x: number; y: number; vy: number }
+
+const CONFETI = ['#ff5d8f', '#ffd23f', '#3ec6ff', '#7dff9b', '#b388ff', '#ff9f43']
 
 export class Motor {
+  readonly tipo = 'animado'
   private escena: HTMLCanvasElement
   private fondo: HTMLCanvasElement
   private ctx: CanvasRenderingContext2D
@@ -148,21 +182,12 @@ export class Motor {
   private esc = 1
   private ox = 0
   private oy = 0
+  private area: Rect = { x0: 0, y0: 0, x1: 1, y1: 1 }
 
   private entrada: Entrada = { modo: 'exhibicion', ml: 0, vaso: 473, color: '#d9a21b', etiqueta: '', sesion: null }
   private pal: Paleta = paleta('#d9a21b')
   private reducido = false
-
-  // Capas pintadas una vez
-  private fija: Lienzo | null = null
-  private vidrioAtras: Lienzo | null = null
-  private vidrioFrente: Lienzo | null = null
-  private rocio: Lienzo | null = null
-  private manija: Lienzo | null = null
-  private texEspuma: Lienzo | null = null
-  private texChorro: Lienzo | null = null
-  private texNube: Lienzo | null = null
-  private burbuja: HTMLCanvasElement | null = null
+  private placa: HTMLCanvasElement | null = null
 
   // Medición
   private mlPrevio = 0
@@ -172,6 +197,7 @@ export class Motor {
   private mlVisual = 0
   private mlContador = 0
   private ultimoContado = -1
+  private alias: { de: string | null; a: string } | null = null
 
   // Animación
   private vasos: Vaso[] = []
@@ -183,19 +209,34 @@ export class Motor {
   private cola = PICO_Y
   private vCola = 0
   private gotas: Gota[] = []
-  private salpicadura: Gota[] = []
-  private goteosPendientes: number[] = []
-  private luz = 0.7
+  private goteos: number[] = []
+  private parts: Particula[] = []
+  private flotan: Flotante[] = []
   private reloj = 0
   private ultimo = 0
   private raf = 0
-  private sitios: number[] = [-0.42, -0.08, 0.31]
-  private proxSitio = [0, 0, 0]
   private semillas = 1
-  /** Si la tablet no da abasto, se baja la resolución una vez y listo. */
   private calidad: 'alta' | 'baja' = 'alta'
   private lento = 0
-  private alias: { de: string | null; a: string } | null = null
+
+  // Dirección de escena
+  private modoPrevio: Modo | null = null
+  private rayosAng = 0
+  private rayosVel = 0.08
+  private zoom = 1
+  private vZoom = 0
+  private temblor = 0
+  private lineas = 0
+  private lineasSemilla = 1
+  private apagado = 0
+  private fiesta = 0
+  private perfecta = false
+  private accion: { tipo: 'salto' | 'guino' | 'mira' | 'canta'; t: number; dur: number } | null = null
+  private proxAccion = 2.5
+  private proxSalto = 0
+  private proxEfecto = 0
+  private proxNota = 0
+  private ultimoLleno = 0
 
   alContar: ((ml: number) => void) | null = null
 
@@ -203,6 +244,10 @@ export class Motor {
     this.escena = escena
     this.fondo = fondo
     this.ctx = escena.getContext('2d')!
+    const r = azar(7)
+    for (let i = 0; i < 26; i++) {
+      this.flotan.push({ x: r() * 1200 - 300, y: r() * 1100, r: 6 + r() * 22, v: 8 + r() * 22, fase: r() * 6, estrella: i % 3 === 0 })
+    }
   }
 
   // ── API ──────────────────────────────────────────────────────────────────
@@ -213,41 +258,37 @@ export class Motor {
     this.cssH = cssH
     this.dpr = this.calidad === 'baja' ? 1 : Math.min(2, window.devicePixelRatio || 1)
 
-    // Apaisado: la escena a la izquierda. Vertical: arriba. El panel de texto
-    // ocupa el resto, con las mismas proporciones en el CSS (54 % y 60 %).
+    // Apaisado: la escena a la izquierda (54 %). Vertical: arriba (60 %). Son
+    // las mismas proporciones del CSS del panel de texto.
     const apaisado = cssW / cssH > 1.05
-    const area: Rect = apaisado
+    this.area = apaisado
       ? { x0: 0, y0: 0, x1: cssW * 0.54, y1: cssH }
       : { x0: 0, y0: 0, x1: cssW, y1: cssH * 0.6 }
-    const aw = area.x1 - area.x0, ah = area.y1 - area.y0
-    // La manija abierta sobresale por arriba del espacio de la escena: se le
-    // deja aire para que la punta nunca toque el borde de la pantalla.
-    const aire = 46
-    this.esc = Math.min(aw / S_W, ah / (S_H + aire)) * 0.97
-    this.ox = area.x0 + (aw - S_W * this.esc) / 2
-    this.oy = area.y0 + aire * this.esc + (ah - (S_H + aire) * this.esc) * 0.62
+    const aw = this.area.x1 - this.area.x0, ah = this.area.y1 - this.area.y0
+    const cw = CAJA.x1 - CAJA.x0, ch = CAJA.y1 - CAJA.y0
+    this.esc = Math.min(aw / cw, ah / ch) * 0.98
+    this.ox = this.area.x0 + aw / 2 - ((CAJA.x0 + CAJA.x1) / 2) * this.esc
+    this.oy = this.area.y0 + ah / 2 - ((CAJA.y0 + CAJA.y1) / 2) * this.esc
 
     this.escena.width = Math.round(cssW * this.dpr)
     this.escena.height = Math.round(cssH * this.dpr)
     this.fondo.width = Math.round(cssW * Math.min(this.dpr, 1.5))
     this.fondo.height = Math.round(cssH * Math.min(this.dpr, 1.5))
     this.pintarFondo()
-    this.prepararCapas()
   }
 
   actualizar(e: Entrada) {
     const ahora = performance.now() / 1000
     // El ticket no trae el id de la sesión, trae cuándo se cerró. Sin esto, al
-    // terminar de servir el vaso "cambiaría" y saldría de cuadro: es el mismo.
+    // terminar de servir el vaso "cambiaría" y se iría: es el mismo.
     if (e.modo === 'servida' && (this.entrada.modo === 'sirviendo' || this.entrada.modo === 'lista') && this.entrada.sesion) {
       this.alias = { de: e.sesion, a: this.entrada.sesion }
     }
     if (this.alias && e.modo === 'servida' && e.sesion === this.alias.de) e = { ...e, sesion: this.alias.a }
     const cambioColor = e.color !== this.entrada.color
     const cambioEtiqueta = e.etiqueta !== this.entrada.etiqueta
-    const otraSesion = e.sesion !== this.entrada.sesion
 
-    if (otraSesion || e.ml < this.mlPrevio) {
+    if (e.sesion !== this.entrada.sesion || e.ml < this.mlPrevio) {
       // Sesión nueva: la medición arranca de cero, no hay caudal que heredar.
       this.mlPrevio = e.ml
       this.mlVisual = e.ml
@@ -266,10 +307,9 @@ export class Motor {
     this.entrada = e
     if (cambioColor) {
       this.pal = paleta(e.color)
-      this.prepararManija()
-    } else if (cambioEtiqueta) {
-      this.prepararManija()
+      this.pintarFondo()
     }
+    if (cambioColor || cambioEtiqueta) this.placa = null
   }
 
   iniciar() {
@@ -281,10 +321,9 @@ export class Motor {
       const dt = Math.min(0.05, ms / 1000)
       this.ultimo = t
       if (document.hidden) return
-      // Una tablet barata puede no llegar a 60 cuadros con pantalla de alta
-      // densidad. Si pasa más de 2 s acumulados por debajo de ~38 cuadros, se
-      // dibuja a densidad 1: se ve apenas menos nítido y vuelve a ser fluido.
-      // Un líquido que avanza a los tirones se ve peor que uno menos nítido.
+      // Si la tablet no llega a ~38 cuadros por más de 2 s, se dibuja a
+      // densidad 1: un dibujo animado a los tirones se ve peor que uno menos
+      // nítido.
       if (this.calidad === 'alta' && this.reloj > 3 && ms < 500) {
         this.lento = ms > 26 ? this.lento + ms / 1000 : Math.max(0, this.lento - ms / 2000)
         if (this.lento > 2) {
@@ -304,7 +343,7 @@ export class Motor {
   }
 
   /** La tipografía de la manija llega después: se repinta cuando carga. */
-  repintarManija() { this.prepararManija() }
+  repintarManija() { this.placa = null }
 
   // ── Simulación ─────────────────────────────────────────────────────────────
   private avanzar(dt: number) {
@@ -315,9 +354,8 @@ export class Motor {
 
     // ¿Está corriendo cerveza? El ESP32 informa como mucho una vez por segundo
     // y la pantalla consulta cada medio: entre dos cambios pueden pasar casi
-    // 2 s aunque la canilla siga abierta. Con un umbral más corto el chorro
-    // parpadearía. 2,4 s es menos que los 3 s que espera el propio ESP32 para
-    // dar la tirada por cortada.
+    // 2 s aunque la canilla siga abierta. 2,4 s es menos que los 3 s que
+    // espera el propio ESP32 para dar la tirada por cortada.
     this.fluyendo = e.modo === 'sirviendo' && this.cambioEn > 0 && ahora - this.cambioEn < 2.4
 
     // El vaso puede ir un poco adelante de la medición (es solo dibujo); el
@@ -346,8 +384,6 @@ export class Motor {
       // decidiera la predicción, un vaso de 473 ml podría "pasarse" a los 458
       // y el cliente vería entrar un vaso nuevo que nunca sirvió.
       const medido = e.modo === 'lista' ? 0 : e.ml
-      // Al llegar justo a un vaso entero se queda en el lleno; el nuevo entra
-      // recién cuando se pasa.
       const indice = medido > 0 ? Math.ceil(medido / vaso - 1e-6) - 1 : 0
       const visto = Math.min((indice + 1) * vaso, Math.max(indice * vaso, e.modo === 'lista' ? 0 : this.mlVisual))
       clave = `s:${e.sesion ?? '-'}:${indice}`
@@ -355,45 +391,43 @@ export class Motor {
     }
 
     let activo = this.vasos.find(v => !v.saliendo)
-    // Un vaso vacío no se cambia por otro vacío: se usa el que está. Así, si la
-    // pantalla arranca a mitad de una tirada, el vaso de la canilla es el que
-    // se llena, en vez de irse y volver uno nuevo.
+    // Un vaso vacío no se cambia por otro vacío: se usa el que está.
     if (activo && activo.clave !== clave && activo.nivel < 0.004 && clave !== 'muestra' && activo.clave !== 'muestra') {
       activo.clave = clave
     }
     if (!activo || activo.clave !== clave) {
       if (activo) { activo.saliendo = true; activo.t = 0 }
       const muestra = clave === 'muestra'
-      // Un vaso que aparece ya con cerveza (la pantalla se prendió a mitad de
-      // una tirada) tiene que tener su espuma y su frío: nunca hay cerveza
-      // servida sin corona.
       const inicial = muestra ? 1 : Math.max(0, Math.min(1, objetivo))
       const conAlgo = inicial > 0.02
       activo = {
-        clave, nivel: inicial, espuma: muestra ? 50 : conAlgo ? Math.min(54, 5 + alturaDe(inicial) * 0.3) : 0,
-        turbio: 0, limpioY: FONDO_Y, frio: conAlgo ? 1 : 0, burbujas: [],
+        clave, nivel: inicial, espuma: muestra ? 46 : conAlgo ? Math.min(46, 6 + alturaDe(inicial) * 0.3) : 0,
+        remolino: 0, frio: conAlgo ? 1 : 0, burbujas: [],
         t: this.vasos.length ? 0 : 1, saliendo: false, semilla: this.semillas++,
+        sq: 0, vsq: 0, alto: 0, valto: 0, rot: 0, ola: 0, vola: 0,
+        cara: 'feliz', mirada: { x: 0, y: 0 }, mirar: { x: 0, y: 0 }, parpadeo: 1 + rnd() * 2, cerrando: 0, sudor: 0,
       }
       this.vasos.push(activo)
     }
 
+    this.dirigir(dt, activo, vaso)
+
     for (const v of this.vasos) {
-      v.t = Math.min(1, v.t + dt / (v.saliendo ? 0.6 : 0.7))
+      v.t = Math.min(1, v.t + dt / (v.saliendo ? 0.75 : 0.9))
       const esActivo = v === activo
       if (esActivo) {
-        // En vivo el nivel ya viene suavizado; fuera de una tirada se acerca solo.
         v.nivel = e.modo === 'sirviendo' ? Math.min(1, objetivo) : acercar(v.nivel, objetivo, 0.6, dt)
-      }
+      } else v.cara = 'chau'
       this.avanzarVaso(v, dt, esActivo && this.fluyendo && this.chorro === 'si')
     }
     this.vasos = this.vasos.filter(v => !(v.saliendo && v.t >= 1))
 
-    // ── La manija: un resorte, no una interpolación ───────────────────────
+    // ── La manija: un resorte, con rebote de dibujo animado ───────────────
     const meta = this.fluyendo ? MANIJA_ABIERTA : MANIJA_CERRADA
     if (this.reducido) {
       this.angulo = meta
     } else {
-      const fuerza = -140 * (this.angulo - meta) - 19 * this.velAngulo
+      const fuerza = -170 * (this.angulo - meta) - 11 * this.velAngulo
       this.velAngulo += fuerza * dt
       this.angulo += this.velAngulo * dt
     }
@@ -408,7 +442,7 @@ export class Motor {
     if (!this.fluyendo && (this.chorro === 'si' || this.chorro === 'bajando')) {
       this.chorro = 'cortando'
       this.vCola = 120
-      this.goteosPendientes = [0.35, 0.95, 1.9]
+      this.goteos = [0.35, 0.95, 1.9]
     }
     if (this.chorro === 'bajando') {
       this.vCabeza += G * dt
@@ -422,1135 +456,1366 @@ export class Motor {
       this.cola += this.vCola * dt
       if (this.cola >= this.cabeza) { this.chorro = 'no'; this.cola = PICO_Y }
     }
-
-    // Goteo de la canilla después de cerrar: tres gotas y basta.
-    if (this.goteosPendientes.length) {
-      this.goteosPendientes = this.goteosPendientes.map(t => t - dt)
-      while (this.goteosPendientes.length && this.goteosPendientes[0] <= 0) {
-        this.goteosPendientes.shift()
-        this.gotas.push({ x: GX, y: PICO_Y + 2, vx: 0, vy: 30, vida: 2, r: 3.2 })
+    if (this.goteos.length) {
+      this.goteos = this.goteos.map(t => t - dt)
+      while (this.goteos.length && this.goteos[0] <= 0) {
+        this.goteos.shift()
+        this.gotas.push({ x: GX, y: PICO_Y + 4, vy: 30 })
       }
     }
-    for (const g of this.gotas) {
-      g.vy += G * 0.6 * dt
-      g.y += g.vy * dt
-      g.vida -= dt
-    }
-    this.gotas = this.gotas.filter(g => g.vida > 0 && g.y < impacto)
+    for (const g of this.gotas) { g.vy += G * 0.6 * dt; g.y += g.vy * dt }
+    this.gotas = this.gotas.filter(g => g.y < impacto)
 
-    // Salpicaduras donde el chorro pega
+    // Donde pega el chorro: espuma que salta y gotitas.
     if (this.chorro === 'si' && !this.reducido) {
-      const n = Math.random() < dt * 36 ? 1 : 0
-      for (let i = 0; i < n; i++) {
-        this.salpicadura.push({
-          x: GX + (Math.random() - 0.5) * 10, y: impacto - 2,
-          vx: (Math.random() - 0.5) * 170, vy: -110 - Math.random() * 190,
-          vida: 0.35 + Math.random() * 0.25, r: 0.8 + Math.random() * 1.6,
-        })
+      if (rnd() < dt * 22) this.sumar({ tipo: 'puf', x: GX + entre(-14, 14), y: impacto - 4, vx: entre(-40, 40), vy: entre(-90, -30), vida: 0.5, max: 0.5, rot: 0, vr: 0, tam: entre(7, 13), color: css(this.pal.espuma), g: 200 })
+      if (rnd() < dt * 14) this.sumar({ tipo: 'gota', x: GX, y: impacto - 4, vx: entre(-180, 180), vy: entre(-320, -180), vida: 0.6, max: 0.6, rot: 0, vr: 0, tam: entre(4, 7), color: css(this.pal.luz), g: 1500 })
+    }
+
+    // ── Partículas ────────────────────────────────────────────────────────
+    for (const p of this.parts) {
+      p.vy += p.g * dt
+      p.x += p.vx * dt
+      p.y += p.vy * dt
+      p.rot += p.vr * dt
+      p.vida -= dt
+      if (p.tipo === 'confeti') { p.vx *= Math.exp(-dt * 1.2); p.x += Math.sin(this.reloj * 6 + p.tam) * 30 * dt }
+      if (p.tipo === 'nota' || p.tipo === 'z') p.x += Math.sin(this.reloj * 3 + p.rot) * 24 * dt
+    }
+    this.parts = this.parts.filter(p => p.vida > 0)
+    for (const f of this.flotan) {
+      f.y -= f.v * dt * (this.entrada.modo === 'apagada' ? 0.3 : 1)
+      if (f.y < -120) { f.y = 1150; f.x = rnd() * 1200 - 300 }
+    }
+
+    // ── Cámara y fondo ────────────────────────────────────────────────────
+    const velRayos = this.reducido ? 0
+      : e.modo === 'apagada' ? 0
+      : this.fiesta > 0 ? 1.1
+      : e.modo === 'sirviendo' ? (this.fluyendo ? 0.45 : 0.15)
+      : e.modo === 'lista' ? 0.3 : 0.1
+    this.rayosVel = acercar(this.rayosVel, velRayos, 0.6, dt)
+    this.rayosAng += this.rayosVel * dt
+    const fz = -220 * (this.zoom - 1) - 13 * this.vZoom
+    this.vZoom += fz * dt
+    this.zoom += this.vZoom * dt
+    this.temblor = Math.max(0, this.temblor - dt * 2.2)
+    this.lineas = Math.max(0, this.lineas - dt * 1.1)
+    if (rnd() < dt * 18) this.lineasSemilla++
+    this.apagado = acercar(this.apagado, e.modo === 'apagada' ? 1 : 0, 0.6, dt)
+    this.fiesta = Math.max(0, this.fiesta - dt)
+  }
+
+  /** La dirección de escena: qué cara pone el vaso y qué pasa alrededor. */
+  private dirigir(dt: number, v: Vaso, vaso: number) {
+    const e = this.entrada
+    const quieto = this.reducido
+    const cambio = e.modo !== this.modoPrevio
+    const previo = this.modoPrevio
+    this.modoPrevio = e.modo
+    const arriba = this.cabezaVaso(v)
+
+    if (cambio && previo !== null) {
+      if (e.modo === 'lista') {
+        // Apoyaste la tarjeta: golpe de cámara, líneas de impacto y el "!".
+        this.golpe(0.9)
+        this.lineas = 1
+        this.saltar(v, 46)
+        this.sumar({ tipo: 'excl', x: arriba.x - 120, y: arriba.y - 40, vx: 0, vy: -20, vida: 1.4, max: 1.4, rot: -0.15, vr: 0, tam: 92, color: '#ffd23f', g: 0 })
+      } else if (e.modo === 'servida') {
+        const resto = e.ml - Math.floor(e.ml / vaso) * vaso
+        const cerca = Math.min(resto, vaso - resto) / vaso
+        this.perfecta = e.ml >= vaso * 0.97 && cerca <= 0.03
+        if (this.perfecta) {
+          this.fiesta = 4.5
+          this.golpe(1.2)
+          this.lineas = 1.2
+          this.temblor = 1
+          this.saltar(v, 80)
+          if (!quieto) {
+            for (let i = 0; i < 90; i++) {
+              const a = entre(-Math.PI * 0.95, -Math.PI * 0.05)
+              const s = entre(380, 900)
+              this.sumar({ tipo: 'confeti', x: arriba.x, y: arriba.y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, vida: entre(2.2, 3.6), max: 3.6, rot: rnd() * 6, vr: entre(-12, 12), tam: entre(12, 20), color: CONFETI[i % CONFETI.length], g: 900 })
+            }
+          }
+          for (let i = 0; i < 10; i++) this.chispa(arriba.x + entre(-180, 180), arriba.y + entre(-60, 260), entre(14, 30))
+        } else {
+          this.saltar(v, 28)
+          this.sumar({ tipo: 'corazon', x: arriba.x + 140, y: arriba.y + 40, vx: 0, vy: -50, vida: 2, max: 2, rot: 0.15, vr: 0, tam: 34, color: '#ff5d8f', g: 0 })
+        }
+      } else if (e.modo === 'exhibicion') {
+        this.proxAccion = 2
       }
     }
-    for (const g of this.salpicadura) {
-      g.vy += 1700 * dt
-      g.x += g.vx * dt
-      g.y += g.vy * dt
-      g.vida -= dt
-    }
-    this.salpicadura = this.salpicadura.filter(g => g.vida > 0)
 
-    // La luz sobre la canilla sube cuando es el turno de alguien.
-    const metaLuz = e.modo === 'lista' || e.modo === 'sirviendo' ? 1 : e.modo === 'apagada' ? 0.25 : 0.7
-    this.luz = acercar(this.luz, metaLuz, 0.5, dt)
+    // Hasta que no está en su lugar no actúa: viene saltando.
+    if (v.t < 1) { v.cara = e.modo === 'apagada' ? 'dormida' : 'feliz'; return }
+
+    this.proxEfecto -= dt
+    this.proxSalto -= dt
+    v.mirar = { x: 0, y: 0 }
+
+    if (e.modo === 'apagada') {
+      v.cara = 'dormida'
+      if (this.proxEfecto <= 0) {
+        this.proxEfecto = 1.4
+        this.sumar({ tipo: 'z', x: arriba.x + 110, y: arriba.y + 60, vx: 18, vy: -45, vida: 2.6, max: 2.6, rot: rnd() * 6, vr: 0, tam: entre(26, 40), color: '#cfe3ff', g: 0 })
+      }
+      return
+    }
+
+    if (e.modo === 'exhibicion') {
+      // La vidriera: cada tanto hace algo, para que se la mire desde lejos.
+      if (!this.accion) {
+        this.proxAccion -= dt
+        v.cara = 'feliz'
+        v.mirar = { x: Math.sin(this.reloj * 0.7) * 0.4, y: 0.1 }
+        if (this.proxAccion <= 0) {
+          const tipos = ['salto', 'guino', 'mira', 'canta'] as const
+          const tipo = tipos[Math.floor(rnd() * tipos.length)]
+          this.accion = { tipo, t: 0, dur: tipo === 'canta' ? 3.2 : tipo === 'salto' ? 1.6 : tipo === 'mira' ? 2 : 1.6 }
+          if (tipo === 'salto') this.saltar(v, 60)
+          if (tipo === 'guino') this.sumar({ tipo: 'corazon', x: arriba.x + 130, y: arriba.y + 60, vx: 10, vy: -60, vida: 1.8, max: 1.8, rot: 0.2, vr: 0, tam: 30, color: '#ff5d8f', g: 0 })
+        }
+      } else {
+        const a = this.accion
+        a.t += dt
+        if (a.tipo === 'canta') {
+          v.cara = 'canta'
+          this.proxNota -= dt
+          if (this.proxNota <= 0) {
+            this.proxNota = 0.45
+            const lado = rnd() < 0.5 ? -1 : 1
+            this.sumar({ tipo: 'nota', x: arriba.x + lado * entre(90, 150), y: arriba.y + entre(40, 120), vx: lado * 20, vy: -70, vida: 2, max: 2, rot: rnd() * 6, vr: 0, tam: entre(26, 36), color: CONFETI[Math.floor(rnd() * 4)], g: 0 })
+          }
+        } else if (a.tipo === 'guino') v.cara = 'guino'
+        else if (a.tipo === 'mira') { v.cara = 'feliz'; v.mirar = { x: a.t < a.dur / 2 ? -1 : 1, y: -0.2 } }
+        else {
+          v.cara = 'emocionada'
+          if (a.t < 0.1) for (let i = 0; i < 3; i++) this.sumar({ tipo: 'nota', x: arriba.x + entre(-140, 140), y: arriba.y + 30, vx: entre(-30, 30), vy: -90, vida: 1.6, max: 1.6, rot: rnd() * 6, vr: 0, tam: 30, color: CONFETI[i], g: 0 })
+        }
+        if (a.t >= a.dur) { this.accion = null; this.proxAccion = entre(2.2, 4.2) }
+      }
+      if (this.proxEfecto <= 0) { this.proxEfecto = 1.2; this.chispa(arriba.x + entre(-120, 120), arriba.y + entre(0, 380), entre(10, 18)) }
+      return
+    }
+    this.accion = null
+
+    if (e.modo === 'lista') {
+      // Tu turno: ojos de estrella, salta de las ganas mirando la canilla.
+      v.cara = 'emocionada'
+      v.mirar = { x: 0.3, y: -1 }
+      if (this.proxSalto <= 0) { this.proxSalto = 1.05; this.saltar(v, 22) }
+      if (this.proxEfecto <= 0) { this.proxEfecto = 0.35; this.chispa(arriba.x + entre(-170, 170), arriba.y + entre(-40, 360), entre(10, 20)) }
+      return
+    }
+
+    if (e.modo === 'sirviendo') {
+      if (this.fluyendo) {
+        const nervioso = v.nivel >= 0.86
+        v.cara = nervioso ? 'nerviosa' : 'recibiendo'
+        if (nervioso && this.ultimoLleno < 0.86) { this.lineas = Math.max(this.lineas, 0.6); this.golpe(0.4) }
+        if (this.proxEfecto <= 0 && !nervioso) { this.proxEfecto = 0.5; this.chispa(arriba.x + entre(-150, 150), arriba.y + entre(0, 300), entre(10, 16)) }
+      } else {
+        v.cara = 'esperando'
+        v.mirar = { x: 0.25, y: -0.9 }
+      }
+      this.ultimoLleno = v.nivel
+      return
+    }
+
+    // Ticket
+    if (this.perfecta) {
+      v.cara = 'orgullosa'
+      if (this.fiesta > 1.2 && this.proxSalto <= 0) { this.proxSalto = 0.8; this.saltar(v, 46) }
+      if (this.proxEfecto <= 0) { this.proxEfecto = this.fiesta > 0 ? 0.12 : 0.6; this.chispa(arriba.x + entre(-190, 190), arriba.y + entre(-80, 380), entre(12, 26)) }
+    } else {
+      v.cara = (this.reloj % 4) < 1.3 ? 'contenta' : 'feliz'
+      if (this.proxEfecto <= 0) { this.proxEfecto = 1; this.chispa(arriba.x + entre(-140, 140), arriba.y + entre(0, 340), entre(10, 16)) }
+    }
   }
 
   private avanzarVaso(v: Vaso, dt: number, recibe: boolean) {
     const altoLiq = alturaDe(v.nivel)
     const sup = FONDO_Y - altoLiq
 
-    // Espuma: crece rápido mientras recibe chorro y se asienta despacio.
-    const metaEspuma = v.nivel < 0.004 ? 0 : Math.min(54, 5 + altoLiq * 0.36)
+    // Espuma: crece rápido con el chorro y se asienta despacio, pero una
+    // cerveza servida nunca se queda sin corona.
+    const metaEspuma = v.nivel < 0.004 ? 0 : Math.min(54, 6 + altoLiq * 0.36)
     if (recibe) v.espuma = acercar(v.espuma, metaEspuma, 0.45, dt)
     else {
-      // Se asienta despacio, pero una cerveza servida nunca se queda pelada.
-      const meta = Math.max(metaEspuma * 0.55, Math.min(v.espuma, metaEspuma * 0.82))
+      const meta = Math.max(metaEspuma * 0.6, Math.min(v.espuma, metaEspuma * 0.85))
       v.espuma = acercar(v.espuma, meta, v.espuma < meta ? 1.2 : 14, dt)
     }
     if (v.nivel < 0.004) v.espuma = acercar(v.espuma, 0, 0.3, dt)
+    v.remolino = acercar(v.remolino, recibe ? 1 : 0, recibe ? 0.3 : 0.9, dt)
+    if (v.nivel > 0.02) v.frio = Math.min(1, v.frio + dt / 5)
 
-    // La nube de microburbujas: aparece con el chorro y decanta de abajo hacia
-    // arriba cuando se corta. Es lo primero que delata a una cerveza dibujada:
-    // la de verdad nunca está quieta y transparente mientras se sirve.
-    if (recibe) {
-      v.turbio = acercar(v.turbio, 1, 0.35, dt)
-      v.limpioY = FONDO_Y
-    } else if (v.turbio > 0.001) {
-      v.limpioY -= ((FONDO_Y - sup) / 2.6 + 8) * dt
-      if (v.limpioY <= sup) v.turbio = acercar(v.turbio, 0, 0.5, dt)
-    }
-
-    if (v.nivel > 0.02) v.frio = Math.min(1, v.frio + dt / 7)
-
-    // ── Burbujas ──────────────────────────────────────────────────────────
-    if (altoLiq > 6) {
-      const rnd = Math.random
+    // Burbujas: pocas y grandes, con brillito. En un dibujo se lee mejor
+    // una burbuja clara que cien puntitos.
+    if (altoLiq > 10) {
       const mult = this.reducido ? 0.4 : 1
-      // Sitios de nucleación: hilos finos que salen siempre del mismo punto del
-      // fondo. Es el detalle que hace que el ojo crea que es gas de verdad.
-      for (let i = 0; i < this.sitios.length; i++) {
-        this.proxSitio[i] -= dt
-        if (this.proxSitio[i] <= 0) {
-          this.proxSitio[i] = (0.07 + rnd() * 0.06) / mult
-          v.burbujas.push({ x: this.sitios[i] + (rnd() - 0.5) * 0.02, y: FONDO_Y - 3, r: 0.7 + rnd() * 0.5, vy: 0, fase: rnd() * 6, arrastre: 0 })
-        }
-      }
-      // Sueltas, por todo el volumen
-      const sueltas = (14 + altoLiq * 0.09) * mult * dt
-      for (let k = 0; k < Math.floor(sueltas) + (rnd() < sueltas % 1 ? 1 : 0); k++) {
-        v.burbujas.push({ x: (rnd() * 2 - 1) * 0.86, y: FONDO_Y - rnd() * altoLiq * 0.9, r: 0.6 + rnd() * 1.5, vy: 0, fase: rnd() * 6, arrastre: 0 })
-      }
-      // Arrastradas por el chorro: bajan primero y después suben.
-      if (recibe) {
-        const n = 240 * mult * dt
-        for (let k = 0; k < Math.floor(n) + (rnd() < n % 1 ? 1 : 0); k++) {
-          v.burbujas.push({ x: (rnd() - 0.5) * 0.5, y: sup + 4 + rnd() * 18, r: 0.5 + rnd() * 1.4, vy: 0, fase: rnd() * 6, arrastre: 70 + rnd() * 160 })
-        }
+      const n = ((6 + altoLiq * 0.025) + (recibe ? 26 : 0)) * mult * dt
+      for (let k = 0; k < Math.floor(n) + (rnd() < n % 1 ? 1 : 0); k++) {
+        v.burbujas.push({ x: entre(-0.8, 0.8), y: FONDO_Y - rnd() * altoLiq * 0.85, r: entre(2.5, 6), v: entre(60, 130), fase: rnd() * 6 })
       }
     }
-    const tope = this.reducido || this.calidad === 'baja' ? 240 : 520
-    if (v.burbujas.length > tope) v.burbujas.splice(0, v.burbujas.length - tope)
-    for (const b of v.burbujas) {
-      // Suben más rápido a medida que suben: crecen al bajar la presión.
-      b.r += dt * 0.12
-      const sube = 38 + b.r * 34
-      b.arrastre = Math.max(0, b.arrastre - dt * 420)
-      b.vy = -sube + b.arrastre
-      b.y += b.vy * dt
-      b.fase += dt * 3
-      b.x += Math.sin(b.fase) * 0.0016
+    for (const b of v.burbujas) { b.y -= b.v * dt; b.fase += dt * 5 }
+    v.burbujas = v.burbujas.filter(b => b.y > sup + 6)
+    if (v.burbujas.length > 90) v.burbujas.splice(0, v.burbujas.length - 90)
+
+    // ── El cuerpo ─────────────────────────────────────────────────────────
+    // Salto: gravedad y, al caer, se aplasta y la cerveza se sacude.
+    if (v.alto < 0 || v.valto < 0) {
+      v.valto += SALTO_G * dt
+      v.alto += v.valto * dt
+      if (v.alto >= 0) {
+        v.vsq += v.valto * 0.0055
+        v.vola += (rnd() < 0.5 ? -1 : 1) * v.valto * 0.002
+        v.alto = 0; v.valto = 0
+      }
     }
-    v.burbujas = v.burbujas.filter(b => b.y > sup + 1 && b.y <= FONDO_Y)
+    if (recibe && !this.reducido) v.vsq += (rnd() - 0.5) * dt * 40
+    const fsq = -320 * v.sq - 15 * v.vsq
+    v.vsq += fsq * dt
+    v.sq = Math.max(-0.2, Math.min(0.28, v.sq + v.vsq * dt))
+
+    // Inclinación del cuerpo según el humor.
+    const t = this.reloj + v.semilla
+    let rot = Math.sin(t * 1.4) * 0.02
+    if (v.cara === 'canta') rot = Math.sin(t * 4) * 0.07
+    else if (v.cara === 'nerviosa') rot = Math.sin(t * 38) * 0.012
+    else if (v.cara === 'emocionada' || v.cara === 'orgullosa') rot = Math.sin(t * 5) * 0.04
+    else if (v.cara === 'dormida') rot = 0.05
+    if (v.t < 1) rot = v.saliendo ? 0.14 * Math.sin(v.t * Math.PI) : -0.12 * (1 - v.t)
+    v.rot = this.reducido ? 0 : acercar(v.rot, rot, 0.12, dt)
+
+    // El oleaje: un resorte. Moverse de golpe (llegar, irse, saltar) lo excita.
+    if (v.t < 1) v.vola += (v.saliendo ? 1 : -1) * dt * 2.4 * Math.sin(v.t * Math.PI * 2)
+    const fo = -70 * v.ola - 3.2 * v.vola
+    v.vola += fo * dt
+    v.ola = Math.max(-0.35, Math.min(0.35, v.ola + v.vola * dt))
+
+    // ── La cara ───────────────────────────────────────────────────────────
+    v.mirada.x = acercar(v.mirada.x, v.mirar.x, 0.12, dt)
+    v.mirada.y = acercar(v.mirada.y, v.mirar.y, 0.12, dt)
+    v.parpadeo -= dt
+    if (v.parpadeo <= 0 && v.cerrando === 0) v.cerrando = 0.0001
+    if (v.cerrando > 0) {
+      v.cerrando += dt / 0.16
+      if (v.cerrando >= 1) { v.cerrando = 0; v.parpadeo = rnd() < 0.2 ? 0.25 : entre(2.2, 4.8) }
+    }
+    v.sudor = acercar(v.sudor, v.cara === 'nerviosa' ? 1 : 0, 0.25, dt)
   }
 
+  private saltar(v: Vaso, h: number) {
+    if (this.reducido || v.alto < -1 || v.t < 1) return
+    v.valto = -Math.sqrt(2 * SALTO_G * h)
+    v.alto = -0.01
+    v.vsq -= 3.2
+  }
+
+  private golpe(f: number) {
+    if (this.reducido) return
+    this.vZoom += f
+  }
+
+  private chispa(x: number, y: number, tam: number) {
+    if (this.reducido && rnd() < 0.6) return
+    this.sumar({ tipo: 'chispa', x, y, vx: 0, vy: -10, vida: 0.9, max: 0.9, rot: rnd() * 0.6, vr: 0, tam, color: rnd() < 0.5 ? '#ffffff' : '#ffe58a', g: 0 })
+  }
+
+  private sumar(p: Particula) {
+    if (this.reducido && (p.tipo === 'confeti' || p.tipo === 'puf' || p.tipo === 'gota')) return
+    this.parts.push(p)
+    if (this.parts.length > 260) this.parts.splice(0, this.parts.length - 260)
+  }
+
+  /** Posición del vaso: entra saltando desde la izquierda, se va saltando a
+   *  la derecha. Pasa por delante de la torre. */
+  private posicion(v: Vaso) {
+    if (v.t >= 1 && !v.saliendo) return { dx: 0, dy: v.alto }
+    if (v.saliendo) {
+      const k = entrada(v.t)
+      return { dx: SALIDA * k, dy: -Math.abs(Math.sin(v.t * Math.PI * 2.5)) * 46 }
+    }
+    const k = salida(v.t)
+    return { dx: -SALIDA * (1 - k), dy: -Math.abs(Math.sin(v.t * Math.PI * 2)) * 56 * (1 - v.t) + v.alto }
+  }
+
+  /** Dónde queda la boca del vaso en la escena: para ubicar los efectos. */
+  private cabezaVaso(v: Vaso) {
+    const p = this.posicion(v)
+    return { x: GX + p.dx, y: BOCA_Y + p.dy }
+  }
+
+  /** Dónde pega el chorro: la espuma del vaso si está debajo, si no la bandeja. */
   private impactoY(v: Vaso | undefined): number {
-    if (!v || v.t < 0.8) return BANDEJA.arriba
-    const sup = FONDO_Y - alturaDe(v.nivel)
-    const arriba = sup - v.espuma
-    return v.nivel < 0.004 ? FONDO_Y - 2 : arriba
+    if (!v) return BANDEJA.y0
+    const p = this.posicion(v)
+    if (Math.abs(p.dx) > 40) return BANDEJA.y0
+    const sup = v.nivel > 0.004 ? FONDO_Y - alturaDe(v.nivel) - v.espuma * 0.5 : FONDO_Y
+    return BASE_Y + p.dy + (sup - BASE_Y) * (1 - v.sq)
   }
 
-  // ── Dibujo por cuadro ──────────────────────────────────────────────────────
+  // ── Dibujo ───────────────────────────────────────────────────────────────
   private dibujar() {
     const c = this.ctx
     const d = this.dpr
-    c.setTransform(1, 0, 0, 1, 0, 0)
-    c.clearRect(0, 0, this.escena.width, this.escena.height)
-    c.setTransform(this.esc * d, 0, 0, this.esc * d, this.ox * d, this.oy * d)
+    c.setTransform(d, 0, 0, d, 0, 0)
+    c.clearRect(0, 0, this.cssW, this.cssH)
+    if (!this.placa) this.prepararPlaca()
 
-    // Luz de escenario: sube cuando es tu turno. Es la única "señal" que no es
-    // un objeto de la barra, y aun así es una luz, no un cartel.
-    const lg = c.createRadialGradient(GX, 520, 40, GX, 520, 520)
-    lg.addColorStop(0, `rgba(255,214,160,${0.12 * this.luz})`)
-    lg.addColorStop(1, 'rgba(255,214,160,0)')
-    c.fillStyle = lg
-    c.fillRect(-200, 0, S_W + 400, S_H)
+    // La cámara: escala de la escena, golpe de zoom y temblor.
+    const z = this.zoom
+    const tx = this.temblor > 0 ? (rnd() - 0.5) * this.temblor * 10 : 0
+    const ty = this.temblor > 0 ? (rnd() - 0.5) * this.temblor * 10 : 0
+    const foco = { x: GX, y: 640 }
+    const fx = this.ox + foco.x * this.esc, fy = this.oy + foco.y * this.esc
+    c.save()
+    c.translate(fx + tx, fy + ty)
+    c.scale(this.esc * z, this.esc * z)
+    c.translate(-foco.x, -foco.y)
 
-    if (this.fija) this.copiar(this.fija)
-    this.dibujarManija()
+    this.dibujarRayos(c)
+    this.dibujarFlotantes(c)
+    this.dibujarMostrador(c, z)
+    this.dibujarTorre(c)
+    this.dibujarManija(c)
+    this.dibujarBandeja(c)
 
-    const activo = this.vasos.find(v => !v.saliendo)
-    // Cada vaso se dibuja en dos pasadas (lo de adentro y el vidrio de
-    // adelante) para que el chorro, que no se mueve con el vaso, quede entre
-    // las dos: adelante de la cerveza y detrás del vidrio.
-    for (const v of this.vasos) { this.conVaso(v, () => this.dibujarVasoAdentro(v, v === activo)) }
-    if (this.chorro !== 'no') this.dibujarChorro()
-    for (const v of this.vasos) { this.conVaso(v, () => this.dibujarVasoAfuera(v)) }
+    const orden = [...this.vasos].sort((a, b) => Number(a.saliendo) - Number(b.saliendo))
+    for (const v of orden) this.dibujarSombra(c, v)
+    for (const v of orden) this.dibujarVaso(c, v, 'atras')
+    this.dibujarChorro(c)
+    for (const v of orden) this.dibujarVaso(c, v, 'frente')
+    for (const g of this.gotas) this.gotaDibujo(c, g.x, g.y, 4.5, css(this.pal.luz))
+    this.dibujarParticulas(c)
+    c.restore()
 
-    // Gotas del pico y salpicaduras, por encima de todo
-    for (const g of this.gotas) this.gotaDe(g.x, g.y, g.r)
-    for (const g of this.salpicadura) {
-      c.globalAlpha = Math.min(1, g.vida * 3)
-      c.fillStyle = css(this.pal.brillo, 0.85)
-      c.beginPath(); c.arc(g.x, g.y, g.r, 0, Math.PI * 2); c.fill()
+    this.dibujarLineas(c, fx, fy)
+    if (this.apagado > 0.01) {
+      c.fillStyle = `rgba(6,8,18,${0.5 * this.apagado})`
+      c.fillRect(0, 0, this.cssW, this.cssH)
     }
-    c.globalAlpha = 1
   }
 
-  private copiar(l: Lienzo) {
-    this.ctx.drawImage(l.c, l.r.x0, l.r.y0, l.r.x1 - l.r.x0, l.r.y1 - l.r.y0)
+  /** Rayos de fondo, como en el anime cuando algo es importante. */
+  private dibujarRayos(c: CanvasRenderingContext2D) {
+    const cx = GX, cy = 640, R = 1300
+    const g = c.createRadialGradient(cx, cy, 40, cx, cy, R)
+    const col = this.pal.brillo
+    const fuerza = this.fiesta > 0 ? 0.3 : this.entrada.modo === 'lista' || this.fluyendo ? 0.2 : 0.13
+    g.addColorStop(0, css(col, fuerza))
+    g.addColorStop(0.35, css(col, fuerza * 0.45))
+    g.addColorStop(1, css(col, 0))
+    c.fillStyle = g
+    c.beginPath()
+    const n = 18
+    for (let i = 0; i < n; i++) {
+      const a0 = this.rayosAng + (i / n) * Math.PI * 2
+      const a1 = a0 + (Math.PI * 2 / n) * 0.5
+      c.moveTo(cx, cy)
+      c.lineTo(cx + Math.cos(a0) * R, cy + Math.sin(a0) * R)
+      c.lineTo(cx + Math.cos(a1) * R, cy + Math.sin(a1) * R)
+      c.closePath()
+    }
+    c.fill()
+    // Un círculo de luz detrás del vaso: separa al personaje del fondo.
+    const h = c.createRadialGradient(cx, cy, 0, cx, cy, 300)
+    h.addColorStop(0, css(mezclar(col, [255, 255, 255], 0.4), 0.32))
+    h.addColorStop(1, css(col, 0))
+    c.fillStyle = h
+    c.fillRect(cx - 300, cy - 300, 600, 600)
   }
 
-  private dibujarManija() {
-    if (!this.manija) return
-    const c = this.ctx
-    const r = this.manija.r
+  private dibujarFlotantes(c: CanvasRenderingContext2D) {
+    const col = mezclar(this.pal.brillo, [255, 255, 255], 0.5)
+    for (const f of this.flotan) {
+      const parpadeo = 0.5 + 0.5 * Math.sin(this.reloj * 2 + f.fase)
+      if (f.estrella) {
+        this.estrella4(c, f.x, f.y, f.r * 0.5 * (0.6 + parpadeo * 0.6), css(col, 0.25 + parpadeo * 0.35), null)
+      } else {
+        c.beginPath()
+        c.arc(f.x + Math.sin(this.reloj + f.fase) * 10, f.y, f.r, 0, Math.PI * 2)
+        c.fillStyle = css(col, 0.05)
+        c.fill()
+        c.lineWidth = 2
+        c.strokeStyle = css(col, 0.16)
+        c.stroke()
+      }
+    }
+  }
+
+  private dibujarMostrador(c: CanvasRenderingContext2D, z: number) {
+    const izq = (-this.ox / this.esc) / z - 400
+    const der = ((this.cssW - this.ox) / this.esc) / z + 400
+    const abajo = (this.cssH - this.oy) / this.esc / z + 400
+    // Tapa: madera clara con un filo de luz.
+    c.fillStyle = '#c98a4b'
+    c.fillRect(izq, MOSTRADOR_Y, der - izq, 26)
+    c.fillStyle = '#f0b97c'
+    c.fillRect(izq, MOSTRADOR_Y, der - izq, 6)
+    // Frente: se oscurece hasta el color del panel de texto.
+    const g = c.createLinearGradient(0, MOSTRADOR_Y + 26, 0, MOSTRADOR_Y + 260)
+    g.addColorStop(0, '#6b3d22')
+    g.addColorStop(0.4, '#3a2216')
+    g.addColorStop(1, '#0e1316')
+    c.fillStyle = g
+    c.fillRect(izq, MOSTRADOR_Y + 26, der - izq, abajo - MOSTRADOR_Y)
+    c.strokeStyle = TINTA
+    c.lineWidth = 4
+    c.beginPath()
+    c.moveTo(izq, MOSTRADOR_Y); c.lineTo(der, MOSTRADOR_Y)
+    c.moveTo(izq, MOSTRADOR_Y + 26); c.lineTo(der, MOSTRADOR_Y + 26)
+    c.stroke()
+    // Vetas: dos trazos sueltos, como en un fondo de anime.
+    c.strokeStyle = 'rgba(28,18,38,0.35)'
+    c.lineWidth = 3
+    c.beginPath()
+    c.moveTo(20, MOSTRADOR_Y + 13); c.lineTo(120, MOSTRADOR_Y + 13)
+    c.moveTo(470, MOSTRADOR_Y + 15); c.lineTo(560, MOSTRADOR_Y + 15)
+    c.stroke()
+  }
+
+  /** Cromo de dibujo animado: plano, con una franja de sombra y una de brillo. */
+  private cromo(c: CanvasRenderingContext2D, camino: () => void, x0: number, x1: number, vertical = true, y0 = 0, y1 = 0) {
+    c.save()
+    camino()
+    c.fillStyle = '#b9c5d8'
+    c.fill()
+    c.clip()
+    c.fillStyle = '#7f8ca6'
+    if (vertical) c.fillRect(x0 + (x1 - x0) * 0.64, -2000, x1 - x0, 4000)
+    else c.fillRect(-2000, y0 + (y1 - y0) * 0.62, 4000, y1 - y0)
+    c.fillStyle = 'rgba(255,255,255,0.95)'
+    if (vertical) c.fillRect(x0 + (x1 - x0) * 0.16, -2000, Math.max(4, (x1 - x0) * 0.13), 4000)
+    else c.fillRect(-2000, y0 + (y1 - y0) * 0.18, 4000, Math.max(3, (y1 - y0) * 0.16))
+    c.restore()
+    camino()
+    c.strokeStyle = TINTA
+    c.lineWidth = 5
+    c.stroke()
+  }
+
+  private dibujarTorre(c: CanvasRenderingContext2D) {
+    const { x0, x1, y0, y1 } = TORRE
+    const r = (x1 - x0) / 2
+    // Cuerpo con cúpula
+    this.cromo(c, () => {
+      c.beginPath()
+      c.moveTo(x0, y1)
+      c.lineTo(x0, y0)
+      c.arc(x0 + r, y0, r, Math.PI, 0)
+      c.lineTo(x1, y1)
+      c.closePath()
+    }, x0, x1)
+    // Brillo de la cúpula
+    c.beginPath()
+    c.ellipse(x0 + r * 0.62, y0 - r * 0.45, 7, 11, -0.5, 0, Math.PI * 2)
+    c.fillStyle = '#fff'
+    c.fill()
+    // Anillo de la base
+    this.cromo(c, () => {
+      c.beginPath()
+      c.roundRect(x0 - 16, y1 - 22, x1 - x0 + 32, 24, 8)
+    }, x0 - 16, x1 + 16)
+    // Brazo hacia el pico
+    this.cromo(c, () => {
+      c.beginPath()
+      c.roundRect(GX - 22, BRAZO.y0, x0 + 6 - (GX - 22), BRAZO.y1 - BRAZO.y0, 15)
+    }, 0, 0, false, BRAZO.y0, BRAZO.y1)
+    // Pico
+    this.cromo(c, () => {
+      c.beginPath()
+      c.moveTo(GX - 15, BRAZO.y1 - 4)
+      c.lineTo(GX - 11, PICO_Y - 6)
+      c.lineTo(GX + 11, PICO_Y - 6)
+      c.lineTo(GX + 15, BRAZO.y1 - 4)
+      c.closePath()
+    }, GX - 15, GX + 15)
+    this.cromo(c, () => {
+      c.beginPath()
+      c.roundRect(GX - 14, PICO_Y - 10, 28, 12, 5)
+    }, GX - 14, GX + 14)
+  }
+
+  private dibujarManija(c: CanvasRenderingContext2D) {
     c.save()
     c.translate(PIVOTE.x, PIVOTE.y)
     c.rotate(this.angulo)
-    c.drawImage(this.manija.c, r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0)
-    c.restore()
-  }
-
-  /** Ubica un vaso que entra (se apoya desde arriba) o sale (se lo llevan
-   *  hacia el cliente). Sale hacia adelante y no hacia la torre: un vaso que
-   *  atraviesa la torre es lo primero que rompe la ilusión. */
-  private conVaso(v: Vaso, pintar: () => void) {
-    const c = this.ctx
-    c.save()
-    if (v.saliendo) {
-      const k = suaveInOut(v.t)
-      if (!this.reducido) c.translate(SALIDA * k, -10 * Math.sin(Math.PI * k))
-      c.globalAlpha = 1 - k
-    } else if (v.t < 1) {
-      const k = 1 - Math.pow(1 - v.t, 3)
-      if (!this.reducido) c.translate(0, -BAJADA * (1 - k))
-      c.globalAlpha = Math.min(1, v.t * 1.6)
-    }
-    pintar()
-    c.restore()
-  }
-
-  private dibujarVasoAdentro(v: Vaso, activo: boolean) {
-    const c = this.ctx
-    const p = this.pal
-    const altoLiq = alturaDe(v.nivel)
-    const sup = FONDO_Y - altoLiq
-    const hayLiquido = v.nivel > 0.004
-
-    // Reflejo ámbar en la bandeja: la luz que atraviesa la cerveza.
-    if (hayLiquido) {
-      const a = Math.min(1, v.nivel * 3)
-      const g = c.createRadialGradient(GX, BANDEJA.arriba + 6, 10, GX, BANDEJA.arriba + 6, 150)
-      g.addColorStop(0, css(p.luz, 0.34 * a))
-      g.addColorStop(1, css(p.luz, 0))
-      c.fillStyle = g
-      c.beginPath(); c.ellipse(GX, BANDEJA.arriba + 6, 150, 16, 0, 0, Math.PI * 2); c.fill()
-    }
-
-    if (this.vidrioAtras) this.copiar(this.vidrioAtras)
-
-    c.save()
-    this.caminoInterior(c)
-    c.clip()
-
-    if (hayLiquido) {
-      this.dibujarLiquido(sup, v)
-      this.dibujarBurbujas(v, sup)
-    }
-    if (v.espuma > 0.6 && hayLiquido) this.dibujarEspuma(v, sup, activo)
-    c.restore()
-  }
-
-  private dibujarVasoAfuera(v: Vaso) {
-    const c = this.ctx
-    const p = this.pal
-    const sup = FONDO_Y - alturaDe(v.nivel)
-    const hayLiquido = v.nivel > 0.004
-
-    // Rocío: solo donde hay cerveza fría del otro lado del vidrio.
-    if (this.rocio && v.frio > 0.01 && hayLiquido) {
-      c.save()
-      c.beginPath()
-      c.rect(GX - 140, sup - v.espuma * 0.6, 280, BASE_Y - sup + 30)
-      c.clip()
-      c.globalAlpha *= v.frio
-      this.copiar(this.rocio)
-      c.restore()
-    }
-
-    // La base gruesa refracta el color de lo que tiene arriba.
-    if (hayLiquido) {
-      c.save()
-      c.beginPath()
-      c.ellipse(GX, FONDO_Y, rInt(FONDO_Y), rInt(FONDO_Y) * K, 0, 0, Math.PI)
-      c.lineTo(GX - R_BASE, BASE_Y)
-      c.ellipse(GX, BASE_Y, R_BASE, R_BASE * K, 0, Math.PI, 0, true)
-      c.closePath()
-      c.fillStyle = css(p.luz, 0.28 * Math.min(1, v.nivel * 4))
-      c.fill()
-      c.restore()
-    }
-
-    if (this.vidrioFrente) this.copiar(this.vidrioFrente)
-  }
-
-  private dibujarLiquido(sup: number, v: Vaso) {
-    const c = this.ctx
-    const p = this.pal
-    const r = rInt(sup)
-    const rFondo = rInt(FONDO_Y)
-
-    // Cuerpo: más oscuro en los bordes, más claro en el centro. Es una lente:
-    // un cilindro de líquido concentra la luz en el medio.
-    const h = c.createLinearGradient(GX - r, 0, GX + r, 0)
-    h.addColorStop(0, css(p.hondo))
-    h.addColorStop(0.09, css(mezclar(p.hondo, p.base, 0.55)))
-    h.addColorStop(0.26, css(p.base))
-    h.addColorStop(0.44, css(p.luz))
-    h.addColorStop(0.6, css(mezclar(p.luz, p.base, 0.5)))
-    h.addColorStop(0.8, css(p.base))
-    h.addColorStop(0.93, css(mezclar(p.base, p.hondo, 0.6)))
-    h.addColorStop(1, css(p.hondo))
-    c.fillStyle = h
-    c.beginPath()
-    c.ellipse(GX, sup, r, r * K, 0, Math.PI, 0)
-    c.lineTo(GX + rFondo + 2, FONDO_Y)
-    c.ellipse(GX, FONDO_Y, rFondo, rFondo * K, 0, 0, Math.PI)
-    c.closePath()
-    c.fill()
-
-    // Contraluz: un halo cálido en la mitad baja, donde la luz rebota en la base.
-    const halo = c.createRadialGradient(GX - r * 0.15, FONDO_Y - (FONDO_Y - sup) * 0.35, 4, GX, FONDO_Y - (FONDO_Y - sup) * 0.35, Math.max(60, (FONDO_Y - sup) * 0.8))
-    halo.addColorStop(0, css(p.brillo, 0.26))
-    halo.addColorStop(1, css(p.brillo, 0))
-    c.fillStyle = halo
-    c.fillRect(GX - r - 4, sup - 10, r * 2 + 8, FONDO_Y - sup + 20)
-
-    // Hacia arriba, bajo la espuma, la cerveza se oscurece apenas.
-    const sombra = c.createLinearGradient(0, sup, 0, sup + 70)
-    sombra.addColorStop(0, css(p.hondo, 0.28))
-    sombra.addColorStop(1, css(p.hondo, 0))
-    c.fillStyle = sombra
-    c.fillRect(GX - r - 4, sup, r * 2 + 8, 70)
-
-    // Superficie (si no la tapa la espuma): una elipse que refleja.
-    if (v.espuma < 3) {
-      c.fillStyle = css(mezclar(p.luz, [255, 255, 255], 0.25), 0.9)
-      c.beginPath(); c.ellipse(GX, sup, r, r * K, 0, 0, Math.PI * 2); c.fill()
-    }
-
-    // La nube de cuando se sirve, con el frente de decantación subiendo.
-    if (v.turbio > 0.01) {
-      const desde = Math.max(sup, v.limpioY)
-      if (desde > sup + 1) {
-        const n = c.createLinearGradient(0, desde, 0, sup)
-        n.addColorStop(0, css(p.brillo, 0))
-        n.addColorStop(0.18, css(mezclar(p.brillo, [255, 250, 238], 0.35), 0.13 * v.turbio))
-        n.addColorStop(1, css(mezclar(p.brillo, [255, 250, 238], 0.5), 0.26 * v.turbio))
-        c.fillStyle = n
-        c.fillRect(GX - r - 4, sup - 8, r * 2 + 8, desde - sup + 8)
-        if (this.texNube && !this.reducido) {
-          c.save()
-          c.globalAlpha *= 0.42 * v.turbio
-          const desliz = (this.reloj * 46) % 100
-          this.tejer(this.texNube, GX - r, sup - 8, r * 2, desde - sup + 8, 0, desliz)
-          c.restore()
-        }
-      }
-    }
-
-    // Borde interno del vidrio sobre la cerveza: una línea oscura y otra clara.
-    c.strokeStyle = 'rgba(0,0,0,0.28)'
-    c.lineWidth = 2.2
-    c.beginPath()
-    c.moveTo(GX - r + 1, sup); c.lineTo(GX - rFondo + 1, FONDO_Y)
-    c.moveTo(GX + r - 1, sup); c.lineTo(GX + rFondo - 1, FONDO_Y)
-    c.stroke()
-  }
-
-  private dibujarBurbujas(v: Vaso, sup: number) {
-    if (!this.burbuja) return
-    const c = this.ctx
-    for (const b of v.burbujas) {
-      if (b.y < sup + 1) continue
-      const x = GX + b.x * rInt(b.y)
-      const s = b.r * 2.1
-      c.globalAlpha = Math.min(1, (b.y - sup) / 16) * (0.3 + this.pal.luminosidad * 0.7)
-      c.drawImage(this.burbuja, x - s / 2, b.y - s / 2, s, s)
-    }
-    c.globalAlpha = 1
-  }
-
-  private dibujarEspuma(v: Vaso, sup: number, activo: boolean) {
-    const c = this.ctx
-    const p = this.pal
-    const arriba = sup - v.espuma
-    const rArriba = rInt(arriba)
-    const rSup = rInt(sup)
-    // Arriba de la boca la espuma forma una corona: un poco más angosta que la
-    // boca, sostenida por la tensión superficial.
-    const corona = Math.max(0, BOCA_Y - arriba)
-    const rTope = corona > 0 ? rInt(BOCA_Y) - corona * 0.35 : rArriba
-
-    // El recorte que viene de afuera sigue la pared y se estira 80 unidades
-    // por encima de la boca: la corona entra en eso.
-    c.save()
-    const cuerpo = c.createLinearGradient(0, arriba, 0, sup + 6)
-    cuerpo.addColorStop(0, css(p.espuma))
-    cuerpo.addColorStop(0.62, css(mezclar(p.espuma, p.espumaBaja, 0.45)))
-    cuerpo.addColorStop(1, css(p.espumaBaja))
-    c.fillStyle = cuerpo
-    c.beginPath()
-    c.ellipse(GX, arriba, rTope, rTope * K, 0, Math.PI, 0)
-    if (corona > 0) {
-      c.lineTo(GX + rInt(BOCA_Y), BOCA_Y)
-    }
-    c.lineTo(GX + rSup, sup)
-    c.ellipse(GX, sup, rSup, rSup * K, 0, 0, Math.PI)
-    if (corona > 0) c.lineTo(GX - rInt(BOCA_Y), BOCA_Y)
-    c.closePath()
-    c.fill()
-
-    // Sombra de cilindro sobre la espuma: más oscura en los costados.
-    const lado = c.createLinearGradient(GX - rSup, 0, GX + rSup, 0)
-    lado.addColorStop(0, 'rgba(70,52,30,0.30)')
-    lado.addColorStop(0.3, 'rgba(70,52,30,0)')
-    lado.addColorStop(0.75, 'rgba(70,52,30,0)')
-    lado.addColorStop(1, 'rgba(70,52,30,0.36)')
-    c.fillStyle = lado
-    c.fill()
-
-    // Textura de burbujitas
-    if (this.texEspuma) {
-      c.save()
-      c.clip()
-      c.globalAlpha *= 0.95
-      const deriva = this.reducido ? 0 : (this.reloj * (v.turbio > 0.5 ? 9 : 1.2)) % 120
-      this.tejer(this.texEspuma, GX - rSup - 6, arriba - rTope * K - 4, rSup * 2 + 12, sup - arriba + rTope * K + 14, 0, -deriva)
-      c.restore()
-    }
-
-    // Donde la espuma se apoya en la cerveza: una franja de burbujas grandes.
-    const borde = c.createLinearGradient(0, sup - 16, 0, sup + rSup * K)
-    borde.addColorStop(0, css(p.espumaBaja, 0))
-    borde.addColorStop(0.55, css(mezclar(p.espumaBaja, p.base, 0.4), 0.6))
-    borde.addColorStop(1, css(mezclar(p.espumaBaja, p.base, 0.7), 0.25))
-    c.fillStyle = borde
-    c.beginPath()
-    c.rect(GX - rSup - 4, sup - 16, rSup * 2 + 8, 16)
-    c.ellipse(GX, sup, rSup, rSup * K, 0, Math.PI, 0, true)
-    c.fill()
-
-    // La cara de arriba, iluminada desde arriba: lo más claro de toda la escena.
-    const tapa = c.createRadialGradient(GX - rTope * 0.25, arriba - rTope * K * 0.4, 4, GX, arriba, rTope * 1.05)
-    tapa.addColorStop(0, 'rgba(255,255,253,1)')
-    tapa.addColorStop(0.7, css(p.espuma))
-    tapa.addColorStop(1, css(mezclar(p.espuma, p.espumaBaja, 0.5)))
-    c.fillStyle = tapa
-    c.beginPath()
-    c.ellipse(GX, arriba, rTope, rTope * K, 0, 0, Math.PI * 2)
-    c.fill()
-    // Bordes irregulares: la espuma no termina en una elipse perfecta. Pocos
-    // bultos, grandes y del mismo tono: muchos chiquitos se leen como perlas.
-    const rnd = azar(v.semilla * 977)
-    c.fillStyle = css(mezclar(p.espuma, [255, 255, 255], 0.5), 0.9)
-    for (let i = 0; i < 13; i++) {
-      const a = Math.PI + ((i + 0.5 + (rnd() - 0.5) * 0.6) / 13) * Math.PI
-      const bx = GX + Math.cos(a) * rTope * 0.93
-      const by = arriba + Math.sin(a) * rTope * K * 0.9
-      c.beginPath(); c.ellipse(bx, by, 4 + rnd() * 5, 2.4 + rnd() * 2.4, 0, 0, Math.PI * 2); c.fill()
-    }
-    if (this.texEspuma) {
-      c.save()
-      c.beginPath(); c.ellipse(GX, arriba, rTope, rTope * K, 0, 0, Math.PI * 2); c.clip()
-      c.globalAlpha *= 0.35
-      this.tejer(this.texEspuma, GX - rTope, arriba - rTope * K, rTope * 2, rTope * K * 2, 0, 0)
-      c.restore()
-    }
-
-    // Donde pega el chorro, la espuma se revuelve.
-    if (this.chorro === 'si' && activo) {
-      const titila = 0.75 + Math.sin(this.reloj * 31) * 0.12 + Math.sin(this.reloj * 13) * 0.1
-      const rev = c.createRadialGradient(GX, arriba, 2, GX, arriba, 30)
-      rev.addColorStop(0, `rgba(255,255,255,${0.95 * titila})`)
-      rev.addColorStop(0.5, css(p.espuma, 0.6 * titila))
-      rev.addColorStop(1, css(p.espuma, 0))
-      c.fillStyle = rev
-      c.beginPath(); c.ellipse(GX, arriba, 30, 30 * K * 2.2, 0, 0, Math.PI * 2); c.fill()
-    }
-    c.restore()
-  }
-
-  private dibujarChorro() {
-    const c = this.ctx
-    const p = this.pal
-    const y0 = this.chorro === 'cortando' ? this.cola : PICO_Y - 1
-    const y1 = this.cabeza
-    if (y1 - y0 < 1) return
-
-    // Se angosta al caer: el mismo caudal acelera y pasa por menos sección.
-    // v(y) = √(v0² + 2·g·Δy); ancho ∝ 1/√v.
-    const v0 = 120
-    const ancho = (y: number) => {
-      const v = Math.sqrt(v0 * v0 + 2 * G * Math.max(0, y - PICO_Y))
-      return 21 * Math.sqrt(v0 / v) + 4.5
-    }
-    const ondula = (y: number) => this.reducido ? 0 :
-      Math.sin(this.reloj * 11 + y * 0.07) * 0.9 * Math.min(1, (y - PICO_Y) / 60)
-
-    const pasos = 18
-    const izq: [number, number][] = []
-    const der: [number, number][] = []
-    for (let i = 0; i <= pasos; i++) {
-      const y = y0 + (y1 - y0) * (i / pasos)
-      const w = ancho(y) / 2
-      const x = GX + ondula(y)
-      izq.push([x - w, y]); der.push([x + w, y])
-    }
-    c.save()
-    c.beginPath()
-    c.moveTo(izq[0][0], izq[0][1])
-    for (const [x, y] of izq) c.lineTo(x, y)
-    for (let i = der.length - 1; i >= 0; i--) c.lineTo(der[i][0], der[i][1])
-    c.closePath()
-
-    const wTop = ancho(y0) / 2
-    const g = c.createLinearGradient(GX - wTop, 0, GX + wTop, 0)
-    g.addColorStop(0, css(p.hondo, 0.85))
-    g.addColorStop(0.28, css(p.luz, 0.92))
-    g.addColorStop(0.36, css(mezclar(p.brillo, [255, 255, 255], 0.55), 0.95))
-    g.addColorStop(0.5, css(p.luz, 0.9))
-    g.addColorStop(0.82, css(p.base, 0.88))
-    g.addColorStop(1, css(p.hondo, 0.8))
-    c.fillStyle = g
-    c.fill()
-
-    // Las vetas que corren hacia abajo: es lo que hace que se lea como
-    // líquido en movimiento y no como una barra de color.
-    if (this.texChorro && !this.reducido) {
-      c.clip()
-      c.globalAlpha = 0.5
-      c.globalCompositeOperation = 'lighter'
-      const corre = (this.reloj * 900) % 200
-      this.tejer(this.texChorro, GX - 12, y0, 24, y1 - y0, 0, corre)
-      c.globalCompositeOperation = 'source-over'
-      c.globalAlpha = 1
-    }
-    c.restore()
-  }
-
-  private gotaDe(x: number, y: number, r: number) {
-    const c = this.ctx
-    const p = this.pal
-    const g = c.createRadialGradient(x - r * 0.3, y - r * 0.4, 0.2, x, y, r * 1.3)
-    g.addColorStop(0, css(mezclar(p.brillo, [255, 255, 255], 0.6)))
-    g.addColorStop(0.5, css(p.luz, 0.95))
-    g.addColorStop(1, css(p.hondo, 0.9))
-    c.fillStyle = g
-    c.beginPath()
-    c.moveTo(x, y - r * 2)
-    c.quadraticCurveTo(x + r, y - r * 0.4, x + r, y)
-    c.arc(x, y, r, 0, Math.PI)
-    c.quadraticCurveTo(x - r, y - r * 0.4, x, y - r * 2)
-    c.fill()
-  }
-
-  /** Repite una textura en un rectángulo, con desplazamiento. */
-  private tejer(t: Lienzo, x: number, y: number, w: number, h: number, dx: number, dy: number) {
-    const c = this.ctx
-    const tw = t.r.x1 - t.r.x0, th = t.r.y1 - t.r.y0
-    const sx = ((dx % tw) + tw) % tw, sy = ((dy % th) + th) % th
-    for (let yy = y - th + sy; yy < y + h; yy += th) {
-      for (let xx = x - tw + sx; xx < x + w; xx += tw) {
-        c.drawImage(t.c, xx, yy, tw, th)
-      }
-    }
-  }
-
-  private caminoInterior(c: CanvasRenderingContext2D) {
-    const rb = rInt(FONDO_Y), rt = rInt(BOCA_Y)
-    c.beginPath()
-    c.moveTo(GX - rt, BOCA_Y - 80)
-    c.lineTo(GX - rt, BOCA_Y)
-    c.lineTo(GX - rb, FONDO_Y)
-    c.ellipse(GX, FONDO_Y, rb, rb * K, 0, Math.PI, 0, true)
-    c.lineTo(GX + rt, BOCA_Y)
-    c.lineTo(GX + rt, BOCA_Y - 80)
-    c.closePath()
-  }
-
-  private caminoExterior(c: CanvasRenderingContext2D) {
-    c.beginPath()
-    c.moveTo(GX - R_BOCA, BOCA_Y)
-    c.lineTo(GX - R_BASE, BASE_Y)
-    c.ellipse(GX, BASE_Y, R_BASE, R_BASE * K, 0, Math.PI, 0, true)
-    c.lineTo(GX + R_BOCA, BOCA_Y)
-    c.ellipse(GX, BOCA_Y, R_BOCA, R_BOCA * K, 0, 0, Math.PI, true)
-    c.closePath()
-  }
-
-  // ── Capas que se pintan una sola vez ───────────────────────────────────────
-  private lienzo(r: Rect): Lienzo {
-    const c = document.createElement('canvas')
-    const s = this.esc * this.dpr
-    c.width = Math.max(1, Math.ceil((r.x1 - r.x0) * s))
-    c.height = Math.max(1, Math.ceil((r.y1 - r.y0) * s))
-    const x = c.getContext('2d')!
-    x.setTransform(c.width / (r.x1 - r.x0), 0, 0, c.height / (r.y1 - r.y0), -r.x0 * c.width / (r.x1 - r.x0), -r.y0 * c.height / (r.y1 - r.y0))
-    return { c, x, r }
-  }
-
-  private prepararCapas() {
-    this.prepararFija()
-    this.prepararVidrio()
-    this.prepararManija()
-    this.prepararTexturas()
-  }
-
-  private cromo(c: CanvasRenderingContext2D, a: number, b: number, vertical: boolean, oscuro = 0) {
-    // Un cromo es un espejo: lo que se ve son bandas del entorno, no un
-    // degradado suave. Luz principal arriba a la izquierda, un rebote cálido de
-    // las luces de la barra y bordes que caen a negro.
-    const g = vertical ? c.createLinearGradient(0, a, 0, b) : c.createLinearGradient(a, 0, b, 0)
-    const k = (v: number) => Math.round(v * (1 - oscuro))
-    const st: [number, string][] = [
-      [0, `rgb(${k(28)},${k(33)},${k(38)})`],
-      [0.07, `rgb(${k(96)},${k(104)},${k(111)})`],
-      [0.17, `rgb(${k(236)},${k(240)},${k(243)})`],
-      [0.24, `rgb(${k(250)},${k(251)},${k(252)})`],
-      [0.31, `rgb(${k(170)},${k(178)},${k(184)})`],
-      [0.46, `rgb(${k(62)},${k(69)},${k(75)})`],
-      [0.58, `rgb(${k(30)},${k(34)},${k(38)})`],
-      [0.7, `rgb(${k(92)},${k(84)},${k(76)})`],
-      [0.8, `rgb(${k(214)},${k(190)},${k(156)})`],
-      [0.87, `rgb(${k(150)},${k(150)},${k(150)})`],
-      [1, `rgb(${k(24)},${k(28)},${k(32)})`],
-    ]
-    for (const [o, col] of st) g.addColorStop(o, col)
-    return g
-  }
-
-  private prepararFija() {
-    const L = this.lienzo({ x0: -40, y0: 0, x1: S_W + 40, y1: S_H })
-    const c = L.x
-
-    // Sombra de la torre y la bandeja sobre el mostrador
-    const sombra = (x: number, w: number) => {
-      const g = c.createRadialGradient(x, MOSTRADOR_Y + 2, 4, x, MOSTRADOR_Y + 2, w)
-      g.addColorStop(0, 'rgba(0,0,0,0.55)')
-      g.addColorStop(1, 'rgba(0,0,0,0)')
-      c.fillStyle = g
-      c.beginPath(); c.ellipse(x, MOSTRADOR_Y + 2, w, w * 0.12, 0, 0, Math.PI * 2); c.fill()
-    }
-    sombra(75, 110)
-    sombra(GX, 200)
-
-    // ── Torre ──────────────────────────────────────────────────────────────
-    const tx0 = 34, tx1 = 116
-    c.fillStyle = this.cromo(c, tx0, tx1, false)
-    c.fillRect(tx0, 176, tx1 - tx0, MOSTRADOR_Y - 16 - 176)
-    // Más abajo llega menos luz
-    const baja = c.createLinearGradient(0, 300, 0, MOSTRADOR_Y)
-    baja.addColorStop(0, 'rgba(0,0,0,0)')
-    baja.addColorStop(1, 'rgba(0,0,0,0.5)')
-    c.fillStyle = baja
-    c.fillRect(tx0, 300, tx1 - tx0, MOSTRADOR_Y - 300)
-    // Capuchón
-    c.fillStyle = this.cromo(c, tx0 - 4, tx1 + 4, false)
-    c.beginPath()
-    c.moveTo(tx0 - 4, 182)
-    c.lineTo(tx0 - 4, 168)
-    c.quadraticCurveTo(tx0 - 4, 132, (tx0 + tx1) / 2, 128)
-    c.quadraticCurveTo(tx1 + 4, 132, tx1 + 4, 168)
-    c.lineTo(tx1 + 4, 182)
-    c.closePath()
-    c.fill()
-    c.fillStyle = 'rgba(0,0,0,0.35)'
-    c.fillRect(tx0 - 4, 182, tx1 - tx0 + 8, 3)
-    // Base
-    c.fillStyle = this.cromo(c, tx0 - 22, tx1 + 22, false)
-    c.beginPath()
-    c.moveTo(tx0 - 6, MOSTRADOR_Y - 20)
-    c.lineTo(tx1 + 6, MOSTRADOR_Y - 20)
-    c.lineTo(tx1 + 22, MOSTRADOR_Y - 4)
-    c.lineTo(tx0 - 22, MOSTRADOR_Y - 4)
-    c.closePath()
-    c.fill()
-    c.fillStyle = this.cromo(c, tx0 - 24, tx1 + 24, false, 0.25)
-    c.beginPath(); c.ellipse(75, MOSTRADOR_Y - 4, 65, 7, 0, 0, Math.PI * 2); c.fill()
-
-    // ── Cuerpo de la canilla, de perfil ────────────────────────────────────
-    const cy = 270
-    // Acople a la torre
-    c.fillStyle = this.cromo(c, cy - 18, cy + 18, true)
-    c.fillRect(tx1 - 2, cy - 18, 40, 36)
-    // Tuerca: caras planas, bandas más duras
-    c.fillStyle = this.cromo(c, cy - 25, cy + 25, true, 0.08)
-    c.beginPath()
-    c.moveTo(132, cy - 25); c.lineTo(160, cy - 25); c.lineTo(164, cy - 21)
-    c.lineTo(164, cy + 21); c.lineTo(160, cy + 25); c.lineTo(132, cy + 25)
-    c.lineTo(128, cy + 21); c.lineTo(128, cy - 21)
-    c.closePath(); c.fill()
-    c.fillStyle = 'rgba(0,0,0,0.25)'
-    c.fillRect(145, cy - 25, 1.4, 50)
-    // Cuerpo
-    c.fillStyle = this.cromo(c, cy - 22, cy + 22, true)
-    c.beginPath()
-    c.moveTo(164, cy - 21)
-    c.lineTo(310, cy - 22)
-    c.arc(310, cy, 22, -Math.PI / 2, Math.PI / 2)
-    c.lineTo(164, cy + 21)
-    c.closePath(); c.fill()
-    // Pico
-    c.fillStyle = this.cromo(c, GX - 13, GX + 13, false)
-    c.beginPath()
-    c.moveTo(GX - 13, cy + 12)
-    c.lineTo(GX + 13, cy + 12)
-    c.lineTo(GX + 10.5, PICO_Y - 6)
-    c.lineTo(GX - 10.5, PICO_Y - 6)
-    c.closePath(); c.fill()
-    // Labio del pico
-    c.fillStyle = this.cromo(c, GX - 12, GX + 12, false, 0.1)
-    c.fillRect(GX - 12, PICO_Y - 7, 24, 7)
-    c.fillStyle = 'rgba(0,0,0,0.6)'
-    c.beginPath(); c.ellipse(GX, PICO_Y, 9, 1.6, 0, 0, Math.PI * 2); c.fill()
-    // Bonete donde pivota la manija
-    c.fillStyle = this.cromo(c, PIVOTE.x - 12, PIVOTE.x + 12, false)
-    c.fillRect(PIVOTE.x - 12, PIVOTE.y - 2, 24, cy - 20 - PIVOTE.y + 2)
-    c.fillStyle = this.cromo(c, PIVOTE.x - 15, PIVOTE.x + 15, false, 0.15)
-    c.fillRect(PIVOTE.x - 15, cy - 26, 30, 6)
-
-    // ── Bandeja de goteo ───────────────────────────────────────────────────
-    const B = BANDEJA
-    // Cara de arriba: la rejilla
-    c.fillStyle = '#15191c'
-    c.beginPath()
-    c.moveTo(B.x0 + 10, B.arriba); c.lineTo(B.x1 - 10, B.arriba)
-    c.lineTo(B.x1, B.frente); c.lineTo(B.x0, B.frente)
-    c.closePath(); c.fill()
-    for (let i = 0; i < 4; i++) {
-      const y = B.arriba + 2 + i * 2.6
-      const t = i / 4
-      c.fillStyle = 'rgba(190,198,204,0.55)'
-      c.fillRect(B.x0 + 10 - t * 10, y, B.x1 - B.x0 - 20 + t * 20, 1.1)
-    }
-    // Frente: acero cepillado
-    const fr = c.createLinearGradient(0, B.frente, 0, B.abajo)
-    fr.addColorStop(0, '#c9d0d4')
-    fr.addColorStop(0.18, '#8e979d')
-    fr.addColorStop(0.6, '#4a5257')
-    fr.addColorStop(1, '#22282c')
-    c.fillStyle = fr
-    c.fillRect(B.x0, B.frente, B.x1 - B.x0, B.abajo - B.frente)
-    const rnd = azar(77)
-    for (let i = 0; i < 70; i++) {
-      c.fillStyle = `rgba(255,255,255,${0.03 + rnd() * 0.05})`
-      c.fillRect(B.x0, B.frente + rnd() * (B.abajo - B.frente), B.x1 - B.x0, 0.4)
-    }
-    c.fillStyle = 'rgba(255,255,255,0.6)'
-    c.fillRect(B.x0, B.frente, B.x1 - B.x0, 0.8)
-
-    this.fija = L
-  }
-
-  private prepararVidrio() {
-    const r: Rect = { x0: GX - 132, y0: BOCA_Y - 26, x1: GX + 132, y1: BASE_Y + 22 }
-
-    // ── Atrás: lo que se ve a través del vaso ──────────────────────────────
-    const A = this.lienzo(r)
-    let c = A.x
-    this.caminoExterior(c)
-    c.fillStyle = 'rgba(190,215,225,0.035)'
-    c.fill()
-    // Borde de atrás de la boca
-    c.strokeStyle = 'rgba(255,255,255,0.28)'
-    c.lineWidth = 1.6
-    c.beginPath(); c.ellipse(GX, BOCA_Y, R_BOCA, R_BOCA * K, 0, Math.PI, 0); c.stroke()
-    c.strokeStyle = 'rgba(255,255,255,0.12)'
-    c.beginPath(); c.ellipse(GX, BOCA_Y, R_BOCA - PARED, (R_BOCA - PARED) * K, 0, Math.PI, 0); c.stroke()
-    // Reflejos de la pared de atrás
-    const fa = c.createLinearGradient(GX + 40, 0, GX + 80, 0)
-    fa.addColorStop(0, 'rgba(255,255,255,0)')
-    fa.addColorStop(0.5, 'rgba(255,255,255,0.05)')
-    fa.addColorStop(1, 'rgba(255,255,255,0)')
-    c.fillStyle = fa
-    c.fillRect(GX + 40, BOCA_Y + 20, 40, FONDO_Y - BOCA_Y - 40)
-    this.vidrioAtras = A
-
-    // ── Adelante: brillos, espesor y base ──────────────────────────────────
-    const F = this.lienzo(r)
-    c = F.x
-    // Espesor de las paredes: una franja clara con el borde interno oscuro.
-    const pared = (lado: -1 | 1) => {
-      c.beginPath()
-      c.moveTo(GX + lado * R_BOCA, BOCA_Y)
-      c.lineTo(GX + lado * R_BASE, FONDO_Y)
-      c.lineTo(GX + lado * rInt(FONDO_Y), FONDO_Y)
-      c.lineTo(GX + lado * rInt(BOCA_Y), BOCA_Y)
-      c.closePath()
-      c.fillStyle = 'rgba(225,240,245,0.14)'
-      c.fill()
-      c.strokeStyle = 'rgba(255,255,255,0.42)'
-      c.lineWidth = 1.4
-      c.beginPath(); c.moveTo(GX + lado * R_BOCA, BOCA_Y); c.lineTo(GX + lado * R_BASE, BASE_Y - 4); c.stroke()
-    }
-    pared(-1); pared(1)
-
-    // El brillo principal: una franja ancha y suave y, pegada, una fina y dura.
-    const franja = (xa: number, xb: number, w: number, a: number) => {
-      const g = c.createLinearGradient(GX + xa - w, 0, GX + xa + w, 0)
-      g.addColorStop(0, 'rgba(255,255,255,0)')
-      g.addColorStop(0.5, `rgba(255,255,255,${a})`)
-      g.addColorStop(1, 'rgba(255,255,255,0)')
-      c.fillStyle = g
-      c.beginPath()
-      c.moveTo(GX + xa - w, BOCA_Y + 26)
-      c.lineTo(GX + xa + w, BOCA_Y + 26)
-      c.lineTo(GX + xb + w * 0.8, FONDO_Y - 30)
-      c.lineTo(GX + xb - w * 0.8, FONDO_Y - 30)
-      c.closePath(); c.fill()
-    }
-    franja(-R_BOCA * 0.66, -R_BASE * 0.66, 15, 0.2)
-    franja(R_BOCA * 0.8, R_BASE * 0.8, 5, 0.16)
-    // La línea dura, con fundido en las puntas
-    const dura = c.createLinearGradient(0, BOCA_Y + 30, 0, FONDO_Y - 40)
-    dura.addColorStop(0, 'rgba(255,255,255,0)')
-    dura.addColorStop(0.12, 'rgba(255,255,255,0.78)')
-    dura.addColorStop(0.75, 'rgba(255,255,255,0.55)')
-    dura.addColorStop(1, 'rgba(255,255,255,0)')
-    c.strokeStyle = dura
-    c.lineWidth = 2.6
-    c.lineCap = 'round'
-    c.beginPath()
-    c.moveTo(GX - R_BOCA * 0.66 - 9, BOCA_Y + 32)
-    c.lineTo(GX - R_BASE * 0.66 - 7, FONDO_Y - 40)
-    c.stroke()
-
-    // Boca: el borde de adelante, con espesor
-    c.lineCap = 'butt'
-    c.fillStyle = 'rgba(235,245,248,0.22)'
-    c.beginPath()
-    c.ellipse(GX, BOCA_Y, R_BOCA, R_BOCA * K, 0, 0, Math.PI)
-    c.ellipse(GX, BOCA_Y, R_BOCA - PARED, (R_BOCA - PARED) * K, 0, Math.PI, 0, true)
-    c.closePath(); c.fill()
-    c.strokeStyle = 'rgba(255,255,255,0.7)'
-    c.lineWidth = 1.8
-    c.beginPath(); c.ellipse(GX, BOCA_Y, R_BOCA, R_BOCA * K, 0, 0, Math.PI); c.stroke()
-    // Destello en la boca
-    // Un destello que sigue la curva del borde, no un punto
-    c.save()
-    c.translate(GX - R_BOCA * 0.6, BOCA_Y + R_BOCA * K * 0.8)
-    c.scale(1, 0.22)
-    const dest = c.createRadialGradient(0, 0, 0, 0, 0, 22)
-    dest.addColorStop(0, 'rgba(255,255,255,0.8)')
-    dest.addColorStop(1, 'rgba(255,255,255,0)')
-    c.fillStyle = dest
-    c.fillRect(-22, -22, 44, 44)
-    c.restore()
-
-    // Base maciza
-    c.beginPath()
-    c.ellipse(GX, FONDO_Y, rInt(FONDO_Y), rInt(FONDO_Y) * K, 0, 0, Math.PI)
-    c.lineTo(GX - R_BASE, BASE_Y)
-    c.ellipse(GX, BASE_Y, R_BASE, R_BASE * K, 0, Math.PI, 0, true)
-    c.closePath()
-    const base = c.createLinearGradient(GX - R_BASE, 0, GX + R_BASE, 0)
-    base.addColorStop(0, 'rgba(200,225,230,0.30)')
-    base.addColorStop(0.25, 'rgba(200,225,230,0.08)')
-    base.addColorStop(0.7, 'rgba(200,225,230,0.05)')
-    base.addColorStop(1, 'rgba(200,225,230,0.26)')
-    c.fillStyle = base
-    c.fill()
-    c.strokeStyle = 'rgba(255,255,255,0.22)'
-    c.lineWidth = 1.2
-    c.beginPath(); c.ellipse(GX, FONDO_Y, rInt(FONDO_Y), rInt(FONDO_Y) * K, 0, 0, Math.PI); c.stroke()
-    c.strokeStyle = 'rgba(255,255,255,0.55)'
-    c.lineWidth = 1.8
-    c.beginPath(); c.ellipse(GX, BASE_Y, R_BASE, R_BASE * K, 0, 0.12, Math.PI - 0.12); c.stroke()
-    // Refracción dentro de la base: dos arcos claros cortos
-    c.strokeStyle = 'rgba(255,255,255,0.35)'
-    c.lineWidth = 1.4
-    c.beginPath(); c.ellipse(GX - 20, FONDO_Y + 24, 46, 6, 0, 0.3, 1.4); c.stroke()
-    c.beginPath(); c.ellipse(GX + 30, FONDO_Y + 30, 36, 5, 0, 1.9, 2.8); c.stroke()
-    this.vidrioFrente = F
-
-    // ── Rocío: gotitas sobre el vidrio frío ────────────────────────────────
-    const R = this.lienzo(r)
-    c = R.x
-    this.caminoExterior(c)
-    c.save()
-    c.clip()
-    c.fillStyle = 'rgba(230,240,245,0.05)'
-    c.fillRect(r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0)
-    const rnd = azar(4242)
-    for (let i = 0; i < 520; i++) {
-      const y = BOCA_Y + 14 + rnd() * (FONDO_Y - BOCA_Y - 10)
-      const lim = rExt(y) - 3
-      const x = GX + (rnd() * 2 - 1) * lim
-      // Cerca de los bordes se ven de canto: más finas.
-      const canto = Math.abs(x - GX) / lim
-      const grande = rnd() < 0.05
-      const rr = (grande ? 2.6 + rnd() * 2 : 0.5 + rnd() * rnd() * 1.6) * (1 - canto * 0.5)
-      c.fillStyle = 'rgba(255,255,255,0.10)'
-      c.beginPath(); c.ellipse(x, y, rr * (1 - canto * 0.4), rr, 0, 0, Math.PI * 2); c.fill()
-      c.fillStyle = 'rgba(0,0,0,0.22)'
-      c.beginPath(); c.ellipse(x + rr * 0.15, y + rr * 0.35, rr * 0.8 * (1 - canto * 0.4), rr * 0.55, 0, 0, Math.PI); c.fill()
-      c.fillStyle = 'rgba(255,255,255,0.85)'
-      c.beginPath(); c.arc(x - rr * 0.3, y - rr * 0.35, Math.max(0.35, rr * 0.3), 0, Math.PI * 2); c.fill()
-    }
-    c.restore()
-    this.rocio = R
-  }
-
-  private prepararManija() {
-    if (!this.esc) return
-    // Coordenadas locales: el pivote en (0,0) y la manija hacia arriba.
-    const L = this.lienzo({ x0: -26, y0: -250, x1: 26, y1: 4 })
-    const c = L.x
-    const p = this.pal
     // Virola de cromo
-    c.fillStyle = this.cromo(c, -11, 11, false)
-    c.fillRect(-11, -28, 22, 30)
-    c.fillStyle = 'rgba(0,0,0,0.35)'
-    c.fillRect(-11, -14, 22, 1.2)
-    c.fillRect(-11, -24, 22, 1.2)
-
+    this.cromo(c, () => { c.beginPath(); c.roundRect(-15, -30, 30, 32, 6) }, -15, 15)
     // Cuerpo: laca negra, más ancho arriba
     const cuerpo = () => {
       c.beginPath()
       c.moveTo(-12, -28)
-      c.lineTo(-19, -222)
-      c.quadraticCurveTo(-19, -242, 0, -243)
-      c.quadraticCurveTo(19, -242, 19, -222)
+      c.lineTo(-19, -168)
+      c.quadraticCurveTo(-19, -186, 0, -188)
+      c.quadraticCurveTo(19, -186, 19, -168)
       c.lineTo(12, -28)
       c.closePath()
     }
-    cuerpo()
-    const laca = c.createLinearGradient(-19, 0, 19, 0)
-    laca.addColorStop(0, '#08090a')
-    laca.addColorStop(0.22, '#2e3033')
-    laca.addColorStop(0.32, '#55585c')
-    laca.addColorStop(0.42, '#1d1f21')
-    laca.addColorStop(0.8, '#141516')
-    laca.addColorStop(0.92, '#3a3c3f')
-    laca.addColorStop(1, '#070808')
-    c.fillStyle = laca
-    c.fill()
-
-    // Placa con el color y el nombre de la cerveza, como en una barra de verdad
     c.save()
-    c.beginPath()
-    c.moveTo(-10, -52); c.lineTo(-15.5, -206)
-    c.quadraticCurveTo(-15.5, -214, -8, -214)
-    c.lineTo(8, -214)
-    c.quadraticCurveTo(15.5, -214, 15.5, -206)
-    c.lineTo(10, -52)
-    c.closePath()
-    const placa = c.createLinearGradient(-16, 0, 16, 0)
-    placa.addColorStop(0, css(p.hondo))
-    placa.addColorStop(0.3, css(p.luz))
-    placa.addColorStop(0.42, css(mezclar(p.brillo, [255, 255, 255], 0.3)))
-    placa.addColorStop(0.55, css(p.base))
-    placa.addColorStop(1, css(p.hondo))
-    c.fillStyle = placa
+    cuerpo()
+    c.fillStyle = '#2a2236'
     c.fill()
     c.clip()
-    const texto = (this.entrada.etiqueta || '').toUpperCase().slice(0, 18)
-    if (texto) {
-      c.translate(0, -133)
-      c.rotate(-Math.PI / 2)
-      let tam = 17
-      c.font = `800 ${tam}px "Big Shoulders Display Variable", "Archivo Variable", sans-serif`
-      const w = c.measureText(texto).width
-      if (w > 140) { tam = tam * 140 / w; c.font = `800 ${tam}px "Big Shoulders Display Variable", "Archivo Variable", sans-serif` }
-      const [r, g, b] = p.base
-      const claro = (r * 0.299 + g * 0.587 + b * 0.114) > 140
-      c.fillStyle = claro ? 'rgba(20,14,8,0.88)' : 'rgba(255,248,236,0.92)'
-      c.textAlign = 'center'
-      c.textBaseline = 'middle'
-      c.fillText(texto, 0, 1)
-    }
+    c.fillStyle = '#17121f'
+    c.fillRect(6, -200, 30, 200)
+    c.fillStyle = 'rgba(255,255,255,0.4)'
+    c.fillRect(-13, -180, 4, 150)
     c.restore()
-    // Brillo de la laca encima de la placa
-    cuerpo()
-    const brillo = c.createLinearGradient(-19, 0, 19, 0)
-    brillo.addColorStop(0.24, 'rgba(255,255,255,0)')
-    brillo.addColorStop(0.31, 'rgba(255,255,255,0.22)')
-    brillo.addColorStop(0.38, 'rgba(255,255,255,0)')
-    c.fillStyle = brillo
+    // La placa con el nombre
+    const py0 = -160, py1 = -58
+    c.save()
+    c.beginPath()
+    c.roundRect(-15, py0, 30, py1 - py0, 5)
+    c.fillStyle = css(this.pal.base)
     c.fill()
-    // Tapa de cromo arriba
-    c.fillStyle = this.cromo(c, -14, 14, false)
-    c.beginPath(); c.ellipse(0, -240, 13, 4.5, 0, Math.PI, 0); c.fill()
-
-    this.manija = L
-  }
-
-  private prepararTexturas() {
-    const rnd = azar(9001)
-
-    // Espuma: burbujitas apretadas, con el borde claro y el fondo tibio.
-    const E = this.lienzo({ x0: 0, y0: 0, x1: 120, y1: 120 })
-    let c = E.x
-    for (let i = 0; i < 520; i++) {
-      const r = 0.7 + Math.pow(rnd(), 2.4) * 4.2
-      const x = rnd() * 120, y = rnd() * 120
-      for (const ox of [-120, 0, 120]) for (const oy of [-120, 0, 120]) {
-        const cx = x + ox, cy = y + oy
-        if (cx < -6 || cx > 126 || cy < -6 || cy > 126) continue
-        c.strokeStyle = 'rgba(140,108,68,0.42)'
-        c.lineWidth = 0.55
-        c.beginPath(); c.arc(cx, cy + 0.3, r, 0, Math.PI * 2); c.stroke()
-        c.strokeStyle = 'rgba(255,255,255,0.7)'
-        c.beginPath(); c.arc(cx, cy, r, Math.PI * 1.05, Math.PI * 1.75); c.stroke()
-      }
-    }
-    this.texEspuma = E
-
-    // Chorro: vetas verticales que se repiten sin costura
-    const Ch = this.lienzo({ x0: 0, y0: 0, x1: 24, y1: 200 })
-    c = Ch.x
-    for (let i = 0; i < 46; i++) {
-      const x = 2 + rnd() * 20, y = rnd() * 200, l = 16 + rnd() * 90, w = 0.4 + rnd() * 1.6
-      const a = 0.06 + rnd() * 0.32
-      for (const oy of [-200, 0, 200]) {
-        const g = c.createLinearGradient(0, y + oy, 0, y + oy + l)
-        g.addColorStop(0, 'rgba(255,255,255,0)')
-        g.addColorStop(0.5, `rgba(255,252,240,${a})`)
-        g.addColorStop(1, 'rgba(255,255,255,0)')
-        c.fillStyle = g
-        c.fillRect(x, y + oy, w, l)
-      }
-    }
-    this.texChorro = Ch
-
-    // La nube de microburbujas
-    const N = this.lienzo({ x0: 0, y0: 0, x1: 100, y1: 100 })
-    c = N.x
-    for (let i = 0; i < 700; i++) {
-      const x = rnd() * 100, y = rnd() * 100, r = 0.3 + rnd() * 0.7
-      c.fillStyle = `rgba(255,252,242,${0.2 + rnd() * 0.5})`
-      for (const ox of [-100, 0, 100]) for (const oy of [-100, 0, 100]) {
-        c.beginPath(); c.arc(x + ox, y + oy, r, 0, Math.PI * 2); c.fill()
-      }
-    }
-    this.texNube = N
-
-    // Una burbuja: aro claro, centro casi transparente y un punto de luz.
-    const b = document.createElement('canvas')
-    b.width = b.height = 24
-    c = b.getContext('2d')!
-    const g = c.createRadialGradient(12, 12, 0, 12, 12, 12)
-    g.addColorStop(0, 'rgba(255,255,250,0.12)')
-    g.addColorStop(0.62, 'rgba(255,255,250,0.22)')
-    g.addColorStop(0.84, 'rgba(255,255,250,0.8)')
-    g.addColorStop(1, 'rgba(255,255,250,0)')
-    c.fillStyle = g
-    c.fillRect(0, 0, 24, 24)
-    c.fillStyle = 'rgba(255,255,255,0.95)'
-    c.beginPath(); c.arc(8.5, 8.5, 2.2, 0, Math.PI * 2); c.fill()
-    this.burbuja = b
-  }
-
-  // ── Fondo: la barra de noche ───────────────────────────────────────────────
-  private pintarFondo() {
-    const f = this.fondo
-    const c = f.getContext('2d')!
-    const s = f.width / this.cssW
-    const W = this.cssW, H = this.cssH
-    c.setTransform(s, 0, 0, s, 0, 0)
-
-    const mY = (y: number) => this.oy + y * this.esc          // escena → pantalla
-    const mX = (x: number) => this.ox + x * this.esc
-    const atras = mY(870)
-    const frente = mY(990)
-
-    // Pared del fondo: azul pizarra, más clara en el medio donde hay luz.
-    const pared = c.createLinearGradient(0, 0, 0, atras)
-    pared.addColorStop(0, '#0a0f12')
-    pared.addColorStop(0.55, '#121b20')
-    pared.addColorStop(1, '#0f171b')
-    c.fillStyle = pared
-    c.fillRect(0, 0, W, atras + 1)
-
-    // Bokeh: las luces de la barra, desenfocadas. Con borde apenas más
-    // brillante, como las de un lente de verdad.
-    const rnd = azar(31337)
-    const m = Math.min(W, H)
-    c.globalCompositeOperation = 'lighter'
-    for (let i = 0; i < 38; i++) {
-      const x = rnd() * W
-      const y = m * 0.04 + rnd() * Math.max(10, atras - m * 0.12)
-      const r = m * (0.018 + rnd() * rnd() * 0.06)
-      const t = rnd()
-      const col: RGB = t < 0.62 ? [255, 168, 82] : t < 0.88 ? [255, 214, 152] : [118, 168, 196]
-      const a = 0.05 + rnd() * 0.14
-      const g = c.createRadialGradient(x, y, 0, x, y, r)
-      g.addColorStop(0, css(col, a * 0.55))
-      g.addColorStop(0.8, css(col, a * 0.75))
-      g.addColorStop(0.94, css(col, a * 0.32))
-      g.addColorStop(1, css(col, 0))
-      c.fillStyle = g
-      c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill()
-    }
-    // Una tira de luz bajo un estante, muy suave
-    const tira = c.createLinearGradient(0, atras * 0.36, 0, atras * 0.5)
-    tira.addColorStop(0, 'rgba(255,190,120,0)')
-    tira.addColorStop(0.5, 'rgba(255,190,120,0.07)')
-    tira.addColorStop(1, 'rgba(255,190,120,0)')
-    c.fillStyle = tira
-    c.fillRect(0, atras * 0.36, W, atras * 0.14)
-    // Luz cálida detrás del vaso: lo despega del fondo
-    const gx = mX(GX), gy = mY(650)
-    const halo = c.createRadialGradient(gx, gy, 0, gx, gy, this.esc * 520)
-    halo.addColorStop(0, 'rgba(255,176,96,0.13)')
-    halo.addColorStop(1, 'rgba(255,176,96,0)')
-    c.fillStyle = halo
-    c.fillRect(0, 0, W, H)
-    c.globalCompositeOperation = 'source-over'
-
-    // Mostrador: madera oscura, lustrada
-    const tapa = c.createLinearGradient(0, atras, 0, frente)
-    tapa.addColorStop(0, '#1a120c')
-    tapa.addColorStop(0.35, '#2b1d13')
-    tapa.addColorStop(1, '#3a2717')
-    c.fillStyle = tapa
-    c.fillRect(0, atras, W, frente - atras)
-    // Reflejos de las luces en la madera lustrada
-    c.globalCompositeOperation = 'lighter'
-    const r2 = azar(5150)
-    for (let i = 0; i < 9; i++) {
-      const x = r2() * W, w = m * (0.025 + r2() * 0.04)
-      const y = atras + (frente - atras) * (0.15 + r2() * 0.3)
+    c.clip()
+    if (this.placa) {
       c.save()
-      c.translate(x, y)
-      c.scale(1, 2.6)
-      const g = c.createRadialGradient(0, 0, 0, 0, 0, w)
-      g.addColorStop(0, 'rgba(255,170,90,0.07)')
-      g.addColorStop(1, 'rgba(255,170,90,0)')
-      c.fillStyle = g
-      c.fillRect(-w, -w, w * 2, w * 2)
+      c.translate(0, (py0 + py1) / 2)
+      c.rotate(-Math.PI / 2)
+      c.drawImage(this.placa, -(py1 - py0) / 2 + 4, -11, py1 - py0 - 8, 22)
       c.restore()
     }
-    c.globalCompositeOperation = 'source-over'
-    const veta = azar(808)
-    for (let i = 0; i < 60; i++) {
-      c.fillStyle = `rgba(0,0,0,${0.05 + veta() * 0.08})`
-      c.fillRect(0, atras + veta() * (frente - atras), W, 0.6 + veta())
-    }
-    c.fillStyle = 'rgba(255,205,150,0.12)'
-    c.fillRect(0, atras, W, 1)
-    // Canto del mostrador
-    c.fillStyle = 'rgba(255,214,160,0.38)'
-    c.fillRect(0, frente, W, 1.5)
-    const cara = c.createLinearGradient(0, frente, 0, H)
-    cara.addColorStop(0, '#140d08')
-    cara.addColorStop(1, '#050403')
-    c.fillStyle = cara
-    c.fillRect(0, frente + 1.5, W, Math.max(0, H - frente))
+    c.restore()
+    c.beginPath()
+    c.roundRect(-15, py0, 30, py1 - py0, 5)
+    c.lineWidth = 3
+    c.strokeStyle = TINTA
+    c.stroke()
+    cuerpo()
+    c.lineWidth = 5
+    c.stroke()
+    // Bolita de arriba
+    c.beginPath()
+    c.arc(0, -190, 9, 0, Math.PI * 2)
+    c.fillStyle = '#d7dfeb'
+    c.fill()
+    c.lineWidth = 4
+    c.stroke()
+    c.restore()
 
-    // Viñeta
-    const v = c.createRadialGradient(W * 0.4, H * 0.45, m * 0.3, W * 0.5, H * 0.5, Math.hypot(W, H) * 0.62)
-    v.addColorStop(0, 'rgba(0,0,0,0)')
-    v.addColorStop(1, 'rgba(0,0,0,0.6)')
-    c.fillStyle = v
+    // Líneas de movimiento si la manija se mueve rápido
+    const vel = Math.abs(this.velAngulo)
+    if (vel > 1.2 && !this.reducido) {
+      const a = Math.min(1, (vel - 1.2) / 3)
+      c.save()
+      c.translate(PIVOTE.x, PIVOTE.y)
+      c.strokeStyle = `rgba(255,255,255,${0.8 * a})`
+      c.lineWidth = 4
+      c.lineCap = 'round'
+      const sentido = Math.sign(this.velAngulo)
+      for (let i = 0; i < 3; i++) {
+        const rr = 150 + i * 22
+        const a0 = this.angulo - Math.PI / 2 - sentido * 0.12
+        c.beginPath()
+        c.arc(0, 0, rr, a0 - sentido * 0.35, a0, sentido < 0)
+        c.stroke()
+      }
+      c.restore()
+    }
+  }
+
+  private dibujarBandeja(c: CanvasRenderingContext2D) {
+    const { x0, x1, y0, y1 } = BANDEJA
+    c.beginPath()
+    c.roundRect(x0, y0, x1 - x0, y1 - y0, 5)
+    c.fillStyle = '#3d3550'
+    c.fill()
+    c.fillStyle = '#5c5275'
+    c.fillRect(x0 + 4, y0 + 3, x1 - x0 - 8, 5)
+    c.strokeStyle = 'rgba(20,14,30,0.6)'
+    c.lineWidth = 2
+    c.beginPath()
+    for (let x = x0 + 16; x < x1 - 8; x += 14) { c.moveTo(x, y0 + 9); c.lineTo(x, y1 - 4) }
+    c.stroke()
+    c.beginPath()
+    c.roundRect(x0, y0, x1 - x0, y1 - y0, 5)
+    c.strokeStyle = TINTA
+    c.lineWidth = 4
+    c.stroke()
+  }
+
+  private dibujarSombra(c: CanvasRenderingContext2D, v: Vaso) {
+    const p = this.posicion(v)
+    const alto = Math.min(1, -p.dy / 160)
+    c.beginPath()
+    c.ellipse(GX + p.dx, BASE_Y + 3, R_BASE * 1.2 * (1 - alto * 0.45), 9 * (1 - alto * 0.45), 0, 0, Math.PI * 2)
+    c.fillStyle = `rgba(20,10,30,${0.45 * (1 - alto * 0.6)})`
+    c.fill()
+  }
+
+  private caminoVaso(c: CanvasRenderingContext2D) {
+    c.beginPath()
+    c.moveTo(GX - R_BOCA, BOCA_Y)
+    c.lineTo(GX - R_BASE, BASE_Y - 16)
+    c.quadraticCurveTo(GX - R_BASE + 1, BASE_Y, GX - R_BASE + 16, BASE_Y)
+    c.lineTo(GX + R_BASE - 16, BASE_Y)
+    c.quadraticCurveTo(GX + R_BASE - 1, BASE_Y, GX + R_BASE, BASE_Y - 16)
+    c.lineTo(GX + R_BOCA, BOCA_Y)
+  }
+
+  private caminoInterior(c: CanvasRenderingContext2D) {
+    const a = rInt(BOCA_Y), b = rInt(FONDO_Y)
+    c.beginPath()
+    c.moveTo(GX - a, BOCA_Y - 40)
+    c.lineTo(GX - a, BOCA_Y)
+    c.lineTo(GX - b, FONDO_Y - 12)
+    c.quadraticCurveTo(GX - b, FONDO_Y, GX - b + 12, FONDO_Y)
+    c.lineTo(GX + b - 12, FONDO_Y)
+    c.quadraticCurveTo(GX + b, FONDO_Y, GX + b, FONDO_Y - 12)
+    c.lineTo(GX + a, BOCA_Y)
+    c.lineTo(GX + a, BOCA_Y - 40)
+    c.closePath()
+  }
+
+  private dibujarVaso(c: CanvasRenderingContext2D, v: Vaso, capa: 'atras' | 'frente') {
+    const p = this.posicion(v)
+    const respiro = this.reducido ? 0 : Math.sin(this.reloj * 2.3 + v.semilla) * (v.cara === 'dormida' ? 0.03 : 0.012)
+    const s = v.sq + respiro
+    c.save()
+    c.translate(GX + p.dx, BASE_Y + p.dy)
+    c.rotate(v.rot)
+    c.scale(1 + s, 1 - s)
+    c.translate(-GX, -BASE_Y)
+    if (capa === 'atras') this.vasoAtras(c, v)
+    else this.vasoFrente(c, v)
+    c.restore()
+  }
+
+  private superficie(v: Vaso, x: number, sup: number) {
+    const t = this.reloj
+    const amp = 2.5 + v.remolino * 5 + Math.abs(v.ola) * 10
+    return sup + (x - GX) * v.ola * 0.5 + Math.sin((x - GX) * 0.06 + t * 5) * amp * 0.5 + Math.sin((x - GX) * 0.11 - t * 3.4) * amp * 0.3
+  }
+
+  private vasoAtras(c: CanvasRenderingContext2D, v: Vaso) {
+    const pal = this.pal
+    // Vidrio de atrás: un celeste muy suave
+    this.caminoVaso(c)
+    c.closePath()
+    c.fillStyle = 'rgba(200,232,255,0.13)'
+    c.fill()
+    // Borde de atrás de la boca
+    c.beginPath()
+    c.ellipse(GX, BOCA_Y, R_BOCA, 15, 0, Math.PI, Math.PI * 2)
+    c.strokeStyle = 'rgba(190,225,255,0.7)'
+    c.lineWidth = 3
+    c.stroke()
+
+    if (v.nivel <= 0.004 && v.espuma < 1) return
+    const sup = FONDO_Y - alturaDe(v.nivel)
+    c.save()
+    this.caminoInterior(c)
+    c.clip()
+    // El líquido: color plano, sombra dura a la derecha, brillo a la izquierda
+    const paso = 8
+    const camLiq = () => {
+      c.beginPath()
+      c.moveTo(GX - 160, FONDO_Y + 10)
+      for (let x = GX - 160; x <= GX + 160; x += paso) c.lineTo(x, this.superficie(v, x, sup))
+      c.lineTo(GX + 160, FONDO_Y + 10)
+      c.closePath()
+    }
+    camLiq()
+    c.fillStyle = css(pal.base)
+    c.fill()
+    c.save()
+    camLiq()
+    c.clip()
+    // Franja de luz debajo de la superficie
+    const g = c.createLinearGradient(0, sup - 10, 0, sup + 70)
+    g.addColorStop(0, css(pal.brillo, 0.85))
+    g.addColorStop(1, css(pal.brillo, 0))
+    c.fillStyle = g
+    c.fillRect(GX - 160, sup - 20, 320, 90)
+    // Sombra dura (cel) a la derecha
+    c.fillStyle = css(pal.hondo, 0.5)
+    c.beginPath()
+    c.moveTo(GX + 46, sup - 30); c.lineTo(GX + 34, FONDO_Y + 10); c.lineTo(GX + 200, FONDO_Y + 10); c.lineTo(GX + 200, sup - 30)
+    c.fill()
+    // Brillo vertical a la izquierda
+    c.fillStyle = css(pal.luz, 0.75)
+    c.beginPath()
+    c.moveTo(GX - 92, sup - 30); c.lineTo(GX - 66, sup - 30); c.lineTo(GX - 52, FONDO_Y + 10); c.lineTo(GX - 74, FONDO_Y + 10)
+    c.fill()
+    // Remolinos cuando cae el chorro
+    if (v.remolino > 0.05) {
+      c.strokeStyle = `rgba(255,255,255,${0.45 * v.remolino})`
+      c.lineWidth = 4
+      c.lineCap = 'round'
+      for (let i = 0; i < 3; i++) {
+        const a = this.reloj * (5 + i) + i * 2
+        const cy = sup + 40 + i * 34
+        if (cy > FONDO_Y - 10) break
+        c.beginPath()
+        c.ellipse(GX + Math.sin(a * 0.5) * 20, cy, 30 - i * 5, 10, 0, a, a + 2.2)
+        c.stroke()
+      }
+    }
+    // Burbujas: aro blanco con brillito
+    for (const b of v.burbujas) {
+      const x = GX + b.x * rInt(b.y) + Math.sin(b.fase) * 3
+      c.beginPath()
+      c.arc(x, b.y, b.r, 0, Math.PI * 2)
+      c.strokeStyle = 'rgba(255,255,255,0.75)'
+      c.lineWidth = 1.8
+      c.stroke()
+      c.fillStyle = 'rgba(255,255,255,0.9)'
+      c.fillRect(x - b.r * 0.45, b.y - b.r * 0.55, b.r * 0.4, b.r * 0.4)
+    }
+    c.restore()
+    c.restore()
+
+    // Espuma: una nube de dibujo animado. Llena, se asoma por encima del borde.
+    if (v.espuma > 1) this.dibujarEspuma(c, v, sup)
+  }
+
+  private dibujarEspuma(c: CanvasRenderingContext2D, v: Vaso, sup: number) {
+    const pal = this.pal
+    const r = rInt(Math.max(BOCA_Y, sup)) + 1
+    const x0 = GX - r, x1 = GX + r
+    const arriba = sup - v.espuma
+    const domo = Math.max(0, Math.min(34, (LLENO_Y + 30 - arriba) * 0.9))
+    const n = 7
+    const t = this.reloj
+    const tope = (u: number) => arriba - domo * (1 - u * u)
+    const camino = () => {
+      c.beginPath()
+      c.moveTo(x0, this.superficie(v, x0, sup))
+      c.lineTo(x0, tope(-1) + 8)
+      for (let i = 0; i < n; i++) {
+        const ua = -1 + (2 * i) / n, ub = -1 + (2 * (i + 1)) / n
+        const xa = GX + ua * r, xb = GX + ub * r
+        const bulto = 13 + Math.sin(t * 2.4 + i * 1.7 + v.semilla) * 2.5
+        c.quadraticCurveTo((xa + xb) / 2, Math.min(tope(ua), tope(ub)) - bulto, xb, tope(ub) + (i === n - 1 ? 8 : 0))
+      }
+      c.lineTo(x1, this.superficie(v, x1, sup))
+      for (let x = x1; x >= x0; x -= 8) c.lineTo(x, this.superficie(v, x, sup))
+      c.closePath()
+    }
+    c.save()
+    camino()
+    c.fillStyle = css(pal.espuma)
+    c.fill()
+    c.clip()
+    // Sombra de abajo (cel) y brillos arriba
+    c.fillStyle = css(pal.espumaBaja, 0.85)
+    c.fillRect(x0 - 20, sup - v.espuma * 0.38, 2 * r + 40, v.espuma + 30)
+    c.fillStyle = 'rgba(255,255,255,0.95)'
+    for (let i = 0; i < 3; i++) {
+      const u = -0.7 + i * 0.5
+      c.beginPath()
+      c.ellipse(GX + u * r, tope(u) - 4, 9, 4.5, -0.3, 0, Math.PI * 2)
+      c.fill()
+    }
+    // Burbujitas de la espuma
+    c.strokeStyle = css(mezclar(pal.espumaBaja, TINTA_RGB, 0.3), 0.6)
+    c.lineWidth = 1.6
+    const az = azar(v.semilla * 31)
+    for (let i = 0; i < 9; i++) {
+      const u = az() * 1.7 - 0.85
+      const yy = sup - az() * v.espuma * 0.8
+      c.beginPath()
+      c.arc(GX + u * r, yy, 2 + az() * 3, 0, Math.PI * 2)
+      c.stroke()
+    }
+    c.restore()
+    camino()
+    c.strokeStyle = TINTA
+    c.lineWidth = 4
+    c.lineJoin = 'round'
+    c.stroke()
+  }
+
+  private vasoFrente(c: CanvasRenderingContext2D, v: Vaso) {
+    // Vidrio: base gruesa, bordes celestes, dos brillos blancos en diagonal.
+    c.save()
+    this.caminoVaso(c)
+    c.closePath()
+    c.clip()
+    c.fillStyle = 'rgba(190,225,255,0.35)'
+    c.fillRect(GX - 200, FONDO_Y, 400, 60)
+    c.fillStyle = 'rgba(255,255,255,0.8)'
+    c.beginPath()
+    c.moveTo(GX - 100, BOCA_Y + 26); c.lineTo(GX - 82, BOCA_Y + 26); c.lineTo(GX - 66, BOCA_Y + 300); c.lineTo(GX - 82, BOCA_Y + 300)
+    c.closePath()
+    c.moveTo(GX - 70, BOCA_Y + 40); c.lineTo(GX - 62, BOCA_Y + 40); c.lineTo(GX - 52, BOCA_Y + 170); c.lineTo(GX - 60, BOCA_Y + 170)
+    c.closePath()
+    c.fill()
+    c.fillStyle = 'rgba(170,215,255,0.28)'
+    c.beginPath()
+    c.moveTo(GX + R_BOCA - 26, BOCA_Y); c.lineTo(GX + R_BOCA, BOCA_Y); c.lineTo(GX + R_BASE, BASE_Y); c.lineTo(GX + R_BASE - 22, BASE_Y)
+    c.fill()
+    c.restore()
+    // Línea del fondo grueso
+    c.beginPath()
+    c.moveTo(GX - rInt(FONDO_Y) + 4, FONDO_Y + 2)
+    c.quadraticCurveTo(GX, FONDO_Y + 12, GX + rInt(FONDO_Y) - 4, FONDO_Y + 2)
+    c.strokeStyle = 'rgba(160,210,255,0.8)'
+    c.lineWidth = 3
+    c.stroke()
+    // Gotitas de frío
+    if (v.frio > 0.2) {
+      const az = azar(v.semilla * 13)
+      for (let i = 0; i < 5; i++) {
+        const y = BOCA_Y + 60 + az() * 300
+        const lado = az() < 0.5 ? -1 : 1
+        const x = GX + lado * (rExt(y) - 10 - az() * 14)
+        this.gotaDibujo(c, x, y + Math.min(30, (this.reloj * (4 + i)) % 40), 4 + az() * 2.5, `rgba(235,248,255,${0.75 * v.frio})`, 2)
+      }
+    }
+    // Contorno
+    this.caminoVaso(c)
+    c.strokeStyle = TINTA
+    c.lineWidth = 5.5
+    c.lineJoin = 'round'
+    c.stroke()
+    // Boca: el arco de adelante
+    c.beginPath()
+    c.ellipse(GX, BOCA_Y, R_BOCA, 15, 0, 0, Math.PI)
+    c.stroke()
+    c.beginPath()
+    c.ellipse(GX, BOCA_Y + 3, R_BOCA - 8, 10, 0, 0.15 * Math.PI, 0.55 * Math.PI)
+    c.strokeStyle = 'rgba(255,255,255,0.9)'
+    c.lineWidth = 3
+    c.stroke()
+
+    this.dibujarCara(c, v)
+  }
+
+  // ── La cara ──────────────────────────────────────────────────────────────
+  /** Un trazo que se lee sobre cualquier cerveza: halo claro y tinta encima. */
+  private trazo(c: CanvasRenderingContext2D, camino: () => void, ancho: number) {
+    camino()
+    c.lineCap = 'round'
+    c.lineJoin = 'round'
+    c.strokeStyle = 'rgba(255,248,235,0.55)'
+    c.lineWidth = ancho + 5
+    c.stroke()
+    c.strokeStyle = TINTA
+    c.lineWidth = ancho
+    c.stroke()
+  }
+
+  private dibujarCara(c: CanvasRenderingContext2D, v: Vaso) {
+    const t = this.reloj
+    const cara = v.cara
+    let fy = CARA_Y
+    let fx = GX
+    if (cara === 'nerviosa' && !this.reducido) { fx += (rnd() - 0.5) * 2.5; fy += (rnd() - 0.5) * 2 }
+    const parp = v.cerrando > 0 ? Math.sin(v.cerrando * Math.PI) : 0
+
+    type Ojo = 'normal' | 'feliz' | 'estrella' | 'nervioso' | 'dormido'
+    let izq: Ojo = 'normal', der: Ojo = 'normal'
+    let boca: 'gato' | 'sonrisa' | 'chica' | 'grande' | 'abierta' | 'ondulada' | 'o' = 'sonrisa'
+    let rubor = 0.6
+    switch (cara) {
+      case 'feliz': boca = 'gato'; break
+      case 'canta': izq = der = 'feliz'; boca = 'abierta'; rubor = 0.8; break
+      case 'guino': der = 'feliz'; boca = 'sonrisa'; rubor = 0.9; break
+      case 'emocionada': izq = der = 'estrella'; boca = 'grande'; rubor = 1; break
+      case 'recibiendo': izq = der = 'feliz'; boca = 'grande'; rubor = 1; break
+      case 'nerviosa': izq = der = 'nervioso'; boca = 'ondulada'; rubor = 0.3; break
+      case 'esperando': boca = 'chica'; rubor = 0.5; break
+      case 'orgullosa': izq = der = 'estrella'; boca = 'grande'; rubor = 1; break
+      case 'contenta': der = 'feliz'; boca = 'grande'; rubor = 0.8; break
+      case 'chau': izq = der = 'feliz'; boca = 'sonrisa'; rubor = 0.7; break
+      case 'dormida': izq = der = 'dormido'; boca = 'o'; rubor = 0.4; break
+    }
+
+    // Cachetes: rosado con rayitas, el rubor del anime
+    if (rubor > 0) {
+      for (const lado of [-1, 1]) {
+        const cx = fx + lado * 74, cy = fy + 24
+        c.beginPath()
+        c.ellipse(cx, cy, 21, 11, 0, 0, Math.PI * 2)
+        c.fillStyle = `rgba(255,105,140,${0.5 * rubor})`
+        c.fill()
+        c.strokeStyle = `rgba(200,40,80,${0.55 * rubor})`
+        c.lineWidth = 2.5
+        c.lineCap = 'round'
+        c.beginPath()
+        for (let i = -1; i <= 1; i++) { c.moveTo(cx + i * 8 - 3, cy + 5); c.lineTo(cx + i * 8 + 3, cy - 5) }
+        c.stroke()
+      }
+    }
+
+    this.ojo(c, fx - 46, fy - 12, -1, izq, v, parp)
+    this.ojo(c, fx + 46, fy - 12, 1, der, v, parp)
+
+    // Cejas de preocupación
+    if (cara === 'nerviosa') {
+      for (const lado of [-1, 1]) {
+        this.trazo(c, () => {
+          c.beginPath()
+          c.moveTo(fx + lado * 30, fy - 60)
+          c.lineTo(fx + lado * 64, fy - 52)
+        }, 4.5)
+      }
+    }
+
+    // Boca
+    const by = fy + 34
+    if (boca === 'gato') {
+      this.trazo(c, () => {
+        c.beginPath()
+        c.moveTo(fx - 17, by - 3)
+        c.quadraticCurveTo(fx - 8, by + 9, fx, by - 1)
+        c.quadraticCurveTo(fx + 8, by + 9, fx + 17, by - 3)
+      }, 4.5)
+    } else if (boca === 'sonrisa') {
+      this.trazo(c, () => { c.beginPath(); c.moveTo(fx - 20, by - 3); c.quadraticCurveTo(fx, by + 15, fx + 20, by - 3) }, 5)
+    } else if (boca === 'chica') {
+      this.trazo(c, () => { c.beginPath(); c.moveTo(fx - 10, by); c.quadraticCurveTo(fx, by + 7, fx + 10, by) }, 4.5)
+    } else if (boca === 'ondulada') {
+      this.trazo(c, () => {
+        c.beginPath()
+        c.moveTo(fx - 22, by + 2)
+        for (let i = 1; i <= 6; i++) c.lineTo(fx - 22 + i * 7.3, by + (i % 2 ? -4 : 3))
+      }, 4)
+    } else {
+      // Bocas abiertas: rojo oscuro con lengua
+      const abre = boca === 'grande'
+        ? (cara === 'recibiendo' ? 0.85 + Math.sin(t * 9) * 0.15 : 1)
+        : boca === 'abierta' ? 0.6 + Math.abs(Math.sin(t * 6)) * 0.5 : 0.5 + Math.sin(t * 1.6) * 0.15
+      const camino = () => {
+        c.beginPath()
+        if (boca === 'grande') {
+          c.moveTo(fx - 25, by - 6)
+          c.lineTo(fx + 25, by - 6)
+          c.quadraticCurveTo(fx + 23, by - 6 + 36 * abre, fx, by - 6 + 36 * abre)
+          c.quadraticCurveTo(fx - 23, by - 6 + 36 * abre, fx - 25, by - 6)
+        } else {
+          const rr = boca === 'abierta' ? 12 : 7
+          c.ellipse(fx, by + 4, rr, rr * 1.2 * abre + 2, 0, 0, Math.PI * 2)
+        }
+        c.closePath()
+      }
+      camino()
+      c.strokeStyle = 'rgba(255,248,235,0.55)'
+      c.lineWidth = 9
+      c.stroke()
+      c.save()
+      camino()
+      c.fillStyle = '#5b1328'
+      c.fill()
+      c.clip()
+      c.beginPath()
+      c.ellipse(fx, by + 4 + (boca === 'grande' ? 26 * abre : 10 * abre), 15, 9, 0, 0, Math.PI * 2)
+      c.fillStyle = '#ff7d96'
+      c.fill()
+      c.restore()
+      camino()
+      c.strokeStyle = TINTA
+      c.lineWidth = 4.5
+      c.lineJoin = 'round'
+      c.stroke()
+    }
+
+    // Burbuja de dormir, del costado de la boca
+    if (cara === 'dormida' && !this.reducido) {
+      const k = 0.5 + 0.5 * Math.sin(t * 1.6)
+      c.beginPath()
+      c.arc(fx + 30, by - 4, 6 + k * 14, 0, Math.PI * 2)
+      c.fillStyle = 'rgba(190,230,255,0.35)'
+      c.fill()
+      c.strokeStyle = 'rgba(255,255,255,0.85)'
+      c.lineWidth = 2.5
+      c.stroke()
+    }
+
+    // Gota de sudor
+    if (v.sudor > 0.05) {
+      const caida = (t * 0.6) % 1
+      this.gotaDibujo(c, fx + 92, fy - 70 + caida * 26, 13 * v.sudor, '#9fdcff', 3)
+    }
+  }
+
+  private ojo(c: CanvasRenderingContext2D, cx: number, cy: number, lado: number, tipo: string, v: Vaso, parp: number) {
+    const t = this.reloj
+    if (tipo === 'feliz') {
+      this.trazo(c, () => { c.beginPath(); c.moveTo(cx - 21, cy + 7); c.quadraticCurveTo(cx, cy - 22, cx + 21, cy + 7) }, 6)
+      return
+    }
+    if (tipo === 'dormido') {
+      this.trazo(c, () => { c.beginPath(); c.moveTo(cx - 20, cy); c.quadraticCurveTo(cx, cy + 16, cx + 20, cy) }, 5.5)
+      return
+    }
+    const nervioso = tipo === 'nervioso'
+    const rx = nervioso ? 27 : 25
+    const ry = (nervioso ? 34 : 31) * (tipo === 'normal' ? 1 - parp : 1)
+    if (tipo === 'normal' && parp > 0.8) {
+      this.trazo(c, () => { c.beginPath(); c.moveTo(cx - 20, cy + 2); c.quadraticCurveTo(cx, cy + 12, cx + 20, cy + 2) }, 5.5)
+      return
+    }
+    const blanco = () => { c.beginPath(); c.ellipse(cx, cy, rx, Math.max(2, ry), 0, 0, Math.PI * 2) }
+    blanco()
+    c.fillStyle = '#ffffff'
+    c.fill()
+    c.save()
+    blanco()
+    c.clip()
+    if (tipo === 'estrella') {
+      const k = 1 + Math.sin(t * 8) * 0.12
+      this.estrella5(c, cx, cy + 2, 20 * k, t * 1.5)
+    } else if (nervioso) {
+      const jx = this.reducido ? 0 : Math.sin(t * 45) * 1.5
+      c.beginPath()
+      c.arc(cx + jx, cy + 2, 6.5, 0, Math.PI * 2)
+      c.fillStyle = TINTA
+      c.fill()
+    } else {
+      // Iris anime: degradé del tono de la cerveza, pupila y dos brillos.
+      const ix = cx + v.mirada.x * 8, iy = cy + 3 + v.mirada.y * 8
+      const g = c.createLinearGradient(0, iy - 24, 0, iy + 24)
+      g.addColorStop(0, '#24133a')
+      g.addColorStop(0.55, css(mezclar(this.pal.base, [36, 19, 58], 0.35)))
+      g.addColorStop(1, css(this.pal.brillo))
+      c.beginPath()
+      c.ellipse(ix, iy, 18, 24, 0, 0, Math.PI * 2)
+      c.fillStyle = g
+      c.fill()
+      c.beginPath()
+      c.ellipse(ix, iy - 2, 8.5, 12, 0, 0, Math.PI * 2)
+      c.fillStyle = '#120a1c'
+      c.fill()
+      c.fillStyle = '#ffffff'
+      c.beginPath()
+      c.ellipse(ix - 7, iy - 10, 7, 9, -0.3, 0, Math.PI * 2)
+      c.fill()
+      c.beginPath()
+      c.arc(ix + 7, iy + 9, 3.2, 0, Math.PI * 2)
+      c.fill()
+    }
+    c.restore()
+    blanco()
+    c.strokeStyle = TINTA
+    c.lineWidth = 4
+    c.stroke()
+    // Pestaña de arriba, gruesa, con la puntita hacia afuera
+    if (ry > 8) {
+      this.trazo(c, () => {
+        c.beginPath()
+        c.ellipse(cx, cy, rx + 1, Math.max(2, ry) + 1, 0, Math.PI * 1.08, Math.PI * 1.92)
+        const ax = cx + lado * (rx + 2), ay = cy - ry * 0.35
+        c.moveTo(ax, ay)
+        c.lineTo(ax + lado * 9, ay - 8)
+      }, 6)
+    }
+  }
+
+  private dibujarChorro(c: CanvasRenderingContext2D) {
+    if (this.chorro === 'no') return
+    const y0 = this.cola, y1 = this.cabeza
+    if (y1 - y0 < 2) return
+    const t = this.reloj
+    const ancho = (y: number) => 8 + Math.sin(y * 0.07 - t * 22) * 1.4 + (this.chorro === 'bajando' ? 0 : Math.min(2, (y - PICO_Y) * 0.01))
+    const camino = () => {
+      c.beginPath()
+      c.moveTo(GX - ancho(y0), y0)
+      for (let y = y0; y <= y1; y += 8) c.lineTo(GX - ancho(y), y)
+      c.lineTo(GX - ancho(y1), y1)
+      c.arc(GX, y1, ancho(y1), Math.PI, 0, true)
+      for (let y = y1; y >= y0; y -= 8) c.lineTo(GX + ancho(y), y)
+      c.lineTo(GX + ancho(y0), y0)
+      c.closePath()
+    }
+    c.save()
+    camino()
+    c.fillStyle = css(this.pal.base)
+    c.fill()
+    c.clip()
+    c.fillStyle = css(this.pal.hondo, 0.5)
+    c.fillRect(GX + 3, y0, 20, y1 - y0 + 20)
+    c.fillStyle = css(this.pal.brillo)
+    c.fillRect(GX - 5, y0, 3.5, y1 - y0 + 20)
+    // Rayitas que bajan: el chorro se ve correr
+    c.fillStyle = 'rgba(255,255,255,0.75)'
+    for (let y = y0 + ((t * 900) % 60); y < y1; y += 60) c.fillRect(GX - 2, y, 2.5, 18)
+    c.restore()
+    camino()
+    c.strokeStyle = TINTA
+    c.lineWidth = 3.5
+    c.stroke()
+  }
+
+  private dibujarParticulas(c: CanvasRenderingContext2D) {
+    for (const p of this.parts) {
+      const vida = p.vida / p.max
+      const a = Math.min(1, vida * 2.5)
+      c.save()
+      c.globalAlpha = a
+      switch (p.tipo) {
+        case 'chispa': {
+          const k = Math.sin((1 - vida) * Math.PI)
+          this.estrella4(c, p.x, p.y, p.tam * k, p.color, TINTA)
+          break
+        }
+        case 'puf': {
+          c.beginPath()
+          c.arc(p.x, p.y, p.tam * (1.4 - vida * 0.4), 0, Math.PI * 2)
+          c.fillStyle = p.color
+          c.fill()
+          c.strokeStyle = TINTA
+          c.lineWidth = 2.5
+          c.stroke()
+          break
+        }
+        case 'gota':
+          this.gotaDibujo(c, p.x, p.y, p.tam, p.color, 2.5)
+          break
+        case 'confeti': {
+          c.translate(p.x, p.y)
+          c.rotate(p.rot)
+          c.scale(1, Math.cos(p.rot * 1.7))
+          c.fillStyle = p.color
+          c.fillRect(-p.tam / 2, -p.tam / 4, p.tam, p.tam / 2)
+          c.strokeStyle = TINTA
+          c.lineWidth = 1.5
+          c.strokeRect(-p.tam / 2, -p.tam / 4, p.tam, p.tam / 2)
+          break
+        }
+        case 'corazon': {
+          const k = vida > 0.85 ? 1 + (1 - vida) * 4 : 1 + Math.sin(this.reloj * 10) * 0.06
+          c.translate(p.x, p.y)
+          c.rotate(p.rot)
+          c.scale(k, k)
+          this.corazon(c, p.tam, p.color)
+          break
+        }
+        case 'nota': {
+          c.translate(p.x, p.y)
+          c.rotate(Math.sin(this.reloj * 4 + p.rot) * 0.25)
+          this.nota(c, p.tam, p.color)
+          break
+        }
+        case 'z':
+        case 'excl': {
+          const pop = p.tipo === 'excl' ? Math.min(1.25, (1 - vida) * 10) - Math.max(0, Math.min(0.25, (1 - vida) * 10 - 1)) : 1
+          c.translate(p.x, p.y)
+          c.rotate(p.tipo === 'excl' ? p.rot : Math.sin(p.rot + this.reloj) * 0.2)
+          c.scale(pop, pop)
+          c.font = `900 ${p.tam}px "Big Shoulders Display Variable", "Archivo Variable", sans-serif`
+          c.textAlign = 'center'
+          c.textBaseline = 'middle'
+          c.lineJoin = 'round'
+          c.lineWidth = p.tam * 0.14
+          c.strokeStyle = TINTA
+          const txt = p.tipo === 'z' ? 'Z' : '!'
+          c.strokeText(txt, 0, 0)
+          c.fillStyle = p.color
+          c.fillText(txt, 0, 0)
+          break
+        }
+      }
+      c.restore()
+    }
+  }
+
+  /** Líneas de concentración (集中線): el golpe de efecto del manga. */
+  private dibujarLineas(c: CanvasRenderingContext2D, cx: number, cy: number) {
+    if (this.lineas <= 0.01 || this.reducido) return
+    const az = azar(this.lineasSemilla)
+    const R = Math.hypot(this.cssW, this.cssH)
+    const r0 = Math.min(this.area.x1 - this.area.x0, this.area.y1 - this.area.y0) * 0.42
+    c.save()
+    c.fillStyle = `rgba(255,255,255,${0.55 * Math.min(1, this.lineas)})`
+    c.beginPath()
+    for (let i = 0; i < 70; i++) {
+      const a = az() * Math.PI * 2
+      const ini = r0 * (1 + az() * 0.6)
+      const w = 0.004 + az() * 0.01
+      c.moveTo(cx + Math.cos(a) * ini, cy + Math.sin(a) * ini)
+      c.lineTo(cx + Math.cos(a - w) * R, cy + Math.sin(a - w) * R)
+      c.lineTo(cx + Math.cos(a + w) * R, cy + Math.sin(a + w) * R)
+      c.closePath()
+    }
+    c.fill()
+    c.restore()
+  }
+
+  // ── Formas ───────────────────────────────────────────────────────────────
+  private estrella4(c: CanvasRenderingContext2D, x: number, y: number, r: number, color: string, borde: string | null) {
+    if (r <= 0.5) return
+    c.beginPath()
+    c.moveTo(x, y - r)
+    c.quadraticCurveTo(x, y, x + r, y)
+    c.quadraticCurveTo(x, y, x, y + r)
+    c.quadraticCurveTo(x, y, x - r, y)
+    c.quadraticCurveTo(x, y, x, y - r)
+    c.closePath()
+    c.fillStyle = color
+    c.fill()
+    if (borde) { c.strokeStyle = borde; c.lineWidth = 2; c.stroke() }
+  }
+
+  private estrella5(c: CanvasRenderingContext2D, x: number, y: number, r: number, giro: number) {
+    c.beginPath()
+    for (let i = 0; i < 10; i++) {
+      const rr = i % 2 ? r * 0.45 : r
+      const a = giro + (i / 10) * Math.PI * 2 - Math.PI / 2
+      if (i === 0) c.moveTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr)
+      else c.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr)
+    }
+    c.closePath()
+    c.fillStyle = '#ffd23f'
+    c.fill()
+    c.strokeStyle = TINTA
+    c.lineWidth = 3
+    c.lineJoin = 'round'
+    c.stroke()
+    c.beginPath()
+    c.arc(x - r * 0.2, y - r * 0.25, r * 0.16, 0, Math.PI * 2)
+    c.fillStyle = '#fff'
+    c.fill()
+  }
+
+  private gotaDibujo(c: CanvasRenderingContext2D, x: number, y: number, r: number, color: string, borde = 2.5) {
+    if (r < 0.5) return
+    c.beginPath()
+    c.moveTo(x, y - r * 2.1)
+    c.quadraticCurveTo(x + r * 1.05, y - r * 0.4, x + r, y + r * 0.2)
+    c.arc(x, y + r * 0.2, r, 0, Math.PI)
+    c.quadraticCurveTo(x - r * 1.05, y - r * 0.4, x, y - r * 2.1)
+    c.closePath()
+    c.fillStyle = color
+    c.fill()
+    c.strokeStyle = TINTA
+    c.lineWidth = borde
+    c.stroke()
+    c.beginPath()
+    c.ellipse(x - r * 0.35, y - r * 0.1, r * 0.22, r * 0.38, -0.3, 0, Math.PI * 2)
+    c.fillStyle = 'rgba(255,255,255,0.9)'
+    c.fill()
+  }
+
+  private corazon(c: CanvasRenderingContext2D, s: number, color: string) {
+    c.beginPath()
+    c.moveTo(0, s * 0.35)
+    c.bezierCurveTo(-s * 0.9, -s * 0.2, -s * 0.45, -s * 0.85, 0, -s * 0.38)
+    c.bezierCurveTo(s * 0.45, -s * 0.85, s * 0.9, -s * 0.2, 0, s * 0.35)
+    c.closePath()
+    c.fillStyle = color
+    c.fill()
+    c.strokeStyle = TINTA
+    c.lineWidth = 3
+    c.lineJoin = 'round'
+    c.stroke()
+    c.beginPath()
+    c.ellipse(-s * 0.3, -s * 0.38, s * 0.1, s * 0.15, -0.6, 0, Math.PI * 2)
+    c.fillStyle = '#fff'
+    c.fill()
+  }
+
+  private nota(c: CanvasRenderingContext2D, s: number, color: string) {
+    const k = s / 30
+    c.beginPath()
+    c.ellipse(-6 * k, 10 * k, 8 * k, 6 * k, -0.4, 0, Math.PI * 2)
+    c.rect(0.5 * k, -20 * k, 3.5 * k, 30 * k)
+    c.moveTo(4 * k, -20 * k)
+    c.quadraticCurveTo(16 * k, -14 * k, 12 * k, -2 * k)
+    c.quadraticCurveTo(12 * k, -10 * k, 4 * k, -12 * k)
+    c.closePath()
+    c.fillStyle = color
+    c.fill()
+    c.strokeStyle = TINTA
+    c.lineWidth = 2.5
+    c.lineJoin = 'round'
+    c.stroke()
+  }
+
+  // ── Lo que se pinta una vez ──────────────────────────────────────────────
+  /** El nombre de la cerveza para la placa de la manija. */
+  private prepararPlaca() {
+    const lienzo = document.createElement('canvas')
+    const W = 300, H = 76
+    lienzo.width = W; lienzo.height = H
+    const x = lienzo.getContext('2d')!
+    const texto = (this.entrada.etiqueta || 'GRIFO').toUpperCase()
+    let tam = 62
+    x.font = `800 ${tam}px "Big Shoulders Display Variable", sans-serif`
+    const ancho = x.measureText(texto).width
+    if (ancho > W - 16) tam = Math.max(26, tam * (W - 16) / ancho)
+    x.font = `800 ${tam}px "Big Shoulders Display Variable", sans-serif`
+    x.textAlign = 'center'
+    x.textBaseline = 'middle'
+    const claro = this.pal.luminosidad > 0.5
+    x.fillStyle = claro ? TINTA : '#fff8ea'
+    x.fillText(texto, W / 2, H / 2 + 3, W - 16)
+    this.placa = lienzo
+  }
+
+  /** La contrabarra: noche violeta, estantes con botellas y trama de manga. */
+  private pintarFondo() {
+    const f = this.fondo
+    const c = f.getContext('2d')
+    if (!c || !this.cssW) return
+    const k = f.width / this.cssW
+    c.setTransform(k, 0, 0, k, 0, 0)
+    const W = this.cssW, H = this.cssH
+    const g = c.createLinearGradient(0, 0, 0, H)
+    g.addColorStop(0, '#1a1036')
+    g.addColorStop(0.45, '#2a1745')
+    g.addColorStop(0.75, '#160f22')
+    g.addColorStop(1, '#0e1316')
+    c.fillStyle = g
     c.fillRect(0, 0, W, H)
 
-    // Grano: rompe lo digital de los degradados. Quieto: está en el fondo.
-    const grano = document.createElement('canvas')
-    grano.width = grano.height = 128
-    const gc = grano.getContext('2d')!
-    const img = gc.createImageData(128, 128)
-    const rg = azar(2024)
-    for (let i = 0; i < img.data.length; i += 4) {
-      const n = rg() * 255
-      img.data[i] = img.data[i + 1] = img.data[i + 2] = n
-      img.data[i + 3] = 14
+    // En coordenadas de la escena, para que los estantes queden detrás de la torre.
+    c.save()
+    c.translate(this.ox, this.oy)
+    c.scale(this.esc, this.esc)
+    const izq = -this.ox / this.esc, der = (W - this.ox) / this.esc
+    const az = azar(42)
+    const colores = ['#3d5a7c', '#6a3f7e', '#7e553a', '#3f7e66', '#8a7a3a', '#7e3a52']
+    for (const y of [430, 690]) {
+      for (let x = izq + 10; x < der - 20;) {
+        const w = 26 + az() * 18, h = 70 + az() * 70
+        const col = colores[Math.floor(az() * colores.length)]
+        c.globalAlpha = 0.5
+        c.beginPath()
+        c.roundRect(x, y - h, w, h, [w * 0.35, w * 0.35, 3, 3])
+        c.rect(x + w * 0.35, y - h - 26, w * 0.3, 30)
+        c.fillStyle = col
+        c.fill()
+        c.strokeStyle = TINTA
+        c.lineWidth = 3
+        c.stroke()
+        c.fillStyle = 'rgba(255,255,255,0.35)'
+        c.fillRect(x + w * 0.18, y - h + 10, 4, h - 20)
+        c.fillStyle = 'rgba(255,240,210,0.6)'
+        c.fillRect(x + 3, y - h * 0.55, w - 6, h * 0.22)
+        x += w + 8 + az() * 22
+      }
+      c.globalAlpha = 0.85
+      c.fillStyle = '#3a2850'
+      c.fillRect(izq, y, der - izq, 16)
+      c.fillStyle = '#5b4378'
+      c.fillRect(izq, y, der - izq, 4)
     }
-    gc.putImageData(img, 0, 0)
-    const pat = c.createPattern(grano, 'repeat')
-    if (pat) {
-      c.setTransform(1, 0, 0, 1, 0, 0)
-      c.fillStyle = pat
-      c.fillRect(0, 0, f.width, f.height)
+    c.globalAlpha = 1
+    c.restore()
+
+    // Trama de puntos (screentone), más marcada hacia los bordes.
+    const cx = this.ox + GX * this.esc, cy = this.oy + 640 * this.esc
+    const paso = 12
+    c.fillStyle = 'rgba(255,255,255,0.05)'
+    const lim = this.area.y1
+    for (let y = 0; y < lim; y += paso) {
+      for (let x = (y / paso) % 2 ? paso / 2 : 0; x < W; x += paso) {
+        const d = Math.hypot(x - cx, y - cy) / Math.max(W, lim)
+        const r = Math.max(0, (d - 0.25) * 4)
+        if (r < 0.3) continue
+        c.beginPath()
+        c.arc(x, y, Math.min(2.6, r), 0, Math.PI * 2)
+        c.fill()
+      }
     }
   }
 }

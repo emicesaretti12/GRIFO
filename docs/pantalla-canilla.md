@@ -88,19 +88,20 @@ Se puede cambiar la cerveza: `?demo&color=2a160b&nombre=Stout&vaso=500`.
 
 La pantalla tiene dos partes que no compiten:
 
-- **La escena**: una torre de canilla cromada, la manija con el nombre de la
-  cerveza, un vaso de pinta sobre la bandeja de goteo y la barra de noche
-  detrás. Está montada todo el tiempo y es la que cuenta qué pasa.
+- **La escena**, en estilo anime: una torre de canilla cromada, la manija con el
+  nombre de la cerveza y, sobre la bandeja de goteo, el protagonista: **un vaso
+  con cara** que reacciona a lo que pasa. Detrás, la contrabarra con botellas.
 - **El panel**: el nombre de la cerveza, el estado y el precio. A la derecha si
   la tablet está acostada; abajo si está parada.
 
 | Estado | La escena | El panel |
 |---|---|---|
-| **Libre** | Una pinta llena, asentada, con burbujas subiendo | Rota cada 9 s: "Apoyá tu tarjeta", el precio del vaso, el podio del día |
-| **Tu turno** | Entra un vaso vacío y sube la luz sobre la canilla | Saludo según tu historia, saldo, cuánto te alcanza, "Abrí la canilla y serví" |
-| **Sirviendo** | Se abre la manija, cae el chorro y el vaso se llena con lo medido | Los mL subiendo con el vaso, lo gastado, lo que te queda |
-| **Ticket** | Se cierra la manija, gotea el pico y la cerveza decanta | El veredicto, la puntería, lo cobrado y lo que te queda |
-| **Fuera de servicio** | Vaso vacío, luces bajas | Qué pasa, en castellano |
+| **Libre** | El vaso lleno hace de vidriera: canta, guiña, salta, mira para los costados | Rota cada 9 s: "Apoyá tu tarjeta", el precio del vaso, el podio del día |
+| **Tu turno** | Entra saltando un vaso vacío, golpe de cámara con "!", ojos de estrella | Saludo según tu historia, saldo, cuánto te alcanza, "Abrí la canilla y serví" |
+| **Sirviendo** | Se abre la manija, cae el chorro y el vaso se llena con lo medido, feliz; cerca del límite transpira | Los mL subiendo con el vaso, lo gastado, lo que te queda |
+| **En pausa** | Espera mirando la canilla y parpadea | Igual que sirviendo |
+| **Ticket** | Pinta perfecta: salta, ojos de estrella y papelitos. Si no, sonrisa, guiño y un corazón | El veredicto, la puntería, lo cobrado y lo que te queda |
+| **Fuera de servicio** | El vaso duerme (Zzz y burbujita), luces bajas | Qué pasa, en castellano |
 
 ### La escena muestra lo que mide la canilla
 
@@ -121,12 +122,9 @@ No hay temporizadores. Todo sale de los mililitros que manda el ESP32:
 - **El contador de mililitros y de plata nunca va adelante de lo medido.** El
   vaso puede adelantarse un poco porque es dibujo; la plata, no.
 
-Los detalles que la hacen creíble: la cerveza es más oscura en los bordes y más
-clara en el centro, mientras se sirve se enturbia de microburbujas que decantan
-de abajo hacia arriba al cortar, hay hilos de burbujas que salen siempre del
-mismo punto del fondo, la espuma de una cerveza negra es tostada, el vidrio se
-empaña solo donde hay cerveza fría del otro lado, y la luz que atraviesa la
-cerveza tiñe de ámbar la bandeja.
+El vaso es un personaje, pero **la actuación sale de los datos**: está nervioso
+porque la medición llegó al 86 % del vaso, festeja porque la tirada quedó a
+±3 %. No hay nada actuado por reloj que contradiga lo que pasa en la canilla.
 
 ### Lo que la hace divertida
 
@@ -142,41 +140,41 @@ hoy **en esa canilla**, con las tarjetas enmascaradas.
 El número de tarjeta va **enmascarado** (`····C3D4`). Es una pantalla a la vista
 del público.
 
-### Lo cinematográfico
+### El estilo: anime
 
-- **La cámara cuenta qué pasa**: con la canilla libre gira despacio alrededor de
-  la pinta; en tu turno se acerca; mientras servís baja y sigue el nivel de la
-  cerveza; en el ticket se aleja para mostrar el vaso. Transiciones de más de un
-  segundo y un balanceo de cámara en mano apenas perceptible.
-- **Brillo (bloom)** en los reflejos del cromo y la espuma, un haz de luz suave
-  desde la luz principal y polvo flotando que brilla al cruzar el haz.
-- **Gotas de condensación** que resbalan por el vidrio frío, frenando y
-  soltándose como una gota de verdad.
-- **Destellos dorados** cuando la tirada queda a ±3 % del vaso.
+- **Dibujo animado, no foto.** Contorno grueso de tinta, colores planos y una
+  sombra dura (cel shading). Se lee de lejos en un bar oscuro y le da
+  personalidad a cada canilla: el iris de los ojos toma el color de la cerveza.
+- **Física de dibujo animado.** El vaso se estira al saltar y se aplasta al
+  caer (squash & stretch); la cerveza se sacude con cada salto; la manija rebota
+  como un resorte y deja líneas de movimiento.
+- **Recursos del anime**: rayos de fondo que giran más rápido cuando pasa algo,
+  líneas de concentración (集中線) en los momentos fuertes, golpe de zoom y
+  temblor en la pinta perfecta, rubor con rayitas, gota de sudor, notas
+  musicales, estrellitas y papelitos.
+- **La contrabarra**: estantes con botellas y trama de puntos de manga, pintada
+  una sola vez.
 - **En el panel**: contador de mililitros con rodillos, ondas en "Apoyá tu
   tarjeta" y una pasada de luz dorada sobre el veredicto.
 
-En la demostración, el pie dice qué motor está dibujando: "3D", "3D liviano"
-(la tablet no daba abasto y se apagaron el brillo y las sombras) o "2D" (sin
-WebGL).
+En la demostración, el pie dice "Demostración, animado".
 
 ### Cómo está hecha
 
-- **3D con WebGL (Three.js), con respaldo 2D.** La escena es un modelo: el vidrio refracta (material con transmisión), el cromo refleja un entorno de bar armado con paneles de luz, todo arroja sombra y la cerveza tiñe la bandeja con una luz ámbar. La pared del bar es un plano dentro de la escena, porque el vidrio solo refracta lo que está en la escena. Si la tablet no tiene WebGL, se usa el motor 2D (`motor.ts`). En el 2D: **dos lienzos.** El de atrás (la barra, el bokeh, el mostrador) se
-  pinta una vez. El de adelante se redibuja 60 veces por segundo, pero todo lo
-  que no se mueve (la torre, el vidrio, la bandeja, las texturas de espuma y del
-  chorro) se pinta una sola vez en lienzos aparte y en cada cuadro solo se copia.
+- **Canvas 2D, todo con trazos.** No hay imágenes ni modelos: el vaso, la cara,
+  la torre y los efectos se dibujan con código, así que cualquier color de
+  cerveza funciona y pesa poco. Dos lienzos: el de atrás (la contrabarra) se
+  pinta una vez; el de adelante se redibuja en cada cuadro.
 - **El motor no pasa por React.** Vive en `app/src/pantalla/pinta/motor.ts`;
   React solo le pasa los datos. El contador de mililitros lo escribe el motor
   directo en el DOM: por el estado de React, la pantalla se re-renderizaría 60
   veces por segundo.
 - **Si la tablet no da abasto**, después de 2 s por debajo de ~38 cuadros por
   segundo dibuja a densidad 1. Se ve apenas menos nítido y vuelve a ser fluido.
-- **Respeta `prefers-reduced-motion`**: el chorro y la manija siguen indicando
-  el estado, pero sin ondulación, sin vetas que corren, con menos burbujas, y el
-  cambio de vaso es un fundido en vez de un desplazamiento.
-- **Los colores salen del color que cargás en el panel.** Con uno alcanza: los
-  bordes, el centro, el brillo y la espuma se derivan de ese tono.
+- **Respeta `prefers-reduced-motion`**: las caras siguen contando el estado,
+  pero sin saltos, sin rayos girando, sin golpes de cámara ni papelitos.
+- **Los colores salen del color que cargás en el panel.** Con uno alcanza: la
+  sombra, el brillo, la espuma y los ojos se derivan de ese tono.
 
 ---
 

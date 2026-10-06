@@ -1,10 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { Motor, type Entrada } from './pinta/motor'
-import { Motor3D } from './pinta/motor3d'
 
-// La escena de la canilla: dos lienzos a pantalla completa. Atrás, la pared
-// del bar (se pinta una vez); adelante, la escena en 3D (WebGL). Si la tablet
-// no tiene WebGL, se usa el motor 2D, que muestra lo mismo dibujado en plano.
+// La escena de la canilla: dos lienzos a pantalla completa. Atrás, la
+// contrabarra (se pinta una vez); adelante, el vaso personaje en estilo anime.
 // Toda la lógica está en el motor: acá solo se le pasan los datos y se le
 // avisa cuando cambia el tamaño.
 
@@ -13,7 +11,7 @@ type Props = Entrada & {
    *  Sirve para que el contador de texto suba junto con el líquido sin
    *  re-renderizar React 60 veces por segundo. */
   alContar?: (ml: number) => void
-  /** Qué motor quedó andando: "3D", "3D liviano" o "2D". */
+  /** Qué motor quedó andando (se muestra en el modo demostración). */
   alMotor?: (tipo: string) => void
 }
 
@@ -21,25 +19,14 @@ export default function Pinta({ alContar, alMotor, ...entrada }: Props) {
   const caja = useRef<HTMLDivElement>(null)
   const escena = useRef<HTMLCanvasElement>(null)
   const fondo = useRef<HTMLCanvasElement>(null)
-  const motor = useRef<Motor | Motor3D | null>(null)
-  const [plano, setPlano] = useState(false)
+  const motor = useRef<Motor | null>(null)
   const contar = useRef(alContar)
   contar.current = alContar
   const avisar = useRef(alMotor)
   avisar.current = alMotor
 
   useEffect(() => {
-    let m: Motor | Motor3D
-    if (!plano) {
-      try {
-        m = new Motor3D(escena.current!, fondo.current!)
-      } catch {
-        // Sin WebGL. El lienzo ya quedó tomado por el intento: se remonta uno
-        // nuevo para el 2D.
-        setPlano(true)
-        return
-      }
-    } else m = new Motor(escena.current!, fondo.current!)
+    const m = new Motor(escena.current!, fondo.current!)
     motor.current = m
     m.alContar = (n: number) => contar.current?.(n)
     const reducido = matchMedia('(prefers-reduced-motion: reduce)')
@@ -57,28 +44,24 @@ export default function Pinta({ alContar, alMotor, ...entrada }: Props) {
       .then(() => m.repintarManija())
       .catch(() => {})
     m.iniciar()
-    // El 3D puede pasar a liviano si la tablet no da abasto: se vuelve a mirar.
-    const informar = () => avisar.current?.(m instanceof Motor3D ? m.tipo : '2D')
-    informar()
-    const cada = setInterval(informar, 3000)
+    avisar.current?.(m.tipo)
     return () => {
-      clearInterval(cada)
       ro.disconnect()
       reducido.removeEventListener('change', medir)
       m.detener()
       motor.current = null
     }
-  }, [plano])
+  }, [])
 
   const { modo, ml, vaso, color, etiqueta, sesion } = entrada
   useEffect(() => {
     motor.current?.actualizar({ modo, ml, vaso, color, etiqueta, sesion })
-  }, [modo, ml, vaso, color, etiqueta, sesion, plano])
+  }, [modo, ml, vaso, color, etiqueta, sesion])
 
   return (
     <div className="pinta" ref={caja} aria-hidden="true">
       <canvas ref={fondo} className="pinta-lienzo" />
-      <canvas ref={escena} key={plano ? '2d' : '3d'} className="pinta-lienzo" />
+      <canvas ref={escena} className="pinta-lienzo" />
     </div>
   )
 }
