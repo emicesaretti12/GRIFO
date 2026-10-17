@@ -50,7 +50,7 @@ Dale un minuto — arranca, se conecta al WiFi y manda el primer latido.
 Si la red del bar no es la que tiene guardada:
 
 1. La canilla levanta su propio WiFi. Buscá en el celular una red que se
-   llame **GRIFO-setup**.
+   llame **GRIFO-1** (el número es el de la canilla).
 2. Conectate. Poné la contraseña que figura en `docs/portal-wifi.md`.
 3. Se abre sola una pantalla (es el "captive portal", lo mismo que el WiFi de
    un hotel). Si no se abre, andá a `http://192.168.4.1`.
@@ -93,10 +93,10 @@ Casi siempre es WiFi. En orden:
 1. ¿Está enchufada? (obvio, pero es lo primero).
 2. Apagala y prendela. Esperá un minuto entero — el arranque más el primer
    latido tardan.
-3. Si sigue sin aparecer: buscá la red **GRIFO-setup** en el celular. Si
+3. Si sigue sin aparecer: buscá la red **GRIFO-1** en el celular. Si
    aparece, la canilla está viva pero no encuentra el WiFi del bar → rehacé el
    paso 2 (portal).
-4. Si no aparece ni **GRIFO-setup**, no está arrancando: problema de
+4. Si no aparece ni **GRIFO-1**, no está arrancando: problema de
    alimentación, no de red.
 
 ### La tablet dice "no pudimos abrir la sesión"
