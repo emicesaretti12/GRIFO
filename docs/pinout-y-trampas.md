@@ -28,15 +28,22 @@ Detalle con las posiciones contadas desde el USB en
 
 | Componente | Señal | GPIO | Notas |
 |---|---|---|---|
-| MFRC522 | SDA / SS | 5 | bus VSPI |
+| Relé | IN | 26 | **activo en BAJO**, pin en open-drain · pasa por el canal 4 del conversor de niveles (`LV4` → `HV4`), nunca directo · jumper en **`L`** · bobina de 12 V · ver trampas 1, 2 y 6 |
+| Válvula solenoide | — | — | no va a un pin: `COM` del relé a `DC+`, `NO` a un cable de la válvula, el otro cable a `DC-` |
+| Caudalímetro YF-S201C | señal (amarillo) | 27 | alimentado a **3,3 V** (rojo a 3,3 V, negro a GND), pull-up **interno** del ESP32, directo sin conversor |
+| Pulsador | — | 14 | a GND, pull-up interno · desde la etapa 7 solo sirve para entrar al portal al arrancar |
+| LED estado | — | 2 | es el LED de la placa |
+| MFRC522 | SDA / SS | 5 | bus VSPI · **solo etapas 2, 5 y 6**: desde la etapa 7 la tarjeta la lee la tablet |
 | MFRC522 | SCK | 18 | |
 | MFRC522 | MOSI | 23 | |
 | MFRC522 | MISO | 19 | |
 | MFRC522 | RST | 22 | alimentación **3.3V**, no 5V |
-| Relé | IN | 26 | **activo en ALTO** · bobina de 12V, jumper en `H`, ver trampa 6 |
-| Caudalímetro | señal (amarillo) | 27 | pull-up 10k a 3.3V |
-| Pulsador | — | 14 | a GND, pull-up interno |
-| LED estado | — | 2 | opcional (es el LED de la placa) |
+
+No hay buzzer: ninguna etapa lo usa.
+
+La placa definitiva (GRIFO rev A, [`placa/`](placa/)) usa los mismos pines, pero
+cambia el relé por un MOSFET y ahí la válvula es **activa en ALTO**. Necesita su
+propia variante de firmware.
 
 El display, cuando llegue, va en **HSPI** — no en VSPI. El MFRC522 es conflictivo
 compartiendo bus y no vale la pena pelearla.
@@ -68,14 +75,15 @@ girar: contás burbujas como si fueran cerveza y le cobrás espuma al cliente.
 *flotante*. Un pin flotante no vale 0 ni 1 — vale lo que le dicte el ruido
 eléctrico del ambiente, y a menudo se queda cerca de 0V.
 
-Con un relé **activo en LOW**, "cerca de 0V" significaría **relé activado,
-válvula abierta**: en cada reset, en cada bajón de tensión del bar, chorro de
-cerveza al piso. Por eso este proyecto pasó a **activo en ALTO** (trampa 2), y
-ese mismo "cerca de 0V" pasó a significar válvula cerrada.
+Con un relé **activo en LOW** manejado directo, "cerca de 0V" significaría
+**relé activado, válvula abierta**: en cada reset, en cada bajón de tensión del
+bar, chorro de cerveza al piso.
 
-La trampa queda documentada igual, y el orden de inicialización se respeta lo
-mismo: si alguna vez hay que volver a activo en bajo, el código ya está bien
-escrito y no hay que acordarse de nada.
+Este proyecto es activo en LOW (trampa 2), pero no maneja el `IN` directo: lo
+hace a través del conversor de niveles y con el pin en **open-drain**. Un pin
+sin manejar deja el `IN` colgado en 11,3 V, que es **relé en reposo, válvula
+cerrada**. El estado seguro es el que trae el silicio antes de que corra una
+sola línea de código.
 
 **Analogía.** Es leer una variable antes de inicializarla. No te da `undefined`
 prolijo: te da basura de memoria. Y acá justo la basura más probable coincide con
@@ -85,11 +93,13 @@ el valor peligroso.
 salida, y repetirlo después:
 
 ```cpp
-digitalWrite(PIN_RELE, HIGH);      // 1) carga HIGH en el latch de salida
-pinMode(PIN_RELE, OUTPUT);         // 2) recién ahora el pin empieza a manejar la línea,
-                                   //    y sale manejando el valor que ya estaba cargado
-digitalWrite(PIN_RELE, HIGH);      // 3) por las dudas, de nuevo
+digitalWrite(PIN_RELE, HIGH);           // 1) carga "desconectado" en el latch de salida
+pinMode(PIN_RELE, OUTPUT_OPEN_DRAIN);   // 2) recién ahora el pin empieza a manejar la línea,
+                                        //    y sale con el valor que ya estaba cargado
+digitalWrite(PIN_RELE, HIGH);           // 3) por las dudas, de nuevo
 ```
+
+Es lo que hace `valvulaIniciar()` en `src/comun/valvula.cpp`.
 
 Si lo hacés al revés (`pinMode` primero), hay una ventana de microsegundos en la
 que el pin ya es salida pero todavía tiene el valor por defecto — que es LOW — y
@@ -101,27 +111,30 @@ hacer clic durante el arranque.
 
 ---
 
-### 2. El nivel activo, y por qué dejó de estar invertido
+### 2. El nivel activo: en BAJO, con el jumper en `L`
 
-**Este proyecto usa activo en ALTO**, con el jumper del módulo en `H`:
+Medido en la etapa 4 sobre el módulo real (detalle en
+[`etapa-04-rele.md`](etapa-04-rele.md)):
 
-`HIGH` → relé activado → **válvula abierta**
-`LOW` → relé en reposo → **válvula cerrada**
+| Jumper | `IN` suelto | Se activa cuando el `IN` va a | Sirve |
+|---|---|---|---|
+| `H` | 0 V | `DC+` (12 V) | ✗ el ESP32 no puede dar 12 V |
+| **`L`** | **11,3 V** | **`DC-`** (masa) | ✅ |
 
-El plan original decía activo en LOW, porque asumía un módulo de 5 V. El que
-llegó es de 12 V, y en modo activo-bajo su pin `IN` queda conectado por una
-resistencia a `DC+` —12 voltios— que rompería la pata del ESP32.
+`IN` a masa → relé activado → **válvula abierta**
+`IN` suelto → relé en reposo → **válvula cerrada**
 
-Que además el estado seguro haya pasado a ser el valor por defecto de un pin
-flotante es la mejor consecuencia del cambio, y desactiva casi por completo la
-trampa 1. Detalle en [`etapa-04-rele.md`](etapa-04-rele.md).
+En `L` el `IN` está a 11,3 V: **no se conecta directo** al ESP32. Pasa por el
+canal 4 del conversor de niveles, y el pin trabaja en open-drain, que elige
+entre "a masa" y "desconectado": este optoacoplador no se apaga con 3,3 V, se
+apaga cuando nadie lo toca.
 
 **Analogía.** Es un flag que se llama `disabled` en vez de `enabled`. Todo se lee
 al revés, y lo peor es que el valor por defecto (0 / falso / LOW) es justo el
 estado peligroso.
 
 Por eso en el código nunca usamos `digitalWrite(PIN_RELE, estado)` a pelo, sino
-funciones con nombre — `abrirValvula()` / `cerrarValvula()` — que encapsulan la
+funciones con nombre — `valvulaAbrir()` / `valvulaCerrar()` — que encapsulan la
 inversión en un solo lugar. Un lugar donde equivocarse, no veinte.
 
 ---
@@ -269,9 +282,8 @@ Dos consecuencias que cambian lo que estaba planificado:
 2. **El `DC-` de la fuente de 12V tiene que unirse al `GND` del ESP32.** Si no,
    la señal de `IN` no tiene contra qué compararse (ver la trampa 4).
 
-El jumper **H/L** define si el relé se activa con la señal en alto o en bajo. El
-firmware asume **activo en LOW**, así que el jumper va en la posición que
-corresponda a *low level trigger* — se confirma en la etapa 4 escuchando el clic.
+El jumper **H/L** define si el relé se activa con la señal en alto o en bajo.
+Medido en la etapa 4: va en **`L`** (*low level trigger*), ver trampa 2.
 
 Si el relé queda **zumbando o pegado**, es que el optoacoplador está conduciendo
 a medias con los 3.3V del ESP32. Se resuelve en la etapa 4 según cómo se

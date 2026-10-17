@@ -5,14 +5,19 @@ etapa 6 en adelante, con el ESP32 **clavado al protoboard**.
 
 ### La válvula solenoide
 
-Ya va conectada. Sus dos cables (soldados a las patitas metálicas con las que
-vino) van a los bornes de salida del relé:
+Ya va conectada. El relé hace de interruptor en el **positivo**: el `COM` recibe
+los 12 V y, cuando el relé se activa, los pasa al `NO`, que alimenta la válvula.
+El otro cable de la válvula vuelve al negativo.
 
-| Válvula | → | Dónde |
+| Desde | → | Hasta |
 |---|---|---|
-| un cable | → | `COM` del relé |
-| el otro | → | positivo de la fuente de 12 V |
-| `NO` y `NC` | | quedan **vacíos** |
+| `COM` del relé | → | `DC+` (positivo de la fuente de 12 V) |
+| un cable de la válvula | → | `NO` del relé |
+| el otro cable de la válvula | → | `DC-` (negativo de la fuente de 12 V) |
+| `NC` del relé | | queda **vacío** |
+
+Corriente: `DC+` → `COM` → (relé activado) → `NO` → válvula → `DC-`. Con el relé
+en reposo `COM` no toca `NO` y la válvula queda sin tensión, o sea **cerrada**.
 
 ⚠️ **Falta el diodo 1N4007** en paralelo con la bobina de la válvula, con la
 banda hacia el positivo. Sin él, cada vez que el relé corta, la bobina devuelve
@@ -165,7 +170,10 @@ El pull-up lo pone el ESP32 por dentro (`caudalIniciar(true)` en el firmware).
 | `B10` (bus GND) | → | `C33` (masa del conversor) |
 | `IN` del relé | → | `C35` (`HV4`) |
 | `DC-` del relé | → | `B33` |
-| `DC+` del relé | → | positivo de la fuente de 12 V, **tapado con cinta** |
+| cable negro de la fuente de 12 V | → | `DC-` del relé |
+| cable rojo de la fuente de 12 V | → | `DC+` del relé, **tapado con cinta** |
+| `COM` del relé | → | `DC+` del relé |
+| `NO` del relé | → | un cable de la válvula (el otro va a `DC-`) |
 
 **Jumper del relé en `L`.**
 
