@@ -138,24 +138,93 @@ export type SesionAbierta = {
   ml_maximos: number
 }
 
-export type FichaTarjeta = {
+// ── Cuentas de clientes ─────────────────────────────────────────────────────
+// Un cliente es un DNI. Puede tener hasta dos cuentas que nunca se mezclan:
+//   'app'     la que abrió desde su celular (se gasta solo desde ese celular)
+//   'ticket'  la del ticket impreso en la caja (se gasta con ese papel)
+// Ver docs/qr.md para el porqué.
+export type TipoCuenta = 'app' | 'ticket'
+
+export type MedioPago = 'efectivo' | 'debito' | 'credito' | 'transferencia' | 'mercadopago'
+
+export const MEDIOS: { id: MedioPago; texto: string }[] = [
+  { id: 'efectivo', texto: 'Efectivo' },
+  { id: 'debito', texto: 'Débito' },
+  { id: 'credito', texto: 'Crédito' },
+  { id: 'transferencia', texto: 'Transferencia' },
+  { id: 'mercadopago', texto: 'Mercado Pago' },
+]
+
+export const NOMBRE_MEDIO: Record<string, string> =
+  Object.fromEntries(MEDIOS.map(m => [m.id, m.texto]))
+
+export type MovimientoCuenta = Movimiento & { medio_pago: string | null }
+
+/** El QR de un ticket. `codigo` puede venir con o sin el prefijo `GRIFO:`. */
+export type PaseTicket = { codigo: string; vence_en: string }
+
+export type FichaCliente = {
   ok: true
   existe: true
   uid: string
+  dni: string
+  nombre: string
+  tipo: TipoCuenta
   saldo_centavos: number
   bloqueada: boolean
   bloqueada_motivo: string | null
-  nota: string | null
-  movimientos: Movimiento[]
+  /** Solo en cuentas de app: si hay un celular unido a la cuenta. */
+  celular_vinculado: boolean
+  /** Si ese mismo DNI tiene, además, cuenta en la app. */
+  tiene_app?: boolean
+  movimientos: MovimientoCuenta[]
   sesion_abierta: SesionAbierta | null
+  /** El QR de ticket que sigue valiendo esta noche, si hay. */
+  pase: PaseTicket | null
 }
 
-export type FichaTarjetaNueva = { ok: true; existe: false; uid: string }
+/** Un DNI que todavía no tiene ticket: alguien que viene por primera vez. */
+export type ClienteNuevo = { ok: true; existe: false; dni: string; tiene_app: boolean }
+
 export type RespuestaError = { ok: false; motivo: string; detalle?: string }
 
-export type RespuestaFicha = FichaTarjeta | FichaTarjetaNueva | RespuestaError
+export type RespuestaBusqueda = FichaCliente | ClienteNuevo | RespuestaError
 
-export type Sesion = {
+export type RespuestaVenta =
+  | { ok: true; repetida: boolean; uid: string; dni: string; nombre: string
+      cargado_centavos: number; medio: MedioPago; saldo_centavos: number
+      movimiento_id: number; pase: PaseTicket }
+  | RespuestaError
+
+export type RespuestaPase =
+  | { ok: true; uid: string; dni: string; nombre: string; saldo_centavos: number; pase: PaseTicket }
+  | RespuestaError
+
+/** Una fila del padrón de cuentas (solo admin). */
+export type Cuenta = {
+  uid: string
+  dni: string | null
+  nombre: string | null
+  /** `'tarjeta'` es una tarjeta NFC de antes del QR: quedó en el padrón por
+   *  si tenía saldo, pero ya no abre ninguna canilla. */
+  tipo: TipoCuenta | 'tarjeta'
+  saldo_centavos: number
+  bloqueada: boolean
+  bloqueada_motivo: string | null
+  actualizada_en: string
+  celular_vinculado: boolean
+}
+
+/** El nombre del cliente, traído junto con la sesión (`select('*, tarjetas(nota)')`). */
+export type ConCliente = { tarjetas?: { nota: string | null } | null }
+
+/** Cómo nombrar al cliente de una sesión en las pantallas del personal: su
+ *  nombre si lo tiene, o los últimos cuatro caracteres de su cuenta. */
+export function quien(s: { uid: string } & ConCliente): string {
+  return s.tarjetas?.nota?.trim() || `····${s.uid.slice(-4)}`
+}
+
+export type Sesion = ConCliente & {
   id: number
   uid: string
   grifo_id: number
@@ -176,7 +245,7 @@ export type Sesion = {
  *
  *  `ml_parcial` lo escribe el ESP32 mientras sirve, con `reportar_progreso`.
  *  Es la única cosa del sistema que cambia mientras la mirás. */
-export type SesionEnVivo = {
+export type SesionEnVivo = ConCliente & {
   id: number
   uid: string
   grifo_id: number
@@ -188,25 +257,16 @@ export type SesionEnVivo = {
   visto_en: string | null
 }
 
-export type Tarjeta = {
-  uid: string
-  saldo_centavos: number
-  bloqueada: boolean
-  bloqueada_motivo: string | null
-  nota: string | null
-  actualizada_en: string
-}
-
 /** Traduce los `motivo` que devuelven las RPC a algo que el cajero entienda. */
 export const MOTIVOS: Record<string, string> = {
   no_autorizado: 'No tenés permiso para hacer esto.',
-  uid_invalido: 'El número de tarjeta no es válido.',
+  uid_invalido: 'Esa cuenta no es válida.',
   monto_invalido: 'El monto tiene que ser mayor a cero.',
-  tarjeta_desconocida: 'Esa tarjeta no existe.',
-  tarjeta_bloqueada: 'La tarjeta está bloqueada.',
-  sin_saldo: 'La tarjeta no tiene saldo suficiente.',
+  tarjeta_desconocida: 'Esa cuenta no existe.',
+  tarjeta_bloqueada: 'La cuenta está bloqueada.',
+  sin_saldo: 'No tiene saldo suficiente.',
   grifo_desconocido: 'Ese grifo no existe o está fuera de servicio.',
-  sesion_abierta_en_otro_grifo: 'La tarjeta ya tiene una sesión abierta en otra canilla.',
+  sesion_abierta_en_otro_grifo: 'Ya tiene una sesión abierta en otra canilla.',
   sesion_desconocida: 'Esa sesión no existe.',
   token_invalido: 'El token del grifo no es válido.',
   precio_invalido: 'El precio tiene que ser mayor a cero.',
@@ -216,11 +276,24 @@ export const MOTIVOS: Record<string, string> = {
   litros_invalidos: 'Los litros del barril tienen que ser mayores a cero.',
   falta_motivo: 'El ajuste necesita un motivo.',
   falta_nombre: 'Hay que poner el nombre del cliente.',
-  nombre_muy_largo: 'El nombre es demasiado largo (máximo 80 caracteres).',
-  sesion_abierta: 'La tarjeta está apoyada en un grifo. Retirala primero.',
+  nombre_muy_largo: 'El nombre es demasiado largo (máximo 60 caracteres).',
+  sesion_abierta: 'Está sirviendo en un grifo ahora. Esperá a que termine.',
   rango_invalido: 'El período está al revés: la fecha de fin es anterior a la de inicio.',
-  saldo_insuficiente: 'El ajuste dejaría la tarjeta en negativo.',
+  saldo_insuficiente: 'El ajuste dejaría la cuenta en negativo.',
   costo_invalido: 'El costo no puede ser negativo.',
+
+  // ── Clientes, QR y medios de pago ─────────────────────────────────────────
+  dni_invalido: 'El DNI tiene que tener 7 u 8 números.',
+  medio_invalido: 'Elegí cómo pagó.',
+  falta_clave: 'No se pudo identificar la venta. Recargá la página y probá de nuevo.',
+  cliente_desconocido: 'Ese DNI todavía no tiene cuenta.',
+  codigo_invalido: 'El código de la app tiene 6 números.',
+  codigo_vencido: 'Ese código ya venció o no existe. Pedile que abra su QR de nuevo y te diga el código que ve ahora.',
+  qr_desconocido: 'Ese QR no es de este bar.',
+  qr_vencido: 'Ese QR ya venció.',
+  qr_anulado: 'Ese QR fue reemplazado por uno más nuevo.',
+  canilla_sin_conexion: 'La canilla está sin conexión.',
+  sin_backend: 'Falta instalar el backend: corré 29-qr.sql en Supabase.',
 
   // ── Canillas: alta, baja y órdenes ────────────────────────────────────────
   falta_nombre_canilla: 'Hay que ponerle un nombre a la canilla.',
@@ -263,7 +336,11 @@ export type Arqueo = {
   devoluciones_cantidad: number
   ajustes_centavos: number
   ajustes_cantidad: number
-  /** Lo que tiene que haber de más en el cajón por operaciones de tarjeta. */
+  /** Las cargas, separadas por cómo se pagaron. Falta en una base sin 29-qr.sql. */
+  cargas_por_medio?: Record<string, { cantidad: number; centavos: number }>
+  /** De las cargas, lo que entró en billetes. */
+  efectivo_centavos?: number
+  /** Lo que tiene que haber en el cajón: efectivo que entró menos devoluciones. */
   neto_caja_centavos: number
   sesiones_abiertas: number
 
@@ -272,12 +349,7 @@ export type Arqueo = {
   /** Plata ya cobrada que todavía se debe en cerveza. Es un pasivo, no ganancia. */
   saldo_en_circulacion_centavos?: number
   por_persona?: {
-    nombre: string; cargas: number; devoluciones: number
+    nombre: string; cargas: number; efectivo?: number; devoluciones: number
     ajustes: number; operaciones: number
   }[]
 }
-
-export type RespuestaAsignacion =
-  | { ok: true; uid: string; nombre: string; saldo_centavos: number
-      creada: boolean; nombre_anterior: string | null }
-  | { ok: false; motivo: string; detalle?: string }

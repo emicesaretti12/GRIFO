@@ -4,7 +4,8 @@ import { supabase } from '../lib/supabase'
 import { pesos, volumen, fechaCorta } from '../lib/plata'
 import { porDia, porGrifo, diaCorto } from '../lib/agrupar'
 import { bajarCSV } from '../lib/csv'
-import type { Grifo, Sesion } from '../lib/tipos'
+import { quien, type Grifo, type Sesion } from '../lib/tipos'
+import { inicioDeJornadaHace } from '../lib/jornada'
 import { Panel, Stat, Chip, Nota, Vacio, HuesoTabla, Hueso } from '../componentes/UI'
 import { Columnas, Barras } from '../componentes/Grafico'
 import { useAvisos } from '../componentes/Toast'
@@ -26,18 +27,16 @@ export default function Reportes() {
 
   const traer = useCallback(async () => {
     setCargando(true)
-    const desde = new Date()
-    desde.setDate(desde.getDate() - (dias - 1))
-    desde.setHours(0, 0, 0, 0)
+    const desde = inicioDeJornadaHace(dias - 1)
 
     const [s, g] = await Promise.all([
-      supabase.from('sesiones').select('*')
+      supabase.from('sesiones').select('*, tarjetas(nota)')
         .gte('abierta_en', desde.toISOString())
         .order('abierta_en', { ascending: false }).limit(2000),
       supabase.from('grifos').select(COLUMNAS_GRIFO).order('id'),
     ])
     if (s.error) avisar('No pudimos leer las sesiones', { tono: 'grave', detalle: s.error.message })
-    else setSesiones(s.data as Sesion[])
+    else setSesiones(s.data as unknown as Sesion[])
     if (!g.error) setGrifos(g.data as Grifo[])
     setCargando(false)
   }, [dias, avisar])
@@ -76,10 +75,10 @@ export default function Reportes() {
       <Panel accion={
         <button className="btn sm" disabled={sesiones.length === 0}
                 onClick={() => bajarCSV('tiradas', [
-                  ['Fecha', 'Tarjeta', 'Canilla', 'Estado', 'ml', 'Pulsos',
+                  ['Fecha', 'Cliente', 'Canilla', 'Estado', 'ml', 'Pulsos',
                    'Cobrado', 'Costo', 'Ganancia', 'Recortado', 'Reintentos'],
                   ...sesiones.map(s => [
-                    s.cerrada_en ?? s.abierta_en, s.uid, nombreGrifo(s.grifo_id), s.estado,
+                    s.cerrada_en ?? s.abierta_en, quien(s), nombreGrifo(s.grifo_id), s.estado,
                     s.ml_servidos ?? '', s.pulsos ?? '',
                     s.costo_centavos != null ? (s.costo_centavos / 100).toFixed(2) : '',
                     s.costo_producto_centavos != null ? (s.costo_producto_centavos / 100).toFixed(2) : '',
@@ -127,7 +126,7 @@ export default function Reportes() {
               {r.recortadas.length > 0 && (
                 <Nota tono="grave">
                   <strong>{r.recortadas.length} tiradas con cobro recortado.</strong> Se sirvió más
-                  de lo que había en la tarjeta y solo se pudo cobrar hasta el saldo: el corte
+                  de lo que había de saldo y solo se pudo cobrar hasta ahí: el corte
                   local del ESP32 no llegó a tiempo. Casi siempre es la calibración
                   (<em>pulsos por litro</em>) mal medida en esa canilla.
                 </Nota>
@@ -142,7 +141,7 @@ export default function Reportes() {
               {r.sinLiquidar.length > 0 && (
                 <Nota tono="ojo">
                   <strong>{r.sinLiquidar.length} sesiones sin liquidar.</strong> Quedaron colgadas
-                  (se cortó la luz o el ESP32 se reinició). La tarjeta ya está libre; el cobro
+                  (se cortó la luz o el ESP32 se reinició). El cliente ya está libre; el cobro
                   entra cuando el ESP32 drene su cola.
                 </Nota>
               )}
@@ -193,7 +192,7 @@ export default function Reportes() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Cuándo</th><th>Tarjeta</th><th>Canilla</th><th>Estado</th>
+                      <th>Cuándo</th><th>Cliente</th><th>Canilla</th><th>Estado</th>
                       <th className="num">Servido</th><th className="num">Cobrado</th>
                     </tr>
                   </thead>
@@ -201,7 +200,7 @@ export default function Reportes() {
                     {sesiones.slice(0, 50).map(s => (
                       <tr key={s.id}>
                         <td style={{ color: 'var(--ink-2)' }}>{fechaCorta(s.cerrada_en ?? s.abierta_en)}</td>
-                        <td><span className="uid">{s.uid}</span></td>
+                        <td style={{ fontWeight: 600 }}>{quien(s)}</td>
                         <td>{nombreGrifo(s.grifo_id)}</td>
                         <td>
                           {s.estado === 'cerrada' ? <Chip tono="bien">Liquidada</Chip>

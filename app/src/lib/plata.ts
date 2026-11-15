@@ -47,7 +47,7 @@ export function fecha(iso: string | null | undefined): string {
   if (!iso) return '—'
   return new Date(iso).toLocaleString('es-AR', {
     day: '2-digit', month: '2-digit', year: '2-digit',
-    hour: '2-digit', minute: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
   })
 }
 

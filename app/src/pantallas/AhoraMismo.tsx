@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { pesos, volumen } from '../lib/plata'
 import { useIntervalo } from '../lib/useIntervalo'
 import {
-  COLUMNAS_GRIFO, saludDeCanilla, haceCuanto,
+  COLUMNAS_GRIFO, saludDeCanilla, haceCuanto, quien,
   type Grifo, type SesionEnVivo,
 } from '../lib/tipos'
 import { Panel, Chip } from '../componentes/UI'
@@ -31,11 +31,11 @@ export default function AhoraMismo() {
     const [g, s] = await Promise.all([
       supabase.from('grifos').select(COLUMNAS_GRIFO).order('id'),
       supabase.from('sesiones')
-        .select('id, uid, grifo_id, ml_parcial, ml_maximos, precio_litro_centavos, saldo_inicial_centavos, abierta_en, visto_en')
+        .select('id, uid, grifo_id, ml_parcial, ml_maximos, precio_litro_centavos, saldo_inicial_centavos, abierta_en, visto_en, tarjetas(nota)')
         .eq('estado', 'abierta'),
     ])
     if (!g.error) setGrifos(g.data as Grifo[])
-    if (!s.error) setEnVivo((s.data ?? []) as SesionEnVivo[])
+    if (!s.error) setEnVivo((s.data ?? []) as unknown as SesionEnVivo[])
     setListo(true)
   }, [])
 
@@ -97,7 +97,7 @@ function Canilla({ grifo, sesion }: { grifo: Grifo; sesion: SesionEnVivo | null 
           </div>
           <div className="vivo-barra"><i style={{ width: `${pct}%` }} /></div>
           <div className="vivo-pie">
-            <Icono nombre="reloj" tam={12} /> sirviendo · hasta {volumen(sesion.ml_maximos)}
+            <Icono nombre="reloj" tam={12} /> {quien(sesion)} · hasta {volumen(sesion.ml_maximos)}
           </div>
         </>
       ) : (

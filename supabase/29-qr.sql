@@ -1260,7 +1260,7 @@ begin
   select coalesce(jsonb_agg(f order by f->>'nombre'), '[]'::jsonb) into v_gente
     from (
       select jsonb_build_object(
-               'nombre',      coalesce(pe.nombre, case when m.hecho_por is null
+               'nombre',      coalesce(pe.nombre, case when m.medio_pago = 'mercadopago'
                                                         then 'App (Mercado Pago)'
                                                         else 'sin identificar' end),
                'cargas',      coalesce(sum(m.centavos) filter (where m.tipo = 'carga'), 0),
@@ -1273,7 +1273,7 @@ begin
         left join public.personal pe on pe.user_id = m.hecho_por
        where m.creado_en >= v_desde and m.creado_en < v_hasta
          and m.tipo in ('carga', 'devolucion', 'ajuste')
-       group by coalesce(pe.nombre, case when m.hecho_por is null
+       group by coalesce(pe.nombre, case when m.medio_pago = 'mercadopago'
                                          then 'App (Mercado Pago)'
                                          else 'sin identificar' end)
     ) t;
@@ -1312,6 +1312,36 @@ end;
 $$;
 
 
+-- ── Reabrir una cuenta que ya se tiene a la vista ───────────────────────────
+-- Después de cargar, bloquear o devolver, la pantalla de la caja vuelve a
+-- pedir la ficha para mostrar el saldo nuevo. No puede hacerlo por el código de
+-- la app (dura 90 segundos y para entonces venció), así que la pide por el
+-- identificador que ya le dio la búsqueda anterior.
+--
+-- También es por donde el administrador abre una cuenta desde el padrón.
+create or replace function public.caja_ficha(p_uid text)
+returns jsonb
+language plpgsql stable security definer set search_path = ''
+as $$
+declare
+  v_c public.clientes;
+begin
+  if not public.es_personal() then
+    return jsonb_build_object('ok', false, 'motivo', 'no_autorizado');
+  end if;
+
+  select * into v_c from public.clientes
+   where uid = upper(trim(coalesce(p_uid, '')));
+  if not found then
+    return jsonb_build_object('ok', false, 'motivo', 'cliente_desconocido');
+  end if;
+
+  return public._ficha_cliente(v_c) || jsonb_build_object(
+    'tiene_app', exists (select 1 from public.clientes
+                          where dni = v_c.dni and tipo = 'app'));
+end $$;
+
+
 -- ═════════════════════════════════════════════════════════════════════════════
 -- PERMISOS
 -- ═════════════════════════════════════════════════════════════════════════════
@@ -1321,6 +1351,7 @@ revoke all on function public.cliente_generar_pase(text, text)        from publi
 revoke all on function public.cliente_salir(text, text)               from public, anon, authenticated;
 revoke all on function public.caja_buscar_cliente(text)               from public, anon, authenticated;
 revoke all on function public.caja_buscar_por_codigo(text)            from public, anon, authenticated;
+revoke all on function public.caja_ficha(text)                        from public, anon, authenticated;
 revoke all on function public.caja_vender(text, text, bigint, text, text) from public, anon, authenticated;
 revoke all on function public.caja_cargar(text, bigint, text, text)   from public, anon, authenticated;
 revoke all on function public.caja_emitir_pase(text, boolean)         from public, anon, authenticated;
@@ -1344,6 +1375,7 @@ grant execute on function public.caja_cargar(text, bigint, text, text) to authen
 grant execute on function public.caja_emitir_pase(text, boolean)      to authenticated;
 grant execute on function public.caja_habilitar_celular(text)         to authenticated;
 grant execute on function public.caja_devolver_tarjeta(text, text)    to authenticated;
+grant execute on function public.caja_ficha(text)                      to authenticated;
 grant execute on function public.admin_listar_cuentas(text, text)     to authenticated;
 grant execute on function public.arqueo(timestamptz, timestamptz)     to authenticated;
 

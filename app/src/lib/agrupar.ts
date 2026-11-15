@@ -1,19 +1,22 @@
 import type { Sesion } from './tipos'
+import { claveDeJornada, inicioDeJornadaHace } from './jornada'
 
-/** Agrupa las sesiones liquidadas por día, rellenando los días sin ventas con
- *  cero: si no, el gráfico miente — comprime el eje y sugiere continuidad. */
+/** Agrupa las sesiones liquidadas por jornada (de 6 a 6), rellenando las que
+ *  no tuvieron ventas con cero: si no, el gráfico miente — comprime el eje y
+ *  sugiere continuidad.
+ *
+ *  Por jornada y no por día de calendario: lo servido a las 2 de la mañana es
+ *  de la noche anterior. Y con la hora de acá, no en UTC (ver lib/jornada.ts). */
 export function porDia(sesiones: Sesion[], dias: number) {
-  const hoy = new Date(); hoy.setHours(0, 0, 0, 0)
   const mapa = new Map<string, { centavos: number; costo: number; ml: number; n: number }>()
 
   for (let i = dias - 1; i >= 0; i--) {
-    const d = new Date(hoy); d.setDate(d.getDate() - i)
-    mapa.set(d.toISOString().slice(0, 10), { centavos: 0, costo: 0, ml: 0, n: 0 })
+    mapa.set(claveDeJornada(inicioDeJornadaHace(i)), { centavos: 0, costo: 0, ml: 0, n: 0 })
   }
 
   for (const s of sesiones) {
     if (s.estado !== 'cerrada') continue
-    const clave = new Date(s.cerrada_en ?? s.abierta_en).toISOString().slice(0, 10)
+    const clave = claveDeJornada(s.cerrada_en ?? s.abierta_en)
     const a = mapa.get(clave)
     if (!a) continue
     a.centavos += s.costo_centavos ?? 0

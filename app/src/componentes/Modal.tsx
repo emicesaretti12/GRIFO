@@ -16,6 +16,13 @@ export function Modal({ titulo, bajada, children, acciones, onCerrar }: {
 }) {
   const caja = useRef<HTMLDivElement>(null)
   const foco = useRef<HTMLElement | null>(null)
+  // `onCerrar` casi siempre llega como una función nueva en cada dibujo. Si el
+  // efecto de abajo dependiera de ella, se rearmaría con cada tecla que cambia
+  // el estado de quien abrió el diálogo, y el foco saltaría al primer campo en
+  // medio de lo que se está escribiendo. Por referencia, el efecto corre una
+  // sola vez: al abrir.
+  const cerrar = useRef(onCerrar)
+  cerrar.current = onCerrar
 
   useEffect(() => {
     foco.current = document.activeElement as HTMLElement
@@ -25,7 +32,7 @@ export function Modal({ titulo, bajada, children, acciones, onCerrar }: {
     primero?.focus()
 
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') { e.stopPropagation(); onCerrar(); return }
+      if (e.key === 'Escape') { e.stopPropagation(); cerrar.current(); return }
       if (e.key !== 'Tab' || !caja.current) return
 
       // Trampa de foco: con Tab en el último elemento volvemos al primero, y
@@ -45,7 +52,7 @@ export function Modal({ titulo, bajada, children, acciones, onCerrar }: {
       document.removeEventListener('keydown', onKey, true)
       foco.current?.focus()
     }
-  }, [onCerrar])
+  }, [])
 
   return (
     <div className="telon" onMouseDown={e => { if (e.target === e.currentTarget) onCerrar() }}>

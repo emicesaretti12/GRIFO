@@ -403,6 +403,33 @@ begin
   set local role authenticated;
   select count(*) into n from public.clientes;
   assert n = 0, '22f: AGUJERO: el cajero lee la tabla de clientes';
+
+  -- Pero sí reabre una cuenta que ya tiene a la vista, por su identificador.
+  reset role;
+  select uid into v_uid from public.clientes where dni = '30111222' and tipo = 'app';
+  perform set_config('request.jwt.claims', CAJERO, true);
+  set local role authenticated;
+  v := public.caja_ficha(lower(v_uid));
+  assert (v->>'ok')::boolean and v->>'dni' = '30111222' and v->>'tipo' = 'app'
+     and (v->>'tiene_app')::boolean and v ? 'movimientos',
+         '22h: el cajero reabre la ficha por uid. ' || v::text;
+  v := public.caja_ficha('QRNOEXISTE');
+  assert v->>'motivo' = 'cliente_desconocido', '22i: uid que no existe. ' || v::text;
+  reset role;
+  set local role anon;
+  begin
+    perform public.caja_ficha(v_uid);
+    raise exception '22j: AGUJERO: anon abre fichas';
+  exception when insufficient_privilege then null;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', '{"sub":"99999999-9999-9999-9999-999999999999"}', true);
+  set local role authenticated;
+  v := public.caja_ficha(v_uid);
+  assert v->>'motivo' = 'no_autorizado', '22k: AGUJERO: un logueado que no es personal abre fichas. ' || v::text;
+  reset role;
+  perform set_config('request.jwt.claims', CAJERO, true);
+  set local role authenticated;
   begin
     perform 1 from public.pases limit 1;
     raise exception '22g: AGUJERO: un logueado lee los pases';

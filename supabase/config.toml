@@ -1,0 +1,9 @@
+# Configuración de las funciones del servidor (Edge Functions) de GRIFO.
+# La usa `supabase functions deploy`. Ver docs/mercado-pago.md.
+
+[functions.mercadopago]
+# Sin verificación de JWT a propósito: a esta función la llaman Mercado Pago
+# (que no tiene ni puede tener un token de Supabase) y la app del cliente (que
+# no tiene usuario). La función se protege sola: comprueba el DNI y el secreto
+# del celular contra la base, y nunca acredita sin preguntarle a Mercado Pago.
+verify_jwt = false

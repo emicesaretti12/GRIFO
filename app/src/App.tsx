@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useSesion } from './lib/useSesion'
 import { useTema } from './lib/useTema'
 import { ProveedorAvisos } from './componentes/Toast'
@@ -8,14 +8,13 @@ import Login from './pantallas/Login'
 import Inicio from './pantallas/Inicio'
 import Caja from './pantallas/Caja'
 import Grifos from './pantallas/Grifos'
-import Tarjetas from './pantallas/Tarjetas'
+import Cuentas from './pantallas/Cuentas'
 import Reportes from './pantallas/Reportes'
 import Personal from './pantallas/Personal'
-import CajaMovil from './pantallas/CajaMovil'
 import Barriles from './pantallas/Barriles'
 import Arqueo from './pantallas/Arqueo'
 
-type Id = 'inicio' | 'caja' | 'movil' | 'barriles' | 'tarjetas' | 'grifos' | 'arqueo' | 'reportes' | 'personal'
+type Id = 'inicio' | 'caja' | 'barriles' | 'cuentas' | 'grifos' | 'arqueo' | 'reportes' | 'personal'
 
 type Item = {
   id: Id; texto: string; icono: Nombre; titulo: string; bajada: string
@@ -24,13 +23,11 @@ type Item = {
 
 const ITEMS: Item[] = [
   { id: 'caja', texto: 'Caja', icono: 'caja',
-    titulo: 'Caja', bajada: 'Consultar tarjetas y cargar saldo.' },
-  { id: 'movil', texto: 'Caja móvil', icono: 'tarjeta',
-    titulo: 'Caja móvil', bajada: 'El celular del mozo como lector de tarjetas.' },
+    titulo: 'Caja', bajada: 'Cobrar, cargar saldo y dar el ticket con el QR.' },
   { id: 'inicio', texto: 'Panel', icono: 'inicio', soloAdmin: true,
     titulo: 'Panel del día', bajada: 'Cómo viene la jornada, en vivo.' },
-  { id: 'tarjetas', texto: 'Tarjetas', icono: 'tarjeta', soloAdmin: true, grupo: 'Administración',
-    titulo: 'Tarjetas', bajada: 'Padrón de tarjetas y saldo en circulación.' },
+  { id: 'cuentas', texto: 'Cuentas', icono: 'personas', soloAdmin: true, grupo: 'Administración',
+    titulo: 'Cuentas de clientes', bajada: 'Padrón de clientes y saldo en circulación.' },
   { id: 'grifos', texto: 'Canillas', icono: 'grifo', soloAdmin: true,
     titulo: 'Canillas', bajada: 'Precio, calibración, estado y tokens.' },
   { id: 'barriles', texto: 'Barriles', icono: 'vacio', soloAdmin: true,
@@ -57,6 +54,9 @@ function Contenido() {
   const { sesion, rol, nombre, cargando, esAdmin, esPersonal, salir } = useSesion()
   const { tema, setTema } = useTema()
   const [actual, setActual] = useState<Id>('caja')
+  // Una cuenta elegida en el padrón, para abrirla en la caja.
+  const [abrirEnCaja, setAbrirEnCaja] = useState<string | null>(null)
+  const yaAbierta = useCallback(() => setAbrirEnCaja(null), [])
 
   if (!sesion) return <Login />
 
@@ -147,10 +147,9 @@ function Contenido() {
         </header>
 
         <main className="contenido">
-          {item.id === 'caja'     && <Caja />}
-          {item.id === 'movil'    && <CajaMovil />}
+          {item.id === 'caja'     && <Caja abrir={abrirEnCaja} alAbrir={yaAbierta} />}
           {item.id === 'inicio'   && <Inicio />}
-          {item.id === 'tarjetas' && <Tarjetas />}
+          {item.id === 'cuentas'  && <Cuentas alAbrir={uid => { setAbrirEnCaja(uid); setActual('caja') }} />}
           {item.id === 'grifos'   && <Grifos />}
           {item.id === 'barriles' && <Barriles />}
           {item.id === 'arqueo' && <Arqueo />}

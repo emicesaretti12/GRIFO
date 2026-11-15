@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Modo demostración de la pantalla de canilla:  #/pantalla?demo
 //
-// Simula una tirada completa, en bucle, sin ESP32, sin tarjeta y sin tocar la
+// Simula una tirada completa, en bucle, sin ESP32, sin QR y sin tocar la
 // base: no llama a Supabase ni guarda nada en el dispositivo. Sirve para ver
 // la animación en cualquier navegador (la tablet, la compu, el celular) y
 // para mostrársela a alguien.
@@ -43,9 +43,9 @@ export function estadoDemo(p: ParametrosDemo) {
   const grifo = {
     id: 0, nombre: p.nombre, estilo: null, descripcion: 'Modo demostración: nada de esto es real',
     abv: 5.2, ibu: 18, color: p.color, imagen_url: null,
-    precio_litro_centavos: precio, ml_vaso: p.vaso, activo: true, listo: true,
+    precio_litro_centavos: precio, ml_vaso: p.vaso, activo: true, listo: true, en_linea: true,
   }
-  const ranking = [{ tarjeta: '····A1F3', ml: 2400, veces: 5 }, { tarjeta: '····77C0', ml: 1610, veces: 3 }, { tarjeta: '····0B9E', ml: 940, veces: 2 }]
+  const ranking = [{ tarjeta: 'Sofi', ml: 2400, veces: 5 }, { tarjeta: 'Tomi', ml: 1610, veces: 3 }, { tarjeta: 'Juli', ml: 940, veces: 2 }]
   const cliente = { veces: 3, ml_total: 1500, es_primera: false }
   const saldo = 1866880
 
@@ -62,7 +62,7 @@ export function estadoDemo(p: ParametrosDemo) {
   const finServicio = 24 + Math.ceil((total - primera) / CAUDAL) + 3
 
   const sesion = (m: number) => ({
-    id: 1000 + vuelta, tarjeta: '····A1F3', saldo_centavos: saldo,
+    id: 1000 + vuelta, tarjeta: '····A1F3', nombre: 'Sofi', saldo_centavos: saldo,
     ml_maximos: Math.floor((saldo * 1000) / precio), ml_parcial: m, abierta_en: '', visto_en: null,
   })
 

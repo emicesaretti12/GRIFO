@@ -4,7 +4,8 @@ import { supabase } from '../lib/supabase'
 import { pesos, volumen, fecha } from '../lib/plata'
 import { porDia, porGrifo, diaCorto } from '../lib/agrupar'
 import { useIntervalo } from '../lib/useIntervalo'
-import type { Grifo, Sesion } from '../lib/tipos'
+import { inicioDeJornada, inicioDeJornadaHace } from '../lib/jornada'
+import { quien, type Grifo, type Sesion } from '../lib/tipos'
 import { Panel, Stat, Chip, Nota, Vacio, Hueso } from '../componentes/UI'
 import { Columnas, Barras } from '../componentes/Grafico'
 import Icono from '../componentes/Icono'
@@ -21,15 +22,15 @@ export default function Inicio() {
   const [actualizado, setActualizado] = useState<Date | null>(null)
 
   const traer = useCallback(async () => {
-    const desde = new Date(); desde.setDate(desde.getDate() - 13); desde.setHours(0, 0, 0, 0)
+    const desde = inicioDeJornadaHace(13)
     const [s, g, b] = await Promise.all([
-      supabase.from('sesiones').select('*')
+      supabase.from('sesiones').select('*, tarjetas(nota)')
         .gte('abierta_en', desde.toISOString())
         .order('abierta_en', { ascending: false }).limit(1000),
       supabase.from('grifos').select(COLUMNAS_GRIFO).order('id'),
       supabase.rpc('estado_barriles'),
     ])
-    if (!s.error) setSesiones(s.data as Sesion[])
+    if (!s.error) setSesiones(s.data as unknown as Sesion[])
     if (!g.error) setGrifos(g.data as Grifo[])
     if (!b.error) setBarriles((b.data ?? []) as Barril[])
     setCargando(false); setActualizado(new Date())
@@ -44,8 +45,10 @@ export default function Inicio() {
   }, [grifos])
 
   const hoy = useMemo(() => {
-    const d0 = new Date(); d0.setHours(0, 0, 0, 0)
-    const delDia = sesiones.filter(s => new Date(s.abierta_en) >= d0)
+    // "Hoy" es la jornada: arranca a las 6, no a medianoche. Con medianoche, el
+    // panel se ponía en cero justo en la mejor hora de la noche.
+    const d0 = inicioDeJornada()
+    const delDia = sesiones.filter(s => new Date(s.cerrada_en ?? s.abierta_en) >= d0)
     const cerradas = delDia.filter(s => s.estado === 'cerrada')
     const facturado = cerradas.reduce((a, s) => a + (s.costo_centavos ?? 0), 0)
     const costo = cerradas.reduce((a, s) => a + (s.costo_producto_centavos ?? 0), 0)
@@ -107,7 +110,7 @@ export default function Inicio() {
           {recortadas.length > 0 && (
             <Nota tono="ojo">
               <strong>{recortadas.length} tirada{recortadas.length > 1 ? 's' : ''} con cobro recortado.</strong>{' '}
-              Se sirvió más de lo que había en la tarjeta: el corte local del ESP32 no llegó
+              Se sirvió más de lo que había de saldo: el corte local del ESP32 no llegó
               a tiempo. Revisá la calibración de esa canilla.
             </Nota>
           )}
@@ -176,18 +179,18 @@ export default function Inicio() {
              bajada="Se actualiza solo cada 20 segundos." pegado>
         {enCurso.length === 0 ? (
           <Vacio icono="grifo" titulo="Ninguna canilla en uso">
-            Cuando alguien apoye una tarjeta, la vas a ver acá.
+            Cuando alguien muestre su QR en un grifo, lo vas a ver acá.
           </Vacio>
         ) : (
           <div className="scroll-x">
             <table>
               <thead>
-                <tr><th>Tarjeta</th><th>Canilla</th><th>Desde</th><th className="num">Tope</th></tr>
+                <tr><th>Cliente</th><th>Canilla</th><th>Desde</th><th className="num">Tope</th></tr>
               </thead>
               <tbody>
                 {enCurso.map(s => (
                   <tr key={s.id}>
-                    <td><span className="uid">{s.uid}</span></td>
+                    <td style={{ fontWeight: 600 }}>{quien(s)}</td>
                     <td>{nombreGrifo(s.grifo_id)}</td>
                     <td style={{ color: 'var(--ink-2)' }}>{fecha(s.abierta_en)}</td>
                     <td className="num"><Chip tono="dato">en curso</Chip></td>

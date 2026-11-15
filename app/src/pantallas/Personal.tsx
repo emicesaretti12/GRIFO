@@ -107,7 +107,7 @@ export default function Personal() {
         </form>
 
         <Nota tono="info">
-          <strong>Cajero:</strong> consulta tarjetas, carga saldo y bloquea. No lee las tablas,
+          <strong>Cajero:</strong> busca clientes por DNI, cobra, imprime el ticket y bloquea. No lee las tablas,
           así que no puede sacar la facturación ni el padrón aunque llame la API a mano.{' '}
           <strong>Administrador:</strong> todo lo anterior más canillas, tokens, reportes y personal.
         </Nota>

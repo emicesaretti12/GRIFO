@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import '@fontsource-variable/big-shoulders-display'
 import '@fontsource-variable/archivo'
-import { ContactlessPayment, WarningCircle, WifiSlash } from '@phosphor-icons/react'
+import { CameraSlash, QrCode, WarningCircle, WifiSlash } from '@phosphor-icons/react'
 import { supabase } from '../lib/supabase'
 import { pesos, volumen } from '../lib/plata'
 import { veredicto, punteria } from './veredicto'
 import './estilos-kiosco.css'
 import Pinta from './Pinta'
 import type { Modo } from './pinta/motor'
-import { useNFC, porQueNoHayNFC } from '../lib/useNFC'
+import { useLectorQR } from '../lib/useLectorQR'
 import { mensajeDeError } from '../lib/tipos'
 import { leerDemo, estadoDemo } from './demo'
 
@@ -18,6 +18,12 @@ import { leerDemo, estadoDemo } from './demo'
 //
 // SE CONECTA SOLA con el link/QR que da el panel, y borra el token de la barra
 // de direcciones: la pantalla está a la vista de todos. Ver docs/pantalla-canilla.md
+//
+// ── La tablet es el lector ───────────────────────────────────────────────────
+// El cliente muestra un QR (el de su app o el del ticket de la caja) y la
+// cámara de la tablet lo lee. La tablet le pregunta al servidor si ese QR vale
+// y si tiene saldo; el servidor abre la sesión y el ESP32, que sondea una vez
+// por segundo, abre la válvula. Ver docs/qr.md
 //
 // ── Una sola cosa protagonista ───────────────────────────────────────────────
 // La escena (la torre, la canilla y el vaso) queda montada todo el tiempo y es
@@ -31,9 +37,12 @@ type Grifo = {
   id: number; nombre: string; estilo: string | null; descripcion: string | null
   abv: number | null; ibu: number | null; color: string; imagen_url: string | null
   precio_litro_centavos: number; ml_vaso: number; activo: boolean; listo: boolean
+  /** Si el ESP32 dio señales de vida en los últimos dos minutos. Falta en una
+   *  base sin 29-qr.sql: ahí se la da por conectada, como antes. */
+  en_linea?: boolean
 }
 type Sesion = {
-  id: number; tarjeta: string; saldo_centavos: number
+  id: number; tarjeta: string; nombre?: string | null; saldo_centavos: number
   ml_maximos: number; ml_parcial: number; abierta_en: string; visto_en: string | null
 }
 type Ultima = {
@@ -127,29 +136,42 @@ export default function Kiosco() {
     setError(null); setEstado(r)
   }, [config, demo])
 
-  // ── El lector NFC de la tablet ───────────────────────────────────────────
-  // Acá la tablet deja de ser una pantalla y pasa a ser el lector: es la que
-  // identifica al cliente y abre la sesión. El ESP32 se entera sondeando.
-  const [avisoNfc, setAvisoNfc] = useState<string | null>(null)
+  // ── La cámara de la tablet es el lector ──────────────────────────────────
+  // La tablet identifica al cliente y abre la sesión. El ESP32 se entera
+  // sondeando.
+  const [aviso, setAviso] = useState<string | null>(null)
   const abriendo = useRef(false)
-  const ultimaLectura = useRef(0)
+  // El último código que pasó por la cámara y cuándo. Sirve para distinguir
+  // "lo acaba de mostrar" de "lo sigue teniendo ahí".
+  const visto = useRef({ codigo: '', en: 0 })
+  const pausaHasta = useRef(0)
 
-  const alLeerTarjeta = useCallback(async (uid: string) => {
+  const alLeerQR = useCallback(async (texto: string) => {
     if (!config) return
-
-    // Una tarjeta apoyada dispara `onreading` varias veces por segundo. Sin
-    // esto, un solo apoyo manda diez pedidos iguales.
-    //
-    //   Es el debounce del submit. El usuario hizo una cosa; que salga un
-    //   pedido.
     const ahora = Date.now()
-    if (abriendo.current || ahora - ultimaLectura.current < 2500) return
-    ultimaLectura.current = ahora
-    abriendo.current = true
-    setAvisoNfc(null)
 
-    const { data, error: err } = await supabase.rpc('tablet_abrir_sesion', {
-      p_uid: uid, p_grifo: config.grifo, p_token: config.token,
+    // ── Un QR mostrado es UN pedido ──────────────────────────────────────
+    // La cámara lee el mismo código cinco veces por segundo mientras el
+    // cliente lo sostiene. Solo cuenta la primera: para volver a contar, el
+    // código tiene que haber salido de cuadro un momento.
+    //
+    //   Es el debounce del submit, con una vuelta más: no alcanza con esperar
+    //   un rato, hay que soltar el botón. Si no, el que deja el celular apoyado
+    //   abre una sesión nueva apenas termina la anterior.
+    const seguiaAhi = texto === visto.current.codigo && ahora - visto.current.en < 3000
+    visto.current = { codigo: texto, en: ahora }
+    if (seguiaAhi || abriendo.current || ahora < pausaHasta.current) return
+
+    // Un QR cualquiera (el de un pago, el del menú) no se le manda al servidor.
+    if (!/^GRIFO:[0-9A-F]{32}$/i.test(texto)) {
+      setAviso('Ese QR no es del bar. Mostrá el de tu app o el de tu ticket.')
+      return
+    }
+
+    abriendo.current = true
+    setAviso(null)
+    const { data, error: err } = await supabase.rpc('tablet_abrir_sesion_qr', {
+      p_codigo: texto, p_grifo: config.grifo, p_token: config.token,
     })
     abriendo.current = false
 
@@ -162,36 +184,69 @@ export default function Kiosco() {
       //   ciegas, y casi siempre al lugar más caro.
       const falta = err.code === 'PGRST202' ||
                     /could not find the function/i.test(err.message ?? '')
-      setAvisoNfc(falta
-        ? 'Falta instalar el backend: corré 26-sesion-activa.sql en Supabase.'
-        : `No se pudo abrir la sesión: ${err.message}`)
+      setAviso(falta
+        ? 'Falta instalar el backend: corré 29-qr.sql en Supabase.'
+        : 'No pudimos consultar. Probá de nuevo en un momento.')
+      // Que pueda reintentar sin tener que sacar el QR de cuadro.
+      visto.current = { codigo: '', en: 0 }
       return
     }
-    const r = data as { ok: boolean; motivo?: string; cliente?: string | null }
-    if (!r.ok) {
-      setAvisoNfc(r.motivo === 'canilla_ocupada' && r.cliente
-        ? `Esperá: ${r.cliente} está sirviendo.`
-        : mensajeDeError(r))
-      return
-    }
+    const r = data as { ok: boolean; motivo?: string; cliente?: string | null; origen?: string }
+    if (!r.ok) { setAviso(mensajeQR(r)); return }
 
-    // No esperamos al sondeo: el cliente acaba de apoyar la tarjeta y tiene
-    // que ver su nombre ahora.
+    // No esperamos al sondeo: el cliente acaba de mostrar su QR y tiene que
+    // ver su nombre ahora.
     await consultar()
   }, [config, consultar])
 
-  const nfc = useNFC(alLeerTarjeta)
-
   // El aviso se borra solo. Es una pantalla de salón: nadie va a ir a cerrarlo.
   useEffect(() => {
-    if (!avisoNfc) return
-    // Diez segundos: los errores de instalación hay que poder leerlos y
-    // anotarlos, no cazarlos al vuelo.
-    const id = setTimeout(() => setAvisoNfc(null), 10000)
+    if (!aviso) return
+    const id = setTimeout(() => setAviso(null), 9000)
     return () => clearTimeout(id)
-  }, [avisoNfc])
+  }, [aviso])
 
   const sirviendo = estado?.sesion != null
+  // Recién terminó de servir: unos segundos sin abrir nada. El celular que
+  // quedó frente a la cámara no tiene que arrancar otra tirada.
+  const estabaSirviendo = useRef(false)
+  useEffect(() => {
+    if (estabaSirviendo.current && !sirviendo) {
+      pausaHasta.current = Date.now() + 5000
+      setAviso(null)
+    }
+    estabaSirviendo.current = sirviendo
+  }, [sirviendo])
+
+  // ¿Se puede atender a alguien ahora? Canilla habilitada, con el ESP32 vivo
+  // y sin nadie sirviendo.
+  const gEstado = estado?.grifo
+  const enLinea = gEstado?.en_linea !== false
+  const atiende = !demo && !!config && !error && !!gEstado?.listo && enLinea && !sirviendo
+  const qr = useLectorQR({ habilitado: !demo && !!config, leyendo: atiende, alLeer: alLeerQR })
+
+  // Que la tablet no apague la pantalla: es un cartel, nadie la toca en horas.
+  useEffect(() => {
+    if (demo || !('wakeLock' in navigator)) return
+    let traba: WakeLockSentinel | null = null
+    let vigente = true
+    const pedir = async () => {
+      try {
+        const t = await navigator.wakeLock.request('screen')
+        if (vigente) traba = t; else void t.release()
+      } catch { /* sin batería o sin permiso: sigue igual, con el ajuste del sistema */ }
+    }
+    // El sistema suelta la traba cuando la página deja de verse; se pide de nuevo.
+    const alVolver = () => { if (document.visibilityState === 'visible') void pedir() }
+    void pedir()
+    document.addEventListener('visibilitychange', alVolver)
+    return () => {
+      vigente = false
+      document.removeEventListener('visibilitychange', alVolver)
+      void traba?.release()
+    }
+  }, [demo])
+
   useEffect(() => {
     if (!config) return
     void consultar()
@@ -237,7 +292,11 @@ export default function Kiosco() {
   const vaso = g?.ml_vaso ?? 473
   datos.current = { precio: g?.precio_litro_centavos ?? 0, maximo: s?.ml_maximos ?? 0 }
 
-  const fuera = !!error || (estado != null && !g!.listo)
+  // Con alguien sirviendo no se declara nada fuera de servicio: la tirada en
+  // curso manda, y el ESP32 la termina y la cobra aunque se haya caído la red.
+  const sinConexion = estado != null && g!.listo && !enLinea && !s
+  const fuera = !!error || (estado != null && !g!.listo) || sinConexion
+  const libre = !!estado && !fuera && !s && !u
   const modo: Modo = !estado || fuera ? 'apagada'
     : s ? (s.ml_parcial > 0 ? 'sirviendo' : 'lista')
     : u ? 'servida'
@@ -266,6 +325,7 @@ export default function Kiosco() {
         </header>
 
         <div className="k-centro">
+         <div className={libre && !demo ? 'k-fila con-camara' : 'k-fila'}>
           {error ? (
             <Aviso clave="error" icono={<WifiSlash size="1em" weight="regular" />}
                    titulo="Fuera de servicio" texto={error} />
@@ -276,6 +336,9 @@ export default function Kiosco() {
           ) : !g!.listo ? (
             <Aviso clave="apagada" icono={<WarningCircle size="1em" weight="regular" />}
                    titulo="Fuera de servicio" texto="Esta canilla no está habilitada." />
+          ) : sinConexion ? (
+            <Aviso clave="sin-conexion" icono={<WifiSlash size="1em" weight="regular" />}
+                   titulo="Fuera de servicio" texto="Esta canilla está sin conexión. Avisale al personal." />
           ) : s ? (
             s.ml_parcial > 0 ? (
               <div className="k-estado" key="sirviendo">
@@ -291,7 +354,7 @@ export default function Kiosco() {
                 </dl>
               </div>
             ) : (
-              <Bienvenida saldo={s.saldo_centavos} maximo={s.ml_maximos} cliente={cli} />
+              <Bienvenida nombre={s.nombre ?? null} saldo={s.saldo_centavos} maximo={s.ml_maximos} cliente={cli} />
             )
           ) : u ? (
             <Ticket ultima={u} vaso={vaso} cliente={cli} />
@@ -300,21 +363,14 @@ export default function Kiosco() {
                    precio={g!.precio_litro_centavos} />
           )}
 
-          {/* El lector hay que encenderlo con un toque: el navegador exige un
-              gesto para pedir el permiso de NFC, y no lo da al cargar la página.
-              Una vez encendido queda escaneando solo. */}
-          {!demo && !error && estado && g!.listo && !s && nfc.soportado && nfc.estado !== 'escaneando' && (
-            <button className="k-encender" onClick={() => void nfc.empezar()}>
-              <ContactlessPayment size={30} weight="regular" aria-hidden="true" />
-              <span>
-                <strong>Encender el lector</strong>
-                <small>{nfc.error ?? 'Un toque cuando abre el bar'}</small>
-              </span>
-            </button>
-          )}
+          {/* La cámara queda montada siempre: así sigue leyendo mientras se
+              muestra un ticket, y no se vuelve a pedir en cada cambio de
+              estado. Solo se VE con la canilla libre. */}
+          {!demo && <Camara qr={qr} visible={libre} />}
+         </div>
         </div>
 
-        {avisoNfc && <p className="k-alerta" role="alert">{avisoNfc}</p>}
+        {aviso && <p className="k-alerta" role="alert">{aviso}</p>}
 
         <footer className="k-pie">
           {g ? (
@@ -324,17 +380,87 @@ export default function Kiosco() {
             </p>
           ) : <span />}
           <p className="k-estado-red">
-            {!nfc.soportado
-              ? <span className="k-marca mal" title={porQueNoHayNFC()}>Sin NFC</span>
-              : nfc.estado === 'escaneando'
-                ? <span className="k-marca bien">Lector listo</span>
-                : <span className="k-marca mal">Lector apagado</span>}
-            <span>{demo ? `Demostración, ${motor}` : s ? s.tarjeta : `Canilla ${config.grifo}`}</span>
+            {demo ? null
+              : qr.estado === 'leyendo'
+                ? <span className="k-marca bien">Cámara lista</span>
+                : qr.estado === 'pidiendo'
+                  ? <span className="k-marca">Abriendo la cámara</span>
+                  : <span className="k-marca mal" title={qr.detalle ?? undefined}>Sin cámara</span>}
+            <span>{demo ? `Demostración, ${motor}` : s ? (s.nombre ?? s.tarjeta) : `Canilla ${config.grifo}`}</span>
           </p>
         </footer>
       </section>
 
       <div className="kiosco-version">{__VERSION__}</div>
+    </div>
+  )
+}
+
+/** Lo que se le dice al cliente cuando su QR no abre la canilla. Corto y con
+ *  el próximo paso: está parado frente al grifo, con el vaso en la mano. */
+function mensajeQR(r: { motivo?: string; cliente?: string | null; origen?: string }): string {
+  const deTicket = r.origen === 'ticket'
+  switch (r.motivo) {
+    case 'qr_desconocido':
+      return 'No reconocemos ese QR. Mostrá el de tu app o el de tu ticket.'
+    case 'qr_vencido':
+      return deTicket
+        ? 'Ese ticket es de otra noche. Pasá por la caja y te lo renuevan.'
+        : 'Ese QR ya venció. Tocá tu tarjeta en la app para generar uno nuevo.'
+    case 'qr_anulado':
+      return deTicket
+        ? 'Ese ticket fue reemplazado por uno más nuevo. Usá el último que te dieron.'
+        : 'Ese QR ya no sirve. Generá uno nuevo desde la app.'
+    case 'sin_saldo':
+      return deTicket
+        ? 'No te alcanza el saldo. Cargá en la caja.'
+        : 'No te alcanza el saldo. Cargá desde la app o en la caja.'
+    case 'tarjeta_bloqueada':
+      return 'Tu cuenta está bloqueada. Pasá por la caja.'
+    case 'sesion_abierta_en_otro_grifo':
+      return 'Ya estás sirviendo en otra canilla. Terminá ahí primero.'
+    case 'canilla_ocupada':
+      return r.cliente ? `Esperá: ${r.cliente} está sirviendo.` : 'Esperá: alguien está sirviendo.'
+    case 'canilla_sin_conexion':
+      return 'Esta canilla está sin conexión. Avisale al personal.'
+    case 'token_invalido':
+      return 'Esta pantalla se desvinculó. Avisale al personal.'
+    default:
+      return mensajeDeError(r)
+  }
+}
+
+/** El recuadro donde el cliente se ve y apunta su QR. Es un espejo: con la
+ *  cámara del frente la imagen se invierte, así mover el celular a la derecha
+ *  lo mueve a la derecha en pantalla. */
+function Camara({ qr, visible }: { qr: ReturnType<typeof useLectorQR>; visible: boolean }) {
+  // Mantener apretado dos segundos cambia entre la cámara del frente y la de
+  // atrás. Es un ajuste de instalación: que no se dispare con un toque suelto.
+  const reloj = useRef<number>()
+  const soltar = () => { if (reloj.current) { clearTimeout(reloj.current); reloj.current = undefined } }
+  useEffect(() => soltar, [])
+
+  const mal = qr.estado === 'sin_permiso' || qr.estado === 'sin_camara' || qr.estado === 'error'
+  return (
+    <div className={visible ? 'k-camara' : 'k-camara oculta'} aria-hidden={!visible}
+         onPointerDown={() => { soltar(); reloj.current = window.setTimeout(qr.girar, 2000) }}
+         onPointerUp={soltar} onPointerLeave={soltar} onPointerCancel={soltar}
+         onContextMenu={e => e.preventDefault()}>
+      <video ref={qr.video} className={qr.frontal ? 'espejo' : undefined}
+             muted playsInline autoPlay disablePictureInPicture />
+      {qr.estado === 'leyendo' && <span className="k-mira" aria-hidden="true" />}
+      {qr.estado === 'pidiendo' && (
+        <div className="k-camara-aviso"><p className="k-respira">Abriendo la cámara</p></div>
+      )}
+      {mal && (
+        <div className="k-camara-aviso">
+          <CameraSlash size="2em" weight="regular" aria-hidden="true" />
+          <p>{qr.detalle ?? 'La cámara no está disponible.'}</p>
+          {qr.estado === 'sin_permiso' && (
+            <button type="button" onClick={qr.reintentar}>Permitir la cámara</button>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -359,12 +485,12 @@ function Libre({ escena, ranking, vaso, precio }: {
 
   if (cual === 0) return (
     <div className="k-estado" key="invita">
-      <p className="k-titulo">Apoyá tu tarjeta</p>
+      <p className="k-titulo">Mostrá tu QR</p>
       <p className="k-sub k-con-icono">
         {/* Las ondas llaman la atención desde lejos: es la única invitación a
             hacer algo que tiene la pantalla, y nadie lee de lejos. */}
-        <span className="k-onda"><ContactlessPayment size="1.3em" weight="regular" aria-hidden="true" /></span>
-        Acercala al dorso de la tablet
+        <span className="k-onda"><QrCode size="1.3em" weight="regular" aria-hidden="true" /></span>
+        El de tu app o el de tu ticket, frente a la cámara
       </p>
     </div>
   )
@@ -381,8 +507,9 @@ function Libre({ escena, ranking, vaso, precio }: {
     <div className="k-estado" key="podio">
       <p className="k-sub">Los que más tomaron hoy en esta canilla</p>
       <ol className="k-podio">
-        {ranking.map(p => (
-          <li key={p.tarjeta}>
+        {/* Por posición: dos clientes pueden llamarse igual. */}
+        {ranking.map((p, i) => (
+          <li key={i}>
             <span className="quien">{p.tarjeta}</span>
             <span className="cuanto k-num">{volumen(p.ml)}</span>
           </li>
@@ -392,15 +519,18 @@ function Libre({ escena, ranking, vaso, precio }: {
   )
 }
 
-/* ── Tarjeta apoyada, todavía sin servir ──────────────────────────────────── */
-function Bienvenida({ saldo, maximo, cliente }: {
-  saldo: number; maximo: number; cliente: Cliente | null
+/* ── QR leído, todavía sin servir ──────────────────────────────────── */
+function Bienvenida({ nombre, saldo, maximo, cliente }: {
+  nombre: string | null; saldo: number; maximo: number; cliente: Cliente | null
 }) {
-  const saludo = !cliente || cliente.es_primera
-    ? { t: 'Bienvenido', s: 'Es tu primera cerveza acá.' }
+  const base = !cliente || cliente.es_primera
+    ? { t: nombre ? 'Hola' : 'Bienvenido', s: 'Es tu primera cerveza acá.' }
     : cliente.veces < 5
       ? { t: 'Hola de nuevo', s: `Es tu cerveza número ${cliente.veces + 1} acá.` }
       : { t: 'Qué bueno verte', s: `Van ${cliente.veces} cervezas y ${volumen(cliente.ml_total)} en total.` }
+  // Con el nombre adelante: el que mostró el QR tiene que ver que es SU saldo
+  // el que está en pantalla, y no el del que estaba antes.
+  const saludo = { ...base, t: nombre ? `${base.t}, ${nombre}` : base.t }
 
   return (
     <div className="k-estado" key="bienvenida">

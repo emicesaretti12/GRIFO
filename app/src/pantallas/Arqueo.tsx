@@ -1,19 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { pesos, volumen, fecha } from '../lib/plata'
-import type { Arqueo as DatosArqueo } from '../lib/tipos'
+import { NOMBRE_MEDIO, MEDIOS, type Arqueo as DatosArqueo } from '../lib/tipos'
+import { inicioDeJornada as inicioDelDia } from '../lib/jornada'
 import { Panel, Stat, Nota, Vacio, Hueso } from '../componentes/UI'
 import { useAvisos } from '../componentes/Toast'
 import Icono from '../componentes/Icono'
-
-/** Un bar cierra de madrugada. Lo que se sirvió a las 2 AM pertenece al turno de
- *  la noche anterior, así que "hoy" arranca a las 6, igual que en el backend. */
-function inicioDelDia(d = new Date()) {
-  const x = new Date(d)
-  if (x.getHours() < 6) x.setDate(x.getDate() - 1)
-  x.setHours(6, 0, 0, 0)
-  return x
-}
 
 /** Para los <input type="datetime-local">, que quieren hora local sin zona. */
 function paraInput(d: Date) {
@@ -24,7 +16,10 @@ function paraInput(d: Date) {
 export default function Arqueo() {
   const { avisar } = useAvisos()
   const [desde, setDesde] = useState(() => paraInput(inicioDelDia()))
-  const [hasta, setHasta] = useState(() => paraInput(new Date()))
+  // null = "hasta ahora mismo". Mientras nadie fije una hora, cada actualización
+  // llega hasta el instante en que se pide. Antes quedaba clavada en el minuto
+  // en que se abrió la pantalla: lo cobrado después no entraba en el cierre.
+  const [hasta, setHasta] = useState<string | null>(null)
   const [datos, setDatos] = useState<DatosArqueo | null>(null)
   const [cargando, setCargando] = useState(true)
   const [contado, setContado] = useState('')
@@ -33,7 +28,7 @@ export default function Arqueo() {
     setCargando(true)
     const { data, error } = await supabase.rpc('arqueo', {
       p_desde: new Date(desde).toISOString(),
-      p_hasta: new Date(hasta).toISOString(),
+      p_hasta: hasta ? new Date(hasta).toISOString() : null,
     })
     setCargando(false)
     if (error) { avisar('No pudimos armar el arqueo', { tono: 'grave', detalle: error.message }); return }
@@ -71,12 +66,13 @@ export default function Arqueo() {
           </div>
           <div className="crece">
             <label htmlFor="h">Hasta</label>
-            <input id="h" className="campo" type="datetime-local" value={hasta}
-                   onChange={e => setHasta(e.target.value)} />
+            <input id="h" className="campo" type="datetime-local"
+                   value={hasta ?? paraInput(datos ? new Date(datos.hasta) : new Date())}
+                   onChange={e => setHasta(e.target.value || null)} />
           </div>
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
             <button className="btn" onClick={() => {
-              setDesde(paraInput(inicioDelDia())); setHasta(paraInput(new Date()))
+              setDesde(paraInput(inicioDelDia())); setHasta(null)
             }}>Hoy</button>
             <button className="btn" onClick={() => {
               const ayer = new Date(); ayer.setDate(ayer.getDate() - 1)
@@ -94,21 +90,20 @@ export default function Arqueo() {
           {datos.sesiones_abiertas > 0 && (
             <Nota tono="ojo">
               Hay {datos.sesiones_abiertas} {datos.sesiones_abiertas === 1
-                ? 'tarjeta apoyada en un grifo' : 'tarjetas apoyadas en grifos'} en este
-              momento. Mientras la sesión siga abierta, esa tarjeta no se puede devolver
-              ni volver a usar en otra canilla.
+                ? 'cliente sirviendo' : 'clientes sirviendo'} en este momento. Lo que
+              están tomando todavía no figura acá: entra cuando cierran la canilla.
             </Nota>
           )}
 
           <Panel titulo="El cajón"
-                 bajada="Lo que entró y salió por el mostrador en este período.">
+                 bajada="Los billetes que entraron y salieron por el mostrador en este período.">
             <div className="rejilla c3">
-              <Stat etiqueta="Cargas" valor={pesos(datos.cargas_centavos)}
-                    pie={`${datos.cargas_cantidad} ${datos.cargas_cantidad === 1 ? 'carga' : 'cargas'}`} />
+              <Stat etiqueta="Cobrado en efectivo" valor={pesos(datos.efectivo_centavos ?? datos.cargas_centavos)}
+                    pie={`de ${pesos(datos.cargas_centavos)} cargados en total`} />
               <Stat etiqueta="Devoluciones" valor={`- ${pesos(datos.devoluciones_centavos)}`}
-                    pie={`${datos.devoluciones_cantidad} ${datos.devoluciones_cantidad === 1 ? 'tarjeta devuelta' : 'tarjetas devueltas'}`} />
+                    pie={`${datos.devoluciones_cantidad} ${datos.devoluciones_cantidad === 1 ? 'devolución' : 'devoluciones'}, siempre en efectivo`} />
               <Stat etiqueta="Tiene que haber" valor={pesos(datos.neto_caja_centavos)} hero
-                    pie="cargas menos devoluciones" />
+                    pie="efectivo cobrado menos devoluciones" />
             </div>
 
             <div className="fila" style={{ marginTop: 18, alignItems: 'flex-end' }}>
@@ -128,11 +123,41 @@ export default function Arqueo() {
               )}
             </div>
 
+            {datos.cargas_por_medio && Object.keys(datos.cargas_por_medio).length > 0 && (
+              <div className="scroll-x" style={{ marginTop: 18 }}>
+                <table>
+                  <caption className="sr">Cargas del período, por medio de pago</caption>
+                  <thead>
+                    <tr><th>Cómo pagaron</th><th className="num">Cargas</th><th className="num">Total</th><th>Dónde está la plata</th></tr>
+                  </thead>
+                  <tbody>
+                    {/* En el orden de la caja, y al final cualquier medio que la app no conozca. */}
+                    {[...MEDIOS.map(m => m.id as string),
+                      ...Object.keys(datos.cargas_por_medio).filter(k => !MEDIOS.some(m => m.id === k))]
+                      .filter(k => datos.cargas_por_medio![k])
+                      .map(k => (
+                        <tr key={k}>
+                          <td style={{ fontWeight: 600 }}>{NOMBRE_MEDIO[k] ?? k}</td>
+                          <td className="num">{datos.cargas_por_medio![k].cantidad}</td>
+                          <td className="num" style={{ fontWeight: 600 }}>{pesos(datos.cargas_por_medio![k].centavos)}</td>
+                          <td style={{ color: 'var(--ink-2)' }}>
+                            {k === 'efectivo' ? 'En el cajón'
+                              : k === 'mercadopago' ? 'En la cuenta de Mercado Pago'
+                              : k === 'transferencia' ? 'En la cuenta del banco'
+                              : 'En la liquidación del posnet'}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
             {datos.ajustes_cantidad > 0 && (
               <Nota tono="ojo">
                 Se hicieron {datos.ajustes_cantidad} {datos.ajustes_cantidad === 1 ? 'ajuste' : 'ajustes'} de
                 saldo por un neto de {pesos(datos.ajustes_centavos)}. Los ajustes NO mueven plata del
-                cajón: corrigen saldo de tarjetas, así que no entran en el conteo de arriba.
+                cajón: corrigen el saldo de una cuenta, así que no entran en el conteo de arriba.
               </Nota>
             )}
           </Panel>
@@ -157,12 +182,12 @@ export default function Arqueo() {
           <Panel titulo="Saldo en circulación"
                  bajada="Plata que ya cobraste y todavía debés en cerveza.">
             <div className="rejilla c3">
-              <Stat etiqueta="En las tarjetas" valor={pesos(datos.saldo_en_circulacion_centavos)} hero />
+              <Stat etiqueta="En las cuentas" valor={pesos(datos.saldo_en_circulacion_centavos)} hero />
             </div>
             <Nota tono="info">
               Esto <strong>no es ganancia</strong>: es una deuda. Cada peso de acá es cerveza
-              que alguien ya pagó y todavía no se tomó, o plata que va a pedir de vuelta cuando
-              devuelva la tarjeta. Confundirla con ingreso es la forma más común de creer que
+              que alguien ya pagó y todavía no se tomó, o plata que va a pedir de vuelta antes
+              de irse. Confundirla con ingreso es la forma más común de creer que
               te fue mejor de lo que te fue.
             </Nota>
           </Panel>
@@ -178,7 +203,7 @@ export default function Arqueo() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Persona</th><th className="num">Cargas</th>
+                      <th>Persona</th><th className="num">Cargas</th><th className="num">En efectivo</th>
                       <th className="num">Devoluciones</th><th className="num">Ajustes</th>
                       <th className="num">Operaciones</th>
                     </tr>
@@ -188,6 +213,7 @@ export default function Arqueo() {
                       <tr key={p.nombre}>
                         <td>{p.nombre}</td>
                         <td className="num">{pesos(p.cargas)}</td>
+                        <td className="num">{p.efectivo != null ? pesos(p.efectivo) : '—'}</td>
                         <td className="num">{p.devoluciones ? `- ${pesos(p.devoluciones)}` : '—'}</td>
                         <td className="num">{p.ajustes ? pesos(p.ajustes) : '—'}</td>
                         <td className="num">{p.operaciones}</td>

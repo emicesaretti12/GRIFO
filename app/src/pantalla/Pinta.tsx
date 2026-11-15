@@ -31,7 +31,10 @@ export default function Pinta({ alContar, alMotor, ...entrada }: Props) {
     m.alContar = (n: number) => contar.current?.(n)
     const reducido = matchMedia('(prefers-reduced-motion: reduce)')
     const medir = () => {
-      const r = caja.current!.getBoundingClientRect()
+      // El observador puede avisar una vez más con el componente ya desmontado.
+      const el = caja.current
+      if (!el) return
+      const r = el.getBoundingClientRect()
       m.medir(r.width, r.height, reducido.matches)
     }
     medir()
