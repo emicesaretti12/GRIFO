@@ -16,7 +16,7 @@ begin;
 insert into public.grifos (id, nombre, precio_litro_centavos, pulsos_por_litro, ml_minimos) values
   (901, 'test-ipa',       320000, 452.700, 50),
   (902, 'test-rubia',     280000, 452.700, 50),
-  (903, 'test-redondeo',  100001, 452.700,  0),
+  (903, 'test-redondeo',  100001, 452.700,  1),
   (904, 'test-sin-token', 320000, 452.700, 50);   -- se queda sin token a propósito
 
 insert into public.tarjetas (uid, saldo_centavos, bloqueada) values

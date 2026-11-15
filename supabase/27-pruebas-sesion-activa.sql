@@ -120,14 +120,26 @@ end $$;
 -- los dos) y no podia abrir sesion (esta estaba solo para anon).
 --
 --   El permiso se le da al que llama, no al que uno imagina llamando.
+--
+-- Desde 29-qr.sql la pantalla ya no abre con el UID pelado sino con el QR: la
+-- puerta de la tablet pasa a ser tablet_abrir_sesion_qr y la vieja queda
+-- cerrada a proposito. Se prueba la que corresponda a la base que hay.
 do $$
+declare
+  v_con_qr boolean := exists (
+    select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.proname = 'tablet_abrir_sesion_qr');
 begin
   set local role authenticated;
   begin
-    perform public.tablet_abrir_sesion('PRUEBATAB1', 914, 'token-cualquiera');
+    if v_con_qr then
+      perform public.tablet_abrir_sesion_qr('GRIFO:' || repeat('0', 32), 914, 'token-cualquiera');
+    else
+      perform public.tablet_abrir_sesion('PRUEBATAB1', 914, 'token-cualquiera');
+    end if;
   exception
     when insufficient_privilege then
-      raise exception '11: la pantalla logueada no puede llamar a tablet_abrir_sesion';
+      raise exception '11: la pantalla logueada no puede abrir sesiones';
     when others then null;   -- que rechace por token es correcto; por permiso no
   end;
 

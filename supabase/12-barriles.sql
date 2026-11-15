@@ -192,7 +192,7 @@ do $$
 begin
   alter table public.movimientos drop constraint if exists movimientos_tipo_check;
   alter table public.movimientos add constraint movimientos_tipo_check
-    check (tipo in ('carga', 'consumo', 'ajuste'));
+    check (tipo in ('carga', 'consumo', 'ajuste', 'devolucion'));
 end $$;
 
 alter table public.movimientos add column if not exists motivo text;
