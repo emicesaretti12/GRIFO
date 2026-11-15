@@ -1,5 +1,9 @@
 # Devolución de tarjeta y cierre de caja
 
+> **Desde el cambio a QR:** donde este documento habla de apoyar una tarjeta o de NFC,
+> hoy el cliente muestra un código QR y la tablet lo lee con la cámara. La parte del
+> ESP32, el caudalímetro y la válvula no cambió. Ver [qr.md](qr.md).
+
 SQL: [`supabase/14-devoluciones.sql`](../supabase/14-devoluciones.sql).
 Pruebas: [`supabase/15-pruebas-devoluciones.sql`](../supabase/15-pruebas-devoluciones.sql).
 

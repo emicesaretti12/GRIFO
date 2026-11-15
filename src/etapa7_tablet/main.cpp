@@ -247,9 +247,15 @@ static void tareaRed(void *) {
       Serial.printf("[red] entregando cierre sesion=%lld ml=%lu (quedan %lu)\n",
                     (long long)p.sesionId, (unsigned long)p.ml,
                     (unsigned long)colaCantidad());
-      if (redCerrarSesion(p.sesionId, p.ml, p.pulsos)) {
+      bool descartar = false;
+      if (redCerrarSesion(p.sesionId, p.ml, p.pulsos, &descartar)) {
         colaSacarPrimero();
         Serial.println("[red] cierre confirmado");
+      } else if (descartar) {
+        // El servidor no conoce esa sesión: no hay a quién cobrarle. Se saca
+        // para que no trabe a las que vienen atrás.
+        colaSacarPrimero();
+        Serial.println("[red] cierre descartado: el servidor no conoce esa sesion");
       } else {
         vTaskDelay(pdMS_TO_TICKS(3000));   // no martillar al servidor
       }
@@ -257,7 +263,12 @@ static void tareaRed(void *) {
     }
 
     // ── 3) El latido ──────────────────────────────────────────────────────
-    if (redConectada() && !hiceAlgoCaro && ahora - ultimoLatido >= LATIDO_MS) {
+    // Cede el turno a lo urgente, pero no para siempre: un cierre que falla
+    // una y otra vez ocupaba todas las vueltas y el latido no salía nunca. La
+    // canilla figuraba "sin conexión" estando conectada, y con eso la pantalla
+    // deja de atender. Pasado el doble del intervalo, late igual.
+    if (redConectada() && ahora - ultimoLatido >= LATIDO_MS &&
+        (!hiceAlgoCaro || ahora - ultimoLatido >= 2 * LATIDO_MS)) {
       ultimoLatido = ahora;
       Orden orden;
       if (redLatido(colaCantidad(), orden, nombreDe(estado), ultimoEvento) &&
@@ -416,6 +427,14 @@ static void tareaControl(void *) {
         enEspera        = false;
         anotarVenta(sesionId, 0, pulsosPorLitroMili);
 
+        // Una autorización de cero mililitros no abre nada. Antes un tope en
+        // cero se leía como "sin tope": la válvula abría y servía gratis hasta
+        // el failsafe de tres minutos.
+        if (pulsosMax == 0) {
+          liquidar("Autorizacion sin mililitros. No abre.");
+          break;
+        }
+
         char plata[24];
         formatearPesos(saldoCentavos, plata, sizeof(plata));
         Serial.println();
@@ -472,7 +491,7 @@ static void tareaControl(void *) {
           }
         }
 
-        if (pulsosMax > 0 && pulsos >= pulsosMax) {
+        if (pulsos >= pulsosMax) {
           liquidar("Limite de saldo alcanzado. Corta y cobra.");
           break;
         }

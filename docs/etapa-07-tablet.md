@@ -1,5 +1,9 @@
 # Etapa 7 — La tarjeta la lee la tablet
 
+> **Desde el cambio a QR:** donde este documento habla de apoyar una tarjeta o de NFC,
+> hoy el cliente muestra un código QR y la tablet lo lee con la cámara. La parte del
+> ESP32, el caudalímetro y la válvula no cambió. Ver [qr.md](qr.md).
+
 El ESP32 deja de ver al cliente. Se caen el lector RFID y el botón; queda **un
 actuador con un medidor**.
 

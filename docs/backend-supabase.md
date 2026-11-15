@@ -1,5 +1,9 @@
 # Backend en Supabase
 
+> **Desde el cambio a QR:** donde este documento habla de apoyar una tarjeta o de NFC,
+> hoy el cliente muestra un código QR y la tablet lo lee con la cámara. La parte del
+> ESP32, el caudalímetro y la válvula no cambió. Ver [qr.md](qr.md).
+
 Todo el lado servidor del grifo: dos RPC atómicas, el esquema y el modelo de
 permisos. **No necesita hardware** — se prueba entero desde el editor SQL de
 Supabase y con `curl`.

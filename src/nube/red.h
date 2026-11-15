@@ -97,7 +97,11 @@ bool redAbrirSesion(const char *uid, RespuestaAbrir &r);
  *  Es idempotente del lado del servidor: reintentar un cierre que ya se aplicó
  *  devuelve `repetida: true` y no cobra de nuevo. Por eso podemos reintentar
  *  sin miedo. */
-bool redCerrarSesion(int64_t sesionId, uint32_t ml, uint32_t pulsos);
+bool redCerrarSesion(int64_t sesionId, uint32_t ml, uint32_t pulsos,
+                     bool *descartar = nullptr);
+// `descartar` (opcional) vuelve en true cuando el servidor dijo que esa sesión
+// NO EXISTE: reintentar no la va a hacer existir. Es el único rechazo que
+// autoriza a sacar el cierre de la cola sin haberlo cobrado.
 
 /** POST /rpc/canilla_latido. Le avisa al servidor que esta canilla está viva,
  *  con cuántos cierres tiene sin entregar y cómo anda la señal.

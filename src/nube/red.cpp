@@ -331,7 +331,8 @@ bool redAbrirSesion(const char *uid, RespuestaAbrir &r) {
   return true;
 }
 
-bool redCerrarSesion(int64_t sesionId, uint32_t ml, uint32_t pulsos) {
+bool redCerrarSesion(int64_t sesionId, uint32_t ml, uint32_t pulsos, bool *descartar) {
+  if (descartar) *descartar = false;
   JsonDocument pedido;
   pedido["p_sesion_id"] = sesionId;
   pedido["p_ml"]        = ml;
@@ -351,7 +352,12 @@ bool redCerrarSesion(int64_t sesionId, uint32_t ml, uint32_t pulsos) {
   // respuesta rara, un motivo de error, un cuerpo vacío— deja el pendiente
   // donde está para reintentarlo. Ante la duda, la venta no se descarta.
   if (!doc["ok"].as<bool>()) {
-    Serial.printf("   cierre rechazado: %s\n", doc["motivo"] | "?");
+    const char *motivo = doc["motivo"] | "?";
+    Serial.printf("   cierre rechazado: %s\n", motivo);
+    // Una sesión que el servidor no conoce no se va a poder cobrar nunca. Si se
+    // quedara primera en la cola, trabaría para siempre todos los cobros que
+    // vienen atrás. Un token inválido NO entra acá: eso se arregla y se cobra.
+    if (descartar && strcmp(motivo, "sesion_desconocida") == 0) *descartar = true;
     return false;
   }
 

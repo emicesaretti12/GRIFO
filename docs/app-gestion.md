@@ -1,5 +1,9 @@
 # App de gestión
 
+> **Desde el cambio a QR:** donde este documento habla de apoyar una tarjeta o de NFC,
+> hoy el cliente muestra un código QR y la tablet lo lee con la cámara. La parte del
+> ESP32, el caudalímetro y la válvula no cambió. Ver [qr.md](qr.md).
+
 La aplicación web donde el personal del restaurante maneja el sistema: cargar
 saldo en caja, administrar canillas, ver reportes.
 

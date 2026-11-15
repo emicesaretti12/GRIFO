@@ -1,8 +1,9 @@
 # GRIFO — Grifo de cerveza automatizado
 
-Grifo de autoservicio para un bar. El cliente carga saldo en una tarjeta en caja,
-la apoya en el lector del grifo y se sirve la cerveza que le alcance. El saldo se
-descuenta en tiempo real según los mililitros efectivamente servidos.
+Grifo de autoservicio para un bar. El cliente carga saldo (desde su celular con
+Mercado Pago, o en la caja), muestra su código QR en la tablet del grifo y se
+sirve la cerveza que le alcance. El saldo se descuenta en tiempo real según los
+mililitros efectivamente servidos.
 
 **Hardware:** ESP32 NodeMCU ESP-WROOM-32S · lector RFID MFRC522 · caudalímetro
 YF-S201C · válvula solenoide 12V vía módulo relé
@@ -17,13 +18,13 @@ YF-S201C · válvula solenoide 12V vía módulo relé
 | **Última etapa aceptada** | ✅ 3 — Caudalímetro (cuenta pulsos con el PCNT, verificado en placa) |
 | **Etapa en curso** | 4 — Relé (a la espera de la prueba en placa) |
 | **En paralelo** | ✅ backend de Supabase verificado punta a punta sobre HTTP |
-| **App de gestión** | ✅ caja, panel, tarjetas, canillas, reportes y personal · costo y ganancia · modo claro/oscuro |
-| **Ciclo de la tarjeta** | ✅ entregar con el nombre del cliente → cargar → servir → devolver y liberar |
+| **App de gestión** | ✅ caja, panel, cuentas, canillas, reportes y personal · costo y ganancia · modo claro/oscuro |
+| **Identificación por QR** | ✅ la tablet del grifo lee el QR con su cámara · app del cliente · ticket impreso en la caja ([docs/qr.md](docs/qr.md)) |
+| **Mercado Pago** | ✅ carga desde la app del cliente; hay que publicar la función y poner la credencial ([docs/mercado-pago.md](docs/mercado-pago.md)) |
 | **Pantalla de canilla** | ✅ kiosco web por canilla, se vincula por QR con el token del grifo |
-| **Caja móvil** | ✅ el celular del mozo lee tarjetas por NFC y carga saldo en la mesa |
 | **Stock de barriles** | ✅ cuánto queda en cada barril, en vasos, con aviso cuando está por terminarse |
 | **Ajuste de saldo** | ✅ el admin puede corregir una carga mal hecha, con motivo obligatorio y firma |
-| **Devolución de tarjeta** | ✅ se devuelve el saldo que sobró y la tarjeta vuelve limpia a la pila |
+| **Devolución de saldo** | ✅ el cliente se lleva en efectivo lo que no tomó |
 | **Cierre de caja** | ✅ arqueo del turno contra lo que hay en el cajón, con el saldo en circulación aparte |
 | **Hardware** | ✅ ya llegaron los cables dupont y el módulo relé |
 
@@ -111,11 +112,11 @@ src/
   etapa3_caudalimetro/main.cpp  etapa 3 — cuenta pulsos con el periferico PCNT
   etapa4_rele/main.cpp      etapa 4 — el rele, y que no se active al arrancar
 app/                        app de gestión + pantallas de canilla (React + Vite + TS)
-  src/pantallas/            caja, panel, tarjetas, canillas, barriles, cierre de caja, reportes, personal
+  src/pantallas/            caja, panel, cuentas, canillas, barriles, cierre de caja, reportes, personal
+  src/cliente/              la app del cliente: saldo, QR y carga con Mercado Pago
   src/pantalla/             kiosco de canilla y su fondo animado en canvas
-  src/movil/                caja móvil: lectura NFC y carga de saldo desde el celular
   src/componentes/          modal, avisos, gráficos, QR, iconos, primitivas de UI
-  src/lib/                  cliente supabase, lector RFID USB, imágenes, plata
+  src/lib/                  cliente supabase, lector de QR por cámara, jornada, plata
 supabase/
   01-schema.sql             tablas (con el libro mayor), índices y RLS
   02-funciones.sql          RPC del dispositivo + caja + tokens + permisos
@@ -134,6 +135,12 @@ supabase/
   15-pruebas-devoluciones.sql  pruebas de devolucion, arqueo y permisos por rol
   16-clientes.sql           entregar la tarjeta a un cliente (alta + nombre)
   17-pruebas-clientes.sql   pruebas de entrega, reentrega y ciclo completo
+  18 a 28                   salud de las canillas, órdenes, alta, sesión abierta desde la tablet
+  29-qr.sql                 clientes por DNI, QR de la app y del ticket, caja con medio de pago
+  30-pruebas-qr.sql         pruebas del QR, la caja y los permisos
+  31-mercadopago.sql        pagos de Mercado Pago: intentos y acreditación una sola vez
+  32-pruebas-mercadopago.sql  pruebas de los pagos
+  functions/mercadopago/    la función del servidor que habla con Mercado Pago
 docs/
   plan-de-etapas.md         las 8 etapas, qué necesita cada una, criterio de aceptación
   pinout-y-trampas.md       pinout definitivo + trampas de hardware explicadas
@@ -147,7 +154,8 @@ docs/
   app-gestion.md            app de gestión: puesta en marcha, roles, lector RFID
   pantalla-canilla.md       la pantalla de cada grifo: vinculación, kiosco, animación
   deploy-vercel.md          publicar la app y regenerar los QR de las pantallas
-  caja-movil.md             el celular como lector NFC: alcances, límites y UID
+  qr.md                     el QR: app del cliente, ticket de la caja, la cámara de la tablet
+  mercado-pago.md           activar la carga con Mercado Pago, paso a paso
   barriles-y-ajustes.md     stock por barril y correcciones de saldo
   devoluciones-y-arqueo.md  devolver la tarjeta y cerrar la caja del turno
 ```
@@ -185,6 +193,6 @@ cobrada. Detalle completo en [`docs/pinout-y-trampas.md`](docs/pinout-y-trampas.
 - **Fuera del estado `SIRVIENDO`, la válvula está cerrada**, chequeado explícito
   al final de cada iteración del loop.
 - **Plata siempre en centavos enteros.** Nunca `float`. Redondeo hacia arriba.
-- **El saldo nunca se guarda en la tarjeta.** Vive en Supabase; la tarjeta solo
-  aporta el UID.
+- **El saldo nunca viaja en el QR.** Vive en Supabase; el QR solo dice quién es,
+  y vence.
 - **Nada de HTTP ni `delay()` dentro de la tarea de control.**

@@ -1,5 +1,9 @@
 # Ir al bar sin la computadora
 
+> **Desde el cambio a QR:** donde este documento habla de apoyar una tarjeta o de NFC,
+> hoy el cliente muestra un código QR y la tablet lo lee con la cámara. La parte del
+> ESP32, el caudalímetro y la válvula no cambió. Ver [qr.md](qr.md).
+
 La idea de este documento: que puedas llevar la canilla al bar, enchufarla,
 y operar todo desde el celular. Sin notebook, sin cable USB, sin monitor serie.
 

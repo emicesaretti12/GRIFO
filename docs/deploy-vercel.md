@@ -1,5 +1,9 @@
 # Publicar en Vercel
 
+> **Desde el cambio a QR:** donde este documento habla de apoyar una tarjeta o de NFC,
+> hoy el cliente muestra un código QR y la tablet lo lee con la cámara. La parte del
+> ESP32, el caudalímetro y la válvula no cambió. Ver [qr.md](qr.md).
+
 La app es una SPA estática: `npm run build` deja archivos sueltos en `app/dist/`.
 No hay servidor que mantener ni base que conectar — Supabase ya es el backend.
 
