@@ -12,12 +12,10 @@ foto o el texto del monitor: cada paso prueba una sola cosa.
 
 ### La base
 
-En **Supabase → SQL Editor**, pegar y correr, en este orden:
+En **Supabase → SQL Editor → New query**, pegá **todo** el contenido de
+`supabase/INSTALAR-QR.sql` y tocá **Run**. Es el 29 y el 31 juntos.
 
-1. `supabase/29-qr.sql`
-2. `supabase/31-mercadopago.sql`
-
-Los dos terminan con `✅ … aplicado`. Se pueden correr de nuevo sin problema.
+Tiene que terminar con `✅ QR INSTALADO`. Si lo corrés de nuevo, no rompe nada.
 
 > **Ya están adaptados a SEN POS.** Los probé sobre una copia de tu base de
 > producción (canillas + las 23 migraciones del POS): las pruebas de las
