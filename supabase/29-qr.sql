@@ -73,7 +73,7 @@ comment on function public.inicio_jornada(timestamptz) is
   'Las 6:00 (hora de Argentina) que abren la jornada a la que pertenece ese momento.';
 
 revoke all on function public.inicio_jornada(timestamptz) from public, anon, authenticated;
-grant execute on function public.inicio_jornada(timestamptz) to authenticated, service_role;
+grant execute on function public.inicio_jornada(timestamptz) to service_role;
 
 
 -- ═════════════════════════════════════════════════════════════════════════════
@@ -83,7 +83,7 @@ grant execute on function public.inicio_jornada(timestamptz) to authenticated, s
 -- ── Clientes ────────────────────────────────────────────────────────────────
 -- La identidad. El saldo sigue viviendo en `tarjetas` (que ahora es una
 -- billetera sin plástico): acá va de quién es.
-create table if not exists public.clientes (
+create table if not exists public.clientes_qr (
   uid               text primary key references public.tarjetas(uid),
   dni               text not null check (dni ~ '^[0-9]{7,8}$'),
   nombre            text not null,
@@ -97,19 +97,19 @@ create table if not exists public.clientes (
   unique (dni, tipo)
 );
 
-comment on table public.clientes is
+comment on table public.clientes_qr is
   'De quién es cada billetera. Una por DNI y por tipo: la de app y la de ticket no se mezclan.';
 
-alter table public.clientes enable row level security;
-revoke all on table public.clientes from anon, authenticated;
-grant all on table public.clientes to service_role;
-grant select on table public.clientes to authenticated;
+alter table public.clientes_qr enable row level security;
+revoke all on table public.clientes_qr from anon, authenticated;
+grant all on table public.clientes_qr to service_role;
+grant select on table public.clientes_qr to authenticated;
 
 do $$
 begin
   if not exists (select 1 from pg_policies where schemaname = 'public'
-                  and tablename = 'clientes' and policyname = 'admin_lee_clientes') then
-    create policy admin_lee_clientes on public.clientes
+                  and tablename = 'clientes_qr' and policyname = 'admin_lee_clientes_qr') then
+    create policy admin_lee_clientes_qr on public.clientes_qr
       for select to authenticated using (public.es_admin());
   end if;
 end $$;
@@ -241,11 +241,11 @@ $$;
 
 -- La cuenta de app de este DNI, solo si el celular es el vinculado.
 create or replace function public._cliente_app(p_dni text, p_dispositivo text)
-returns public.clientes
+returns public.clientes_qr
 language sql stable security definer set search_path = ''
 as $$
   select c.*
-    from public.clientes c
+    from public.clientes_qr c
    where c.dni = public._dni_limpio(p_dni)
      and c.tipo = 'app'
      and c.dispositivo_hash is not null
@@ -257,19 +257,19 @@ $$;
 create or replace function public._cliente_crear(
   p_dni text, p_nombre text, p_tipo text, p_dispositivo_hash text, p_por uuid
 )
-returns public.clientes
+returns public.clientes_qr
 language plpgsql security definer set search_path = ''
 as $$
 declare
   v_uid text;
-  v_c   public.clientes;
+  v_c   public.clientes_qr;
 begin
   v_uid := 'QR' || substr(public._codigo_nuevo(), 1, 14);
 
   insert into public.tarjetas (uid, saldo_centavos, nota, asignada_en, asignada_por)
   values (v_uid, 0, p_nombre, now(), p_por);
 
-  insert into public.clientes (uid, dni, nombre, tipo, dispositivo_hash, dispositivo_en, creado_por)
+  insert into public.clientes_qr (uid, dni, nombre, tipo, dispositivo_hash, dispositivo_en, creado_por)
   values (v_uid, p_dni, p_nombre, p_tipo, p_dispositivo_hash,
           case when p_dispositivo_hash is not null then now() end, p_por)
   returning * into v_c;
@@ -279,6 +279,22 @@ end $$;
 
 -- Carga plata y deja asentado con qué se pagó y quién la cargó. Es la única
 -- puerta por la que entra saldo desde ahora: caja y Mercado Pago pasan por acá.
+-- Cómo se pagó una carga, también las que hizo el POS por su cuenta: esas no
+-- llenan `medio_pago`, pero dejan el medio en la referencia ('caja:debito') o
+-- en la clave ('mp:…' es Mercado Pago desde su app). Sin nada de eso es una
+-- carga vieja, y antes todo era efectivo.
+create or replace function public._medio_carga(p_medio text, p_ref text, p_clave text)
+returns text language sql immutable set search_path = ''
+as $$
+  select case
+    when p_medio is not null then p_medio
+    when p_ref like 'caja:%' then
+      case substr(p_ref, 6) when 'qr_mp' then 'mercadopago' else substr(p_ref, 6) end
+    when p_clave like 'mp:%' then 'mercadopago'
+    else 'efectivo'
+  end
+$$;
+
 create or replace function public._cargar(
   p_uid text, p_centavos bigint, p_referencia text, p_clave text, p_medio text, p_por uuid
 )
@@ -287,7 +303,24 @@ language plpgsql security definer set search_path = ''
 as $$
 declare v jsonb;
 begin
-  v := public.cargar_saldo(p_uid, p_centavos, p_referencia, p_clave);
+  -- ── Con SEN POS: la plata del mostrador entra al turno de caja ────────────
+  -- El POS lleva el arqueo de cada turno (ciego: el cajero cuenta sin saber
+  -- cuánto debería haber). Una carga cobrada en el mostrador que no pase por
+  -- el turno abierto sería plata en el cajón que el POS no espera, y el arqueo
+  -- daría sobrante. Por eso, si el POS está instalado, la carga se hace con su
+  -- función, que la asienta en el turno, y sin turno abierto no se cobra.
+  --
+  -- `p_por` nulo es una carga que no pasa por el mostrador (Mercado Pago desde
+  -- la app): esa no toca el cajón.
+  if p_por is not null
+     and to_regprocedure('public.pos_cargar_billetera(text,bigint,text,text)') is not null then
+    v := public.pos_cargar_billetera(
+           p_uid, p_centavos,
+           case p_medio when 'mercadopago' then 'qr_mp' else p_medio end,
+           p_clave);
+  else
+    v := public.cargar_saldo(p_uid, p_centavos, p_referencia, p_clave);
+  end if;
 
   if coalesce((v->>'ok')::boolean, false)
      and not coalesce((v->>'repetida')::boolean, false) then
@@ -333,7 +366,7 @@ end $$;
 
 -- La ficha que ve el cajero. Una sola forma para las dos búsquedas (por DNI y
 -- por el código de la app), así la pantalla dibuja lo mismo.
-create or replace function public._ficha_cliente(p_c public.clientes)
+create or replace function public._ficha_cliente(p_c public.clientes_qr)
 returns jsonb
 language sql stable security definer set search_path = ''
 as $$
@@ -375,7 +408,7 @@ revoke all on function public._cliente_app(text, text)                  from pub
 revoke all on function public._cliente_crear(text, text, text, text, uuid) from public, anon, authenticated;
 revoke all on function public._cargar(text, bigint, text, text, text, uuid) from public, anon, authenticated;
 revoke all on function public._pase_de_ticket(text, boolean, uuid)      from public, anon, authenticated;
-revoke all on function public._ficha_cliente(public.clientes)           from public, anon, authenticated;
+revoke all on function public._ficha_cliente(public.clientes_qr)           from public, anon, authenticated;
 
 
 -- ═════════════════════════════════════════════════════════════════════════════
@@ -399,7 +432,7 @@ as $$
 declare
   v_dni    text := public._dni_limpio(p_dni);
   v_nombre text := trim(regexp_replace(coalesce(p_nombre, ''), '\s+', ' ', 'g'));
-  v_c      public.clientes;
+  v_c      public.clientes_qr;
   v_nueva  boolean := false;
 begin
   if v_dni is null then
@@ -415,7 +448,7 @@ begin
     return jsonb_build_object('ok', false, 'motivo', 'dispositivo_invalido');
   end if;
 
-  select * into v_c from public.clientes
+  select * into v_c from public.clientes_qr
    where dni = v_dni and tipo = 'app' for update;
 
   if not found then
@@ -425,7 +458,7 @@ begin
     exception when unique_violation then
       -- Dos toques al botón: el otro pedido la creó primero. Se sigue como si
       -- ya existiera.
-      select * into v_c from public.clientes where dni = v_dni and tipo = 'app' for update;
+      select * into v_c from public.clientes_qr where dni = v_dni and tipo = 'app' for update;
     end;
   end if;
 
@@ -435,7 +468,7 @@ begin
       if not public._nombre_coincide(v_nombre, v_c.nombre) then
         return jsonb_build_object('ok', false, 'motivo', 'nombre_no_coincide');
       end if;
-      update public.clientes
+      update public.clientes_qr
          set dispositivo_hash = public._hash(p_dispositivo), dispositivo_en = now()
        where uid = v_c.uid;
     elsif v_c.dispositivo_hash is distinct from public._hash(p_dispositivo) then
@@ -455,7 +488,7 @@ returns jsonb
 language plpgsql stable security definer set search_path = ''
 as $$
 declare
-  v_c public.clientes := public._cliente_app(p_dni, p_dispositivo);
+  v_c public.clientes_qr := public._cliente_app(p_dni, p_dispositivo);
   v_t public.tarjetas;
 begin
   if v_c.uid is null then
@@ -494,7 +527,7 @@ returns jsonb
 language plpgsql security definer set search_path = ''
 as $$
 declare
-  v_c      public.clientes := public._cliente_app(p_dni, p_dispositivo);
+  v_c      public.clientes_qr := public._cliente_app(p_dni, p_dispositivo);
   v_codigo text;
   v_corto  text;
   v_vence  timestamptz := now() + interval '90 seconds';
@@ -547,12 +580,14 @@ create or replace function public.cliente_salir(p_dni text, p_dispositivo text)
 returns jsonb
 language plpgsql security definer set search_path = ''
 as $$
-declare v_c public.clientes := public._cliente_app(p_dni, p_dispositivo);
+declare v_c public.clientes_qr := public._cliente_app(p_dni, p_dispositivo);
 begin
   if v_c.uid is null then
-    return jsonb_build_object('ok', true);   -- ya estaba afuera
+    -- Ya estaba afuera, o no es su celular. Para la app es lo mismo (sale
+    -- igual); para quien prueba DNIs al azar no confirma nada.
+    return jsonb_build_object('ok', false, 'motivo', 'sesion_invalida');
   end if;
-  update public.clientes set dispositivo_hash = null, dispositivo_en = null
+  update public.clientes_qr set dispositivo_hash = null, dispositivo_en = null
    where uid = v_c.uid;
   update public.pases set revocado_en = now()
    where uid = v_c.uid and origen = 'app' and revocado_en is null;
@@ -825,7 +860,7 @@ language plpgsql stable security definer set search_path = ''
 as $$
 declare
   v_dni text := public._dni_limpio(p_dni);
-  v_c   public.clientes;
+  v_c   public.clientes_qr;
 begin
   if not public.es_personal() then
     return jsonb_build_object('ok', false, 'motivo', 'no_autorizado');
@@ -834,15 +869,15 @@ begin
     return jsonb_build_object('ok', false, 'motivo', 'dni_invalido');
   end if;
 
-  select * into v_c from public.clientes where dni = v_dni and tipo = 'ticket';
+  select * into v_c from public.clientes_qr where dni = v_dni and tipo = 'ticket';
   if not found then
     -- No es un error: es alguien que viene por primera vez.
     return jsonb_build_object('ok', true, 'existe', false, 'dni', v_dni,
-      'tiene_app', exists (select 1 from public.clientes where dni = v_dni and tipo = 'app'));
+      'tiene_app', exists (select 1 from public.clientes_qr where dni = v_dni and tipo = 'app'));
   end if;
 
   return public._ficha_cliente(v_c) || jsonb_build_object(
-    'tiene_app', exists (select 1 from public.clientes where dni = v_dni and tipo = 'app'));
+    'tiene_app', exists (select 1 from public.clientes_qr where dni = v_dni and tipo = 'app'));
 end $$;
 
 
@@ -856,7 +891,8 @@ language plpgsql stable security definer set search_path = ''
 as $$
 declare
   v_corto text := regexp_replace(coalesce(p_codigo, ''), '[^0-9]', '', 'g');
-  v_c     public.clientes;
+  v_c     public.clientes_qr;
+  v_uid   text;
 begin
   if not public.es_personal() then
     return jsonb_build_object('ok', false, 'motivo', 'no_autorizado');
@@ -865,12 +901,21 @@ begin
     return jsonb_build_object('ok', false, 'motivo', 'codigo_invalido');
   end if;
 
-  select c.* into v_c
-    from public.pases p join public.clientes c on c.uid = p.uid
+  select p.uid into v_uid
+    from public.pases p
    where p.codigo_corto = v_corto and p.origen = 'app'
      and p.revocado_en is null and p.vence_en > now();
   if not found then
     return jsonb_build_object('ok', false, 'motivo', 'codigo_vencido');
+  end if;
+
+  select * into v_c from public.clientes_qr where uid = v_uid;
+  if not found then
+    -- Una billetera de la app de SEN POS: no tiene DNI, tiene usuario. Se
+    -- arma la ficha con lo que hay (el nombre está en la tarjeta).
+    v_c.uid    := v_uid;
+    v_c.tipo   := 'app';
+    v_c.nombre := coalesce((select nota from public.tarjetas where uid = v_uid), 'Cliente de la app');
   end if;
 
   return public._ficha_cliente(v_c);
@@ -896,7 +941,7 @@ declare
   v_dni    text := public._dni_limpio(p_dni);
   v_nombre text := trim(regexp_replace(coalesce(p_nombre, ''), '\s+', ' ', 'g'));
   v_yo     uuid := (select auth.uid());
-  v_c      public.clientes;
+  v_c      public.clientes_qr;
   v_carga  jsonb;
   v_p      public.pases;
 begin
@@ -916,7 +961,7 @@ begin
     return jsonb_build_object('ok', false, 'motivo', 'falta_clave');
   end if;
 
-  select * into v_c from public.clientes
+  select * into v_c from public.clientes_qr
    where dni = v_dni and tipo = 'ticket' for update;
 
   if not found then
@@ -929,14 +974,14 @@ begin
     begin
       v_c := public._cliente_crear(v_dni, v_nombre, 'ticket', null, v_yo);
     exception when unique_violation then
-      select * into v_c from public.clientes where dni = v_dni and tipo = 'ticket' for update;
+      select * into v_c from public.clientes_qr where dni = v_dni and tipo = 'ticket' for update;
     end;
   elsif length(v_nombre) >= 2 and v_nombre is distinct from v_c.nombre then
     -- El cajero corrigió el nombre: vale el que tiene el documento adelante.
     if length(v_nombre) > 60 then
       return jsonb_build_object('ok', false, 'motivo', 'nombre_muy_largo');
     end if;
-    update public.clientes set nombre = v_nombre where uid = v_c.uid;
+    update public.clientes_qr set nombre = v_nombre where uid = v_c.uid;
     update public.tarjetas set nota = v_nombre where uid = v_c.uid;
     v_c.nombre := v_nombre;
   end if;
@@ -1012,14 +1057,14 @@ language plpgsql security definer set search_path = ''
 as $$
 declare
   v_dni text := public._dni_limpio(p_dni);
-  v_c   public.clientes;
+  v_c   public.clientes_qr;
   v_p   public.pases;
 begin
   if not public.es_personal() then
     return jsonb_build_object('ok', false, 'motivo', 'no_autorizado');
   end if;
 
-  select * into v_c from public.clientes
+  select * into v_c from public.clientes_qr
    where dni = v_dni and tipo = 'ticket' for update;
   if not found then
     return jsonb_build_object('ok', false, 'motivo', 'cliente_desconocido');
@@ -1047,18 +1092,18 @@ language plpgsql security definer set search_path = ''
 as $$
 declare
   v_dni text := public._dni_limpio(p_dni);
-  v_c   public.clientes;
+  v_c   public.clientes_qr;
 begin
   if not public.es_personal() then
     return jsonb_build_object('ok', false, 'motivo', 'no_autorizado');
   end if;
 
-  select * into v_c from public.clientes where dni = v_dni and tipo = 'app' for update;
+  select * into v_c from public.clientes_qr where dni = v_dni and tipo = 'app' for update;
   if not found then
     return jsonb_build_object('ok', false, 'motivo', 'cliente_desconocido');
   end if;
 
-  update public.clientes set dispositivo_hash = null, dispositivo_en = null
+  update public.clientes_qr set dispositivo_hash = null, dispositivo_en = null
    where uid = v_c.uid;
   update public.pases set revocado_en = now()
    where uid = v_c.uid and origen = 'app' and revocado_en is null;
@@ -1083,6 +1128,7 @@ declare
   v_mov      bigint;
   v_abierta  bigint;
   v_cliente  boolean;
+  v_turno    bigint;
 begin
   if not public.es_personal() then
     return jsonb_build_object('ok', false, 'motivo', 'no_autorizado');
@@ -1110,7 +1156,17 @@ begin
 
   select saldo_centavos, nota into v_saldo, v_nota
     from public.tarjetas where uid = v_uid;
-  v_cliente := exists (select 1 from public.clientes where uid = v_uid);
+  v_cliente := exists (select 1 from public.clientes_qr where uid = v_uid);
+
+  -- Con SEN POS, la plata que se devuelve sale del cajón del turno abierto: se
+  -- asienta como egreso, o el arqueo del POS daría faltante. Sin turno no se
+  -- devuelve. Se pregunta ANTES de tocar nada.
+  if v_saldo > 0 and to_regprocedure('public._pos_turno_para_asentar()') is not null then
+    v_turno := public._pos_turno_para_asentar();
+    if v_turno is null then
+      return jsonb_build_object('ok', false, 'motivo', 'sin_turno_abierto');
+    end if;
+  end if;
 
   -- El ticket deja de valer: se le devolvió la plata, no puede seguir abriendo
   -- canillas con el papel.
@@ -1137,6 +1193,16 @@ begin
           coalesce(nullif(trim(v_nota), ''), 'devolución'),
           nullif(trim(coalesce(p_motivo, '')), ''), (select auth.uid()), 'efectivo')
   returning id into v_mov;
+
+  if v_turno is not null then
+    -- Dinámico: sin el POS, la tabla no existe y esta función igual tiene que
+    -- poder crearse y correr.
+    execute 'insert into public.caja_movimientos (turno_id, tipo, medio, centavos, concepto, referencia, hecho_por)
+             values ($1, ''egreso'', ''efectivo'', $2, $3, $4, $5)'
+      using v_turno, v_saldo,
+            'Devolución de saldo' || coalesce(' a ' || nullif(trim(v_nota), ''), ''),
+            'movimiento:' || v_mov, (select auth.uid());
+  end if;
 
   return jsonb_build_object('ok', true, 'uid', v_uid,
                             'devuelto_centavos', v_saldo,
@@ -1175,7 +1241,7 @@ begin
                  t.saldo_centavos, t.bloqueada, t.bloqueada_motivo, t.actualizada_en,
                  c.dispositivo_hash is not null as celular_vinculado
             from public.tarjetas t
-            left join public.clientes c on c.uid = t.uid
+            left join public.clientes_qr c on c.uid = t.uid
            where (v_b is null
                   or c.dni like '%' || regexp_replace(v_b, '[^0-9]', '', 'g') || '%'
                      and regexp_replace(v_b, '[^0-9]', '', 'g') <> ''
@@ -1207,11 +1273,11 @@ declare
   v_hasta  timestamptz;
   v_mov    jsonb;
   v_medios jsonb;
-  v_efvo   bigint;
+  v_efvo   numeric;
   v_con    jsonb;
   v_gente  jsonb;
   v_res    jsonb;
-  v_circ   bigint;
+  v_circ   numeric;
   v_colg   int;
 begin
   if not public.es_personal() then
@@ -1240,12 +1306,12 @@ begin
          coalesce(sum(centavos) filter (where medio = 'efectivo'), 0)
     into v_medios, v_efvo
     from (
-      select coalesce(medio_pago, 'efectivo') as medio,
+      select public._medio_carga(medio_pago, referencia, clave_idempotencia) as medio,
              sum(centavos) as centavos,
              jsonb_build_object('cantidad', count(*), 'centavos', sum(centavos)) as fila
         from public.movimientos
        where creado_en >= v_desde and creado_en < v_hasta and tipo = 'carga'
-       group by coalesce(medio_pago, 'efectivo')
+       group by public._medio_carga(medio_pago, referencia, clave_idempotencia)
     ) t;
 
   select jsonb_build_object(
@@ -1260,12 +1326,12 @@ begin
   select coalesce(jsonb_agg(f order by f->>'nombre'), '[]'::jsonb) into v_gente
     from (
       select jsonb_build_object(
-               'nombre',      coalesce(pe.nombre, case when m.medio_pago = 'mercadopago'
+               'nombre',      coalesce(pe.nombre, case when public._medio_carga(m.medio_pago, m.referencia, m.clave_idempotencia) = 'mercadopago'
                                                         then 'App (Mercado Pago)'
                                                         else 'sin identificar' end),
                'cargas',      coalesce(sum(m.centavos) filter (where m.tipo = 'carga'), 0),
                'efectivo',    coalesce(sum(m.centavos) filter (where m.tipo = 'carga'
-                                and coalesce(m.medio_pago, 'efectivo') = 'efectivo'), 0),
+                                and public._medio_carga(m.medio_pago, m.referencia, m.clave_idempotencia) = 'efectivo'), 0),
                'devoluciones',coalesce(-sum(m.centavos) filter (where m.tipo = 'devolucion'), 0),
                'ajustes',     coalesce(sum(m.centavos) filter (where m.tipo = 'ajuste'), 0),
                'operaciones', count(*)) as f
@@ -1273,7 +1339,7 @@ begin
         left join public.personal pe on pe.user_id = m.hecho_por
        where m.creado_en >= v_desde and m.creado_en < v_hasta
          and m.tipo in ('carga', 'devolucion', 'ajuste')
-       group by coalesce(pe.nombre, case when m.medio_pago = 'mercadopago'
+       group by coalesce(pe.nombre, case when public._medio_carga(m.medio_pago, m.referencia, m.clave_idempotencia) = 'mercadopago'
                                          then 'App (Mercado Pago)'
                                          else 'sin identificar' end)
     ) t;
@@ -1285,18 +1351,18 @@ begin
     'ok', true,
     'es_admin', public.es_admin(),
     'desde', v_desde, 'hasta', v_hasta,
-    'cargas_centavos',       coalesce((v_mov->'carga'->>'centavos')::bigint, 0),
+    'cargas_centavos',       coalesce((v_mov->'carga'->>'centavos')::numeric, 0),
     'cargas_cantidad',       coalesce((v_mov->'carga'->>'cantidad')::int, 0),
     'cargas_por_medio',      v_medios,
     'efectivo_centavos',     v_efvo,
-    'devoluciones_centavos', coalesce(-(v_mov->'devolucion'->>'centavos')::bigint, 0),
+    'devoluciones_centavos', coalesce(-(v_mov->'devolucion'->>'centavos')::numeric, 0),
     'devoluciones_cantidad', coalesce((v_mov->'devolucion'->>'cantidad')::int, 0),
-    'ajustes_centavos',      coalesce((v_mov->'ajuste'->>'centavos')::bigint, 0),
+    'ajustes_centavos',      coalesce((v_mov->'ajuste'->>'centavos')::numeric, 0),
     'ajustes_cantidad',      coalesce((v_mov->'ajuste'->>'cantidad')::int, 0),
     -- Lo que tiene que haber en el cajón: el efectivo que entró menos lo que
     -- se devolvió (las devoluciones salen siempre en efectivo).
     'neto_caja_centavos',    v_efvo
-                             + coalesce((v_mov->'devolucion'->>'centavos')::bigint, 0),
+                             + coalesce((v_mov->'devolucion'->>'centavos')::numeric, 0),
     'sesiones_abiertas',     v_colg);
 
   if not public.es_admin() then
@@ -1305,7 +1371,7 @@ begin
 
   return v_res || jsonb_build_object(
     'consumo',               v_con,
-    'margen_centavos',       (v_con->>'centavos')::bigint - (v_con->>'costo_centavos')::bigint,
+    'margen_centavos',       (v_con->>'centavos')::numeric - (v_con->>'costo_centavos')::numeric,
     'saldo_en_circulacion_centavos', v_circ,
     'por_persona',           v_gente);
 end;
@@ -1324,23 +1390,487 @@ returns jsonb
 language plpgsql stable security definer set search_path = ''
 as $$
 declare
-  v_c public.clientes;
+  v_c public.clientes_qr;
 begin
   if not public.es_personal() then
     return jsonb_build_object('ok', false, 'motivo', 'no_autorizado');
   end if;
 
-  select * into v_c from public.clientes
+  select * into v_c from public.clientes_qr
    where uid = upper(trim(coalesce(p_uid, '')));
   if not found then
     return jsonb_build_object('ok', false, 'motivo', 'cliente_desconocido');
   end if;
 
   return public._ficha_cliente(v_c) || jsonb_build_object(
-    'tiene_app', exists (select 1 from public.clientes
+    'tiene_app', exists (select 1 from public.clientes_qr
                           where dni = v_c.dni and tipo = 'app'));
 end $$;
 
+
+-- ── El QR para la billetera de la app de SEN POS ───────────────────────────
+-- La app del POS (`/billetera`) tiene sus propios usuarios (email y clave) y a
+-- cada uno le da una tarjeta virtual en `tarjetas`. Para servirse en una
+-- canilla necesita el mismo QR temporal que la app de las canillas: un código
+-- fijo (como el número de la tarjeta) se puede fotografiar y usar desde otro
+-- celular. Esto se lo da al usuario que inició sesión, para SU tarjeta.
+--
+-- Mismo formato y misma vida que `cliente_generar_pase`: 90 segundos y un
+-- código de 6 números para que la caja lo encuentre.
+create or replace function public.app_generar_pase()
+returns jsonb
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_uid    text;
+  v_codigo text;
+  v_corto  text;
+  v_vence  timestamptz := now() + interval '90 seconds';
+begin
+  if (select auth.uid()) is null then
+    return jsonb_build_object('ok', false, 'motivo', 'no_autorizado');
+  end if;
+  if to_regclass('public.app_clientes') is null then
+    return jsonb_build_object('ok', false, 'motivo', 'sin_billetera');
+  end if;
+
+  execute 'select tarjeta_uid from public.app_clientes where user_id = $1'
+     into v_uid using (select auth.uid());
+  if v_uid is null then
+    return jsonb_build_object('ok', false, 'motivo', 'sin_billetera');
+  end if;
+  if (select bloqueada from public.tarjetas where uid = v_uid) then
+    return jsonb_build_object('ok', false, 'motivo', 'tarjeta_bloqueada');
+  end if;
+
+  update public.pases set codigo_corto = null
+   where origen = 'app' and codigo_corto is not null and vence_en < now();
+  delete from public.pases
+   where origen = 'app' and vence_en < now() - interval '10 minutes';
+
+  v_codigo := public._codigo_nuevo();
+  for i in 1..8 loop
+    v_corto := lpad((floor(random() * 1000000))::int::text, 6, '0');
+    begin
+      insert into public.pases (uid, origen, codigo_hash, codigo_corto, vence_en)
+      values (v_uid, 'app', public._hash(v_codigo), v_corto, v_vence);
+      exit;
+    exception when unique_violation then
+      v_corto := null;
+    end;
+  end loop;
+  if v_corto is null then
+    return jsonb_build_object('ok', false, 'motivo', 'reintentar');
+  end if;
+
+  return jsonb_build_object(
+    'ok', true, 'codigo', 'GRIFO:' || v_codigo, 'codigo_corto', v_corto,
+    'vence_en', v_vence, 'segundos', 90,
+    'saldo_centavos', (select saldo_centavos from public.tarjetas where uid = v_uid));
+end $$;
+
+
+-- ═════════════════════════════════════════════════════════════════════════════
+-- CONVIVIR CON SEN POS: datos inválidos se rechazan, no revientan
+-- ═════════════════════════════════════════════════════════════════════════════
+-- Las pruebas del POS llaman a cada función con datos basura y exigen un
+-- `{ok: false}` prolijo, nunca un error interno. Estas cuatro del sistema de
+-- canillas tiraban error con un nulo, un número gigante o (por la regla nueva
+-- de arriba) un mínimo de cero mililitros. Son las mismas funciones, con esos
+-- controles agregados.
+
+create or replace function public.admin_crear_grifo(
+  p_nombre           text,
+  p_precio_litro     bigint,
+  p_pulsos_por_litro numeric default 450,
+  p_ml_minimos       int     default 50
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare v_id int;
+begin
+  if not public.es_admin() then
+    raise exception 'Solo un administrador puede crear canillas.'
+      using errcode = '42501';
+  end if;
+
+  if coalesce(btrim(p_nombre), '') = '' then
+    return jsonb_build_object('ok', false, 'motivo', 'falta_nombre_canilla');
+  end if;
+
+  if coalesce(p_precio_litro, 0) <= 0 then
+    return jsonb_build_object('ok', false, 'motivo', 'precio_invalido');
+  end if;
+
+  if coalesce(p_pulsos_por_litro, 0) <= 0 or p_pulsos_por_litro >= 1000000 then
+    return jsonb_build_object('ok', false, 'motivo', 'calibracion_invalida');
+  end if;
+  if length(btrim(p_nombre)) > 60 then
+    return jsonb_build_object('ok', false, 'motivo', 'nombre_muy_largo');
+  end if;
+  if p_precio_litro > 100000000000 then
+    return jsonb_build_object('ok', false, 'motivo', 'precio_invalido');
+  end if;
+
+  -- El id se elige acá y no con un identity porque es el número que el humano
+  -- ve y escribe: va en el `secrets.h` del ESP32 y en el nombre de la red del
+  -- portal (GRIFO-1). Un salto en la secuencia por un insert fallido dejaría
+  -- una canilla "3" al lado de una "5" sin que exista la "4", y eso confunde a
+  -- quien tiene que ir a conectarlas.
+  --
+  -- El lock es sobre la tabla y no hace falta que sea fino: dar de alta una
+  -- canilla pasa cuatro veces en la vida del bar.
+  lock table public.grifos in exclusive mode;
+  select coalesce(max(id), 0) + 1 into v_id from public.grifos;
+
+  insert into public.grifos (id, nombre, precio_litro_centavos,
+                             pulsos_por_litro, ml_minimos, activo)
+  values (v_id, btrim(p_nombre), p_precio_litro,
+          p_pulsos_por_litro, least(greatest(coalesce(p_ml_minimos, 50), 1), 100000),
+          -- Nace APAGADA a propósito. Una canilla sin token no puede vender, y
+          -- una que figura "en servicio" sin poder servir es una mentira en el
+          -- tablero. Se prende cuando está conectada de verdad.
+          false);
+
+  return jsonb_build_object('ok', true, 'id', v_id);
+end $$;
+
+create or replace function public.admin_actualizar_grifo(
+  p_grifo            int,
+  p_nombre           text    default null,
+  p_precio_litro     bigint  default null,
+  p_pulsos_por_litro numeric default null,
+  p_ml_minimos       int     default null,
+  p_activo           boolean default null
+)
+returns jsonb language plpgsql security definer set search_path = ''
+as $$
+declare v_g public.grifos%rowtype;
+begin
+  if not public.es_admin() then
+    return jsonb_build_object('ok', false, 'motivo', 'no_autorizado');
+  end if;
+
+  if p_precio_litro is not null and p_precio_litro <= 0 then
+    return jsonb_build_object('ok', false, 'motivo', 'precio_invalido');
+  end if;
+  if p_pulsos_por_litro is not null and (p_pulsos_por_litro <= 0 or p_pulsos_por_litro >= 1000000) then
+    return jsonb_build_object('ok', false, 'motivo', 'calibracion_invalida');
+  end if;
+  if p_precio_litro > 100000000000 then
+    return jsonb_build_object('ok', false, 'motivo', 'precio_invalido');
+  end if;
+  -- Cero mililitros abría una sesión sin tope (ver arriba): mínimo uno.
+  if p_ml_minimos is not null and (p_ml_minimos < 1 or p_ml_minimos > 100000) then
+    return jsonb_build_object('ok', false, 'motivo', 'ml_minimos_invalido');
+  end if;
+  if p_nombre is not null and (btrim(p_nombre) = '' or length(p_nombre) > 60) then
+    return jsonb_build_object('ok', false, 'motivo', 'falta_nombre_canilla');
+  end if;
+
+  -- No dejamos activar un grifo sin token: quedaría "en servicio" pero
+  -- incapaz de operar, que es justo la contradicción que evitamos.
+  if p_activo is true
+     and (select token_hash from public.grifos where id = p_grifo) is null then
+    return jsonb_build_object('ok', false, 'motivo', 'sin_token',
+      'detalle', 'Rotá el token del grifo antes de activarlo.');
+  end if;
+
+  update public.grifos
+     set nombre                = coalesce(p_nombre, nombre),
+         precio_litro_centavos = coalesce(p_precio_litro, precio_litro_centavos),
+         pulsos_por_litro      = coalesce(p_pulsos_por_litro, pulsos_por_litro),
+         ml_minimos            = coalesce(p_ml_minimos, ml_minimos),
+         activo                = coalesce(p_activo, activo)
+   where id = p_grifo
+   returning * into v_g;
+
+  if not found then
+    return jsonb_build_object('ok', false, 'motivo', 'grifo_desconocido');
+  end if;
+
+  return jsonb_build_object(
+    'ok', true, 'id', v_g.id, 'nombre', v_g.nombre,
+    'precio_litro_centavos', v_g.precio_litro_centavos,
+    'pulsos_por_litro', v_g.pulsos_por_litro,
+    'ml_minimos', v_g.ml_minimos, 'activo', v_g.activo
+  );
+end;
+$$;
+
+create or replace function public.admin_ordenar(
+  p_grifo int,
+  p_tipo  text,
+  p_datos jsonb default '{}'::jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare v_id bigint;
+begin
+  if not public.es_admin() then
+    raise exception 'Solo un administrador puede darle ordenes a una canilla.'
+      using errcode = '42501';
+  end if;
+
+  if p_tipo is null or p_tipo not in ('reiniciar', 'wifi', 'olvidar_wifi') then
+    return jsonb_build_object('ok', false, 'motivo', 'tipo_desconocido');
+  end if;
+
+  if not exists (select 1 from public.grifos where id = p_grifo) then
+    return jsonb_build_object('ok', false, 'motivo', 'grifo_desconocido');
+  end if;
+
+  -- Un SSID vacio dejaria la canilla sin red y sin respaldo valido. Se corta
+  -- aca y no en el firmware: es mas barato no mandar una orden rota que
+  -- mandarla y esperar que del otro lado la rechacen bien.
+  if p_tipo = 'wifi' and (jsonb_typeof(p_datos) is distinct from 'object' or coalesce(p_datos->>'ssid', '') = '') then
+    return jsonb_build_object('ok', false, 'motivo', 'falta_ssid');
+  end if;
+
+  -- Una orden nueva del mismo tipo reemplaza a la que todavia no se entrego.
+  -- Si corregis el SSID porque lo escribiste mal, no queres que la canilla
+  -- aplique primero el equivocado y despues el bueno: queres que aplique el
+  -- bueno.
+  --
+  --   Es reemplazar el job encolado en vez de encolar otro al lado.
+  -- Y se le borra la clave al cancelarla. Una orden de wifi cancelada es un
+  -- secreto que ya no le sirve a nadie: no hay motivo para seguir guardandolo.
+  update public.ordenes_canilla
+     set cancelada_en = now(),
+         datos        = datos - 'pass'
+   where grifo_id = p_grifo
+     and tipo = p_tipo
+     and aplicada_en is null
+     and cancelada_en is null;
+
+  insert into public.ordenes_canilla (grifo_id, tipo, datos, creada_por)
+  values (p_grifo, p_tipo,
+          case when p_tipo = 'wifi' then p_datos else '{}'::jsonb end,
+          auth.uid())
+  returning id into v_id;
+
+  return jsonb_build_object('ok', true, 'id', v_id);
+end $$;
+
+create or replace function public.caja_bloquear_tarjeta(
+  p_uid text, p_bloquear boolean, p_motivo text default null
+)
+returns jsonb language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_uid text;
+  v_t   public.tarjetas%rowtype;
+begin
+  if not public.es_personal() then
+    return jsonb_build_object('ok', false, 'motivo', 'no_autorizado');
+  end if;
+
+  v_uid := upper(trim(coalesce(p_uid, '')));
+  if p_bloquear is null then
+    return jsonb_build_object('ok', false, 'motivo', 'datos_invalidos');
+  end if;
+
+  update public.tarjetas
+     set bloqueada        = p_bloquear,
+         bloqueada_motivo = case when p_bloquear then p_motivo else null end,
+         bloqueada_por    = case when p_bloquear then (select auth.uid()) else null end,
+         bloqueada_en     = case when p_bloquear then now() else null end,
+         actualizada_en   = now()
+   where uid = v_uid
+   returning * into v_t;
+
+  if not found then
+    return jsonb_build_object('ok', false, 'motivo', 'tarjeta_desconocida');
+  end if;
+
+  return jsonb_build_object('ok', true, 'uid', v_t.uid, 'bloqueada', v_t.bloqueada);
+end;
+$$;
+
+
+create or replace function public.admin_actualizar_cerveza(
+  p_grifo       int,
+  p_costo_litro bigint  default null,
+  p_ml_vaso     int     default null,
+  p_estilo      text    default null,
+  p_descripcion text    default null,
+  p_abv         numeric default null,
+  p_ibu         int     default null,
+  p_color       text    default null,
+  p_imagen_url  text    default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare v_g public.grifos%rowtype;
+begin
+  if not public.es_admin() then
+    return jsonb_build_object('ok', false, 'motivo', 'no_autorizado');
+  end if;
+
+  if p_costo_litro is not null and p_costo_litro < 0 then
+    return jsonb_build_object('ok', false, 'motivo', 'costo_invalido');
+  end if;
+  if p_color is not null and p_color <> '' and p_color !~ '^#[0-9A-Fa-f]{6}$' then
+    return jsonb_build_object('ok', false, 'motivo', 'color_invalido');
+  end if;
+
+  if p_costo_litro > 100000000000 then
+    return jsonb_build_object('ok', false, 'motivo', 'costo_invalido');
+  end if;
+  if p_abv is not null and (p_abv < 0 or p_abv >= 100) then
+    return jsonb_build_object('ok', false, 'motivo', 'datos_invalidos');
+  end if;
+  if p_ibu is not null and (p_ibu < 0 or p_ibu > 1000) then
+    return jsonb_build_object('ok', false, 'motivo', 'datos_invalidos');
+  end if;
+  if length(p_estilo) > 80 or length(p_descripcion) > 400 or length(p_imagen_url) > 2000 then
+    return jsonb_build_object('ok', false, 'motivo', 'datos_invalidos');
+  end if;
+
+  if p_ml_vaso is not null and (p_ml_vaso <= 0 or p_ml_vaso > 100000) then
+    return jsonb_build_object('ok', false, 'motivo', 'vaso_invalido');
+  end if;
+
+  update public.grifos
+     set costo_litro_centavos = coalesce(p_costo_litro, costo_litro_centavos),
+         ml_vaso     = coalesce(p_ml_vaso, ml_vaso),
+         estilo      = coalesce(p_estilo, estilo),
+         descripcion = coalesce(p_descripcion, descripcion),
+         abv         = coalesce(p_abv, abv),
+         ibu         = coalesce(p_ibu, ibu),
+         color       = coalesce(nullif(p_color, ''), color),
+         imagen_url  = coalesce(p_imagen_url, imagen_url)
+   where id = p_grifo
+   returning * into v_g;
+
+  if not found then
+    return jsonb_build_object('ok', false, 'motivo', 'grifo_desconocido');
+  end if;
+
+  return jsonb_build_object(
+    'ok', true, 'id', v_g.id,
+    'costo_litro_centavos', v_g.costo_litro_centavos,
+    'ml_vaso', v_g.ml_vaso,
+    'margen_litro_centavos', v_g.precio_litro_centavos - v_g.costo_litro_centavos,
+    'color', v_g.color, 'imagen_url', v_g.imagen_url
+  );
+end;
+$$;
+
+create or replace function public.admin_ajustar_saldo(
+  p_uid text, p_centavos bigint, p_motivo text
+)
+returns jsonb language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_uid   text;
+  v_saldo bigint;
+  v_mov   bigint;
+begin
+  if not public.es_admin() then
+    return jsonb_build_object('ok', false, 'motivo', 'no_autorizado');
+  end if;
+
+  v_uid := upper(trim(coalesce(p_uid, '')));
+  if v_uid = '' then
+    return jsonb_build_object('ok', false, 'motivo', 'uid_invalido');
+  end if;
+  if p_centavos is null or p_centavos = 0 or abs(p_centavos) > 100000000000 then
+    return jsonb_build_object('ok', false, 'motivo', 'monto_invalido');
+  end if;
+  if coalesce(trim(p_motivo), '') = '' then
+    return jsonb_build_object('ok', false, 'motivo', 'falta_motivo');
+  end if;
+
+  perform 1 from public.tarjetas where uid = v_uid for update;
+  if not found then
+    return jsonb_build_object('ok', false, 'motivo', 'tarjeta_desconocida');
+  end if;
+
+  select saldo_centavos into v_saldo from public.tarjetas where uid = v_uid;
+
+  -- Un ajuste negativo no puede dejar la tarjeta en rojo. Si querés sacarle más
+  -- de lo que tiene, el saldo queda en cero: la deuda no se registra acá.
+  if p_centavos < 0 and (v_saldo + p_centavos) < 0 then
+    return jsonb_build_object('ok', false, 'motivo', 'saldo_insuficiente',
+      'detalle', 'La tarjeta tiene ' || (v_saldo / 100.0)::text ||
+                 ' y el ajuste la dejaría en negativo.');
+  end if;
+
+  update public.tarjetas
+     set saldo_centavos = saldo_centavos + p_centavos,
+         actualizada_en = now()
+   where uid = v_uid
+   returning saldo_centavos into v_saldo;
+
+  insert into public.movimientos (uid, tipo, centavos, saldo_resultante, referencia, motivo, hecho_por)
+  values (v_uid, 'ajuste', p_centavos, v_saldo, 'ajuste manual', trim(p_motivo), (select auth.uid()))
+  returning id into v_mov;
+
+  return jsonb_build_object('ok', true, 'uid', v_uid,
+                            'saldo_centavos', v_saldo, 'movimiento_id', v_mov);
+end;
+$$;
+
+create or replace function public.admin_listar_personal()
+returns jsonb language sql stable security definer set search_path = ''
+as $$
+  -- A quien no es admin, nada (antes, una lista vacía: no filtraba, pero no
+  -- dejaba claro que la respuesta era "no").
+  select case when public.es_admin() then coalesce(jsonb_agg(x order by x->>'creado_en'), '[]'::jsonb) end
+    from (
+      select jsonb_build_object(
+               'user_id',   p.user_id,
+               'email',     u.email,
+               'nombre',    p.nombre,
+               'rol',       p.rol,
+               'activo',    p.activo,
+               'creado_en', p.creado_en
+             ) as x
+        from public.personal p
+        join auth.users u on u.id = p.user_id
+       where public.es_admin()
+    ) t;
+$$;
+
+create or replace function public.estado_barriles()
+returns jsonb language sql stable security definer set search_path = ''
+as $$
+  -- A quien no es admin, nada (antes, una lista vacía).
+  select case when public.es_admin() then coalesce(jsonb_agg(x order by x->>'restante_pct'), '[]'::jsonb) end
+    from (
+      select jsonb_build_object(
+               'grifo_id',     g.id,
+               'grifo',        g.nombre,
+               'color',        coalesce(g.color, '#c8811f'),
+               'activo',       g.activo,
+               'barril_id',    b.id,
+               'litros',       b.litros,
+               'ml_servidos',  b.ml_servidos,
+               'ml_restantes', greatest(0, (b.litros * 1000)::bigint - b.ml_servidos),
+               'restante_pct', case when b.litros > 0
+                                    then greatest(0, round(100 - (b.ml_servidos / (b.litros * 10)), 1))
+                                    else 0 end,
+               'instalado_en', b.instalado_en,
+               -- Vasos que quedan, que es como lo piensa el que atiende la barra
+               'vasos',        case when g.ml_vaso > 0
+                                    then greatest(0, ((b.litros * 1000)::bigint - b.ml_servidos) / g.ml_vaso)
+                                    else 0 end
+             ) as x
+        from public.grifos g
+        join public.barriles b on b.grifo_id = g.id and b.agotado_en is null
+       where public.es_admin()
+    ) t;
+$$;
 
 -- ═════════════════════════════════════════════════════════════════════════════
 -- PERMISOS
@@ -1349,6 +1879,12 @@ revoke all on function public.cliente_entrar(text, text, text)        from publi
 revoke all on function public.cliente_estado(text, text)              from public, anon, authenticated;
 revoke all on function public.cliente_generar_pase(text, text)        from public, anon, authenticated;
 revoke all on function public.cliente_salir(text, text)               from public, anon, authenticated;
+revoke all on function public.app_generar_pase()                    from public, anon, authenticated;
+revoke all on function public._medio_carga(text, text, text)          from public, anon, authenticated;
+-- Del sistema de canillas, de antes: es del admin y estaba abierta a anon por
+-- los permisos que Supabase da por defecto (adentro igual pedía admin).
+revoke all on function public.admin_listar_grifos()                  from public, anon;
+revoke all on function public.inicio_jornada(timestamptz)            from public, anon, authenticated;
 revoke all on function public.caja_buscar_cliente(text)               from public, anon, authenticated;
 revoke all on function public.caja_buscar_por_codigo(text)            from public, anon, authenticated;
 revoke all on function public.caja_ficha(text)                        from public, anon, authenticated;
@@ -1366,6 +1902,10 @@ grant execute on function public.cliente_entrar(text, text, text)     to anon, a
 grant execute on function public.cliente_estado(text, text)           to anon, authenticated;
 grant execute on function public.cliente_generar_pase(text, text)     to anon, authenticated;
 grant execute on function public.cliente_salir(text, text)            to anon, authenticated;
+-- La billetera de la app de SEN POS: solo con sesión iniciada.
+grant execute on function public.app_generar_pase()                  to authenticated;
+grant execute on function public.admin_listar_grifos()               to authenticated;
+grant execute on function public.inicio_jornada(timestamptz)         to service_role;
 
 -- La caja y el admin: cualquier logueado puede intentar, la función decide.
 grant execute on function public.caja_buscar_cliente(text)            to authenticated;

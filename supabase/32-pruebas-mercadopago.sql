@@ -34,7 +34,7 @@ declare
 begin
   v := public.cliente_entrar('31222333', 'Sofi Mendez', CEL);
   assert (v->>'ok')::boolean, '0: alta del cliente. ' || v::text;
-  select uid into v_uid from public.clientes where dni = '31222333' and tipo = 'app';
+  select uid into v_uid from public.clientes_qr where dni = '31222333' and tipo = 'app';
   v := public.cliente_entrar('32444555', 'Tomi Ruiz', CEL2);
 
   -- ══ 1. Nadie de afuera toca los pagos ════════════════════════════════════
@@ -112,7 +112,7 @@ begin
   -- ══ 6. Un rechazo tardío no pisa un pago aprobado ════════════════════════
   v := public.pago_rechazar(v_pago, 'cc_rejected_insufficient_amount');
   assert not (v->>'cambio')::boolean, '6a: no des-aprueba. ' || v::text;
-  assert (select estado from public.pagos where id = v_pago) = 'aprobado', '6b: sigue aprobado';
+  assert (select estado from public.recargas_mp where id = v_pago) = 'aprobado', '6b: sigue aprobado';
 
   v := public.pago_crear('31222333', CEL, 300000);
   v_otro := (v->>'pago_id')::uuid;

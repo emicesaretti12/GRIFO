@@ -13,6 +13,17 @@ credencial del bar.
 Hasta que no se haga esto, la app dice "la carga con Mercado Pago todavía no
 está activada" y todo lo demás (QR, caja, tickets) funciona igual.
 
+## Con SEN POS
+
+SEN POS tiene su propia carga con Mercado Pago para **su** app (`/billetera`,
+funciones `mp-preferencia` y `mp-webhook`). Las dos pueden convivir con la misma
+cuenta de Mercado Pago: cada una reconoce solo sus pagos por la referencia y
+ignora los de la otra, y las dos acreditan en la misma billetera.
+
+Lo que conviene decidir es **cuál app usan los clientes**: la de canillas (entra
+con nombre y DNI, sin contraseña) o la del POS (email y clave, y además pide
+comida). Si queda solo la del POS, esta función no hace falta.
+
 ## Paso 1 — La base
 
 Correr `supabase/31-mercadopago.sql` en el editor SQL (después de `29-qr.sql`).

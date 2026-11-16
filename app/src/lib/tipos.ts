@@ -167,7 +167,8 @@ export type FichaCliente = {
   ok: true
   existe: true
   uid: string
-  dni: string
+  /** Nulo en una billetera de la app de SEN POS: esa tiene usuario, no DNI. */
+  dni: string | null
   nombre: string
   tipo: TipoCuenta
   saldo_centavos: number
@@ -294,6 +295,9 @@ export const MOTIVOS: Record<string, string> = {
   qr_anulado: 'Ese QR fue reemplazado por uno más nuevo.',
   canilla_sin_conexion: 'La canilla está sin conexión.',
   sin_backend: 'Falta instalar el backend: corré 29-qr.sql en Supabase.',
+  sin_turno_abierto: 'No hay una caja abierta en SEN POS. Abrí el turno en el POS y probá de nuevo: lo que se cobra acá entra en ese arqueo.',
+  ml_minimos_invalido: 'Los mililitros mínimos tienen que ser al menos 1.',
+  datos_invalidos: 'Algún dato no es válido. Revisalo y probá de nuevo.',
 
   // ── Canillas: alta, baja y órdenes ────────────────────────────────────────
   falta_nombre_canilla: 'Hay que ponerle un nombre a la canilla.',

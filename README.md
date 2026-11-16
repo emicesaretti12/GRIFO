@@ -140,6 +140,7 @@ supabase/
   30-pruebas-qr.sql         pruebas del QR, la caja y los permisos
   31-mercadopago.sql        pagos de Mercado Pago: intentos y acreditación una sola vez
   32-pruebas-mercadopago.sql  pruebas de los pagos
+  33-pruebas-con-pos.sql    convivencia con SEN POS: turno de caja, devoluciones, billetera de su app
   functions/mercadopago/    la función del servidor que habla con Mercado Pago
 docs/
   plan-de-etapas.md         las 8 etapas, qué necesita cada una, criterio de aceptación
@@ -155,6 +156,7 @@ docs/
   pantalla-canilla.md       la pantalla de cada grifo: vinculación, kiosco, animación
   deploy-vercel.md          publicar la app y regenerar los QR de las pantallas
   qr.md                     el QR: app del cliente, ticket de la caja, la cámara de la tablet
+  flashear-y-probar.md      flashear el ESP32 (protoboard o placa) y la prueba de punta a punta
   mercado-pago.md           activar la carga con Mercado Pago, paso a paso
   barriles-y-ajustes.md     stock por barril y correcciones de saldo
   devoluciones-y-arqueo.md  devolver la tarjeta y cerrar la caja del turno

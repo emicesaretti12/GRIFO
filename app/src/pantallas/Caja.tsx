@@ -319,11 +319,11 @@ export default function Caja({ abrir, alAbrir }: {
                 {ficha.sesion_abierta && <Chip tono="dato">Sirviendo</Chip>}
               </div>
               <p className="bajada" style={{ marginBottom: 14 }}>
-                DNI {ficha.dni}
+                {ficha.dni ? `DNI ${ficha.dni}` : 'Billetera de la app de SEN POS'}
                 {ficha.tipo === 'ticket' && (ficha.pase
                   ? ` · QR válido hasta ${fecha(ficha.pase.vence_en)}`
                   : ' · sin QR vigente: se imprime uno nuevo al cargar o reimprimir')}
-                {ficha.tipo === 'app' && (ficha.celular_vinculado ? ' · celular vinculado' : ' · sin celular vinculado')}
+                {ficha.tipo === 'app' && ficha.dni && (ficha.celular_vinculado ? ' · celular vinculado' : ' · sin celular vinculado')}
               </p>
 
               <Stat etiqueta="Saldo disponible" valor={pesos(ficha.saldo_centavos)} hero />
@@ -352,7 +352,7 @@ export default function Caja({ abrir, alAbrir }: {
                 {ficha.tipo === 'ticket' ? (
                   <Cobro key={venta} ocupado={ocupado} deshabilitado={ficha.bloqueada}
                          textoBoton={c => `Cobrar ${pesos(c)} e imprimir el ticket`}
-                         onCobrar={(c, m, k) => vender(ficha.dni, ficha.nombre, c, m, k)} />
+                         onCobrar={(c, m, k) => vender(ficha.dni ?? '', ficha.nombre, c, m, k)} />
                 ) : (
                   <Cobro key={venta} ocupado={ocupado} deshabilitado={ficha.bloqueada}
                          textoBoton={c => `Cobrar ${pesos(c)} y cargar a su app`}
@@ -371,7 +371,7 @@ export default function Caja({ abrir, alAbrir }: {
                     </button>
                   </>
                 )}
-                {ficha.tipo === 'app' && (
+                {ficha.tipo === 'app' && ficha.dni && (
                   <button className="btn crece" disabled={ocupado} onClick={() => setModal('celular')}>
                     <Icono nombre="refrescar" tam={16} /> Cambió de celular
                   </button>
@@ -433,7 +433,7 @@ export default function Caja({ abrir, alAbrir }: {
 
       {modal === 'perdido' && ficha && (
         <Modal titulo="Darle un QR nuevo"
-               bajada={`${ficha.nombre} · DNI ${ficha.dni}`}
+               bajada={ficha.dni ? `${ficha.nombre} · DNI ${ficha.dni}` : ficha.nombre}
                onCerrar={() => setModal(null)}
                acciones={
                  <>
@@ -472,7 +472,7 @@ export default function Caja({ abrir, alAbrir }: {
 
       {modal === 'devolver' && ficha && (
         <Modal titulo="Devolver el saldo"
-               bajada={`${ficha.nombre} · DNI ${ficha.dni}`}
+               bajada={ficha.dni ? `${ficha.nombre} · DNI ${ficha.dni}` : ficha.nombre}
                onCerrar={() => setModal(null)}
                acciones={
                  <>

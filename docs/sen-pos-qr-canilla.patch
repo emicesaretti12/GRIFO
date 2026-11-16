@@ -1,0 +1,121 @@
+From d16397a030c6edf3e2549639f934f5e1b159a7e0 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 16 Nov 2026 21:17:14 +0000
+Subject: [PATCH] Billetera: QR temporal para servirse en la canilla
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+La tablet de cada canilla lee un QR que vale 90 segundos (app_generar_pase,
+del sistema de canillas). El código fijo de la billetera sigue para la caja.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01KoCvNXVR78noLHyKwjH49C
+---
+ src/app/(cliente)/billetera/page.tsx | 79 +++++++++++++++++++++++++++-
+ 1 file changed, 78 insertions(+), 1 deletion(-)
+
+diff --git a/src/app/(cliente)/billetera/page.tsx b/src/app/(cliente)/billetera/page.tsx
+index c98dbef..18ab454 100644
+--- a/src/app/(cliente)/billetera/page.tsx
++++ b/src/app/(cliente)/billetera/page.tsx
+@@ -1,7 +1,7 @@
+ "use client";
+ 
+ import { useRouter, useSearchParams } from "next/navigation";
+-import { Suspense, useEffect, useRef, useState } from "react";
++import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+ import { Beer, LogOut } from "lucide-react";
+ import { CodigoQR } from "@/components/CodigoQR";
+ import { irAPagar, leerBilletera, leerUltimaRecarga, type UltimaRecarga } from "@/lib/cliente";
+@@ -47,6 +47,8 @@ function Billetera() {
+ 
+       <Recargar />
+ 
++      {!b.bloqueada && <QRCanilla />}
++
+       <section className="flex items-center gap-4 rounded-[8px] border border-linea p-4">
+         <CodigoQR texto={b.uid} tamano={112} etiqueta={`Código de tu billetera: ${b.uid}`} />
+         <div className="min-w-0">
+@@ -249,3 +251,78 @@ function CompletarAlta({ onListo }: { onListo: () => void }) {
+     </form>
+   );
+ }
++
++// ── El QR para servirse en una canilla ──────────────────────────────────────
++// La tablet de cada canilla lee este QR con la cámara. No es el código fijo de
++// la billetera (ese es para la caja): vale 90 segundos y se renueva solo, así
++// una foto o una captura mandada por WhatsApp ya no sirve cuando el otro llega.
++// Lo genera la base (app_generar_pase, del sistema de canillas).
++type Pase = { codigo: string; segundos: number };
++
++function QRCanilla() {
++  const [abierto, setAbierto] = useState(false);
++  const [pase, setPase] = useState<{ codigo: string; hasta: number } | null>(null);
++  const [error, setError] = useState<string | null>(null);
++  const [ahora, setAhora] = useState(() => Date.now());
++  const pidiendo = useRef(false);
++
++  const pedir = useCallback(async () => {
++    if (pidiendo.current) return;
++    pidiendo.current = true;
++    const r = await rpc<Pase>("app_generar_pase");
++    pidiendo.current = false;
++    if (!r.ok) {
++      setError(mensaje(r));
++      return;
++    }
++    setError(null);
++    // El vencimiento se cuenta con el reloj del celular desde ahora: uno con la
++    // hora corrida vería vencido un QR recién hecho.
++    setPase({ codigo: r.codigo, hasta: Date.now() + r.segundos * 1000 });
++  }, []);
++
++  useEffect(() => {
++    if (!abierto) return;
++    void pedir();
++    const id = setInterval(() => setAhora(Date.now()), 1000);
++    return () => clearInterval(id);
++  }, [abierto, pedir]);
++
++  // Se renueva cuando le quedan 30 segundos: siempre hay margen para que la tablet lo lea.
++  const resta = pase ? pase.hasta - ahora : 0;
++  useEffect(() => {
++    if (abierto && pase && resta < 30000) void pedir();
++  }, [abierto, pase, resta, pedir]);
++
++  if (!abierto) {
++    return (
++      <button type="button" onClick={() => setAbierto(true)}
++              className="w-full rounded-[8px] bg-ambar px-4 py-4 text-left font-semibold text-black">
++        Servirme en una canilla
++        <span className="block text-sm font-normal">Te mostramos un QR para la tablet del grifo.</span>
++      </button>
++    );
++  }
++
++  return (
++    <section className="rounded-[8px] border border-linea bg-white p-4 text-center text-black">
++      <p className="font-semibold">Acercalo a la cámara de la tablet del grifo</p>
++      <div className="mt-3 flex justify-center">
++        {pase && resta > 0 ? (
++          <CodigoQR texto={pase.codigo} tamano={240} etiqueta="QR para servirte en la canilla" />
++        ) : (
++          <div className="esqueleto size-60" />
++        )}
++      </div>
++      {error ? (
++        <p className="mt-2 text-sm text-demora">{error}</p>
++      ) : (
++        <p className="mt-2 text-sm text-neutral-600">Se renueva solo. Una captura de pantalla no sirve.</p>
++      )}
++      <button type="button" onClick={() => { setAbierto(false); setPase(null); }}
++              className="mt-3 text-sm underline">
++        Listo
++      </button>
++    </section>
++  );
++}
+-- 
+2.43.0
+

@@ -37,7 +37,7 @@ end $$;
 -- Un intento de carga. Nace 'pendiente' cuando el cliente toca "Pagar" y pasa
 -- a 'aprobado' cuando Mercado Pago confirma. El id viaja a Mercado Pago como
 -- `external_reference`: es el hilo que une su pago con nuestra billetera.
-create table if not exists public.pagos (
+create table if not exists public.recargas_mp (
   id              uuid primary key default gen_random_uuid(),
   uid             text not null references public.tarjetas(uid),
   centavos        bigint not null check (centavos > 0),
@@ -51,21 +51,21 @@ create table if not exists public.pagos (
   actualizado_en  timestamptz not null default now()
 );
 
-create index if not exists pagos_uid_idx on public.pagos (uid, creado_en desc);
+create index if not exists recargas_mp_uid_idx on public.recargas_mp (uid, creado_en desc);
 
-comment on table public.pagos is
+comment on table public.recargas_mp is
   'Intentos de carga por Mercado Pago. La plata entra al saldo solo por pago_acreditar.';
 
-alter table public.pagos enable row level security;
-revoke all on table public.pagos from anon, authenticated;
-grant all on table public.pagos to service_role;
-grant select on table public.pagos to authenticated;
+alter table public.recargas_mp enable row level security;
+revoke all on table public.recargas_mp from anon, authenticated;
+grant all on table public.recargas_mp to service_role;
+grant select on table public.recargas_mp to authenticated;
 
 do $$
 begin
   if not exists (select 1 from pg_policies where schemaname = 'public'
-                  and tablename = 'pagos' and policyname = 'admin_lee_pagos') then
-    create policy admin_lee_pagos on public.pagos
+                  and tablename = 'recargas_mp' and policyname = 'admin_lee_recargas_mp') then
+    create policy admin_lee_recargas_mp on public.recargas_mp
       for select to authenticated using (public.es_admin());
   end if;
 end $$;
@@ -84,7 +84,7 @@ as $$
 declare
   MINIMO constant bigint := 100000;      -- $ 1.000
   MAXIMO constant bigint := 20000000;    -- $ 200.000
-  v_c    public.clientes := public._cliente_app(p_dni, p_dispositivo);
+  v_c    public.clientes_qr := public._cliente_app(p_dni, p_dispositivo);
   v_id   uuid;
 begin
   if v_c.uid is null then
@@ -101,12 +101,12 @@ begin
 
   -- Un freno al que toca "Pagar" cien veces: cada intento le pide una
   -- preferencia a Mercado Pago.
-  if (select count(*) from public.pagos
+  if (select count(*) from public.recargas_mp
        where uid = v_c.uid and creado_en > now() - interval '10 minutes') >= 10 then
     return jsonb_build_object('ok', false, 'motivo', 'demasiados_intentos');
   end if;
 
-  insert into public.pagos (uid, centavos) values (v_c.uid, p_centavos)
+  insert into public.recargas_mp (uid, centavos) values (v_c.uid, p_centavos)
   returning id into v_id;
 
   return jsonb_build_object('ok', true, 'pago_id', v_id,
@@ -120,7 +120,7 @@ returns jsonb
 language plpgsql security definer set search_path = ''
 as $$
 begin
-  update public.pagos
+  update public.recargas_mp
      set mp_preferencia = p_preferencia, actualizado_en = now()
    where id = p_pago;
   return jsonb_build_object('ok', found);
@@ -146,14 +146,14 @@ returns jsonb
 language plpgsql security definer set search_path = ''
 as $$
 declare
-  v_p public.pagos;
+  v_p public.recargas_mp;
   v_r jsonb;
 begin
   if coalesce(trim(p_mp_pago_id), '') = '' or p_centavos is null or p_centavos <= 0 then
     return jsonb_build_object('ok', false, 'motivo', 'datos_invalidos');
   end if;
 
-  select * into v_p from public.pagos where id = p_pago for update;
+  select * into v_p from public.recargas_mp where id = p_pago for update;
   if not found then
     return jsonb_build_object('ok', false, 'motivo', 'pago_desconocido');
   end if;
@@ -164,7 +164,7 @@ begin
     return v_r;
   end if;
 
-  update public.pagos
+  update public.recargas_mp
      set estado         = 'aprobado',
          mp_pago_id     = coalesce(mp_pago_id, trim(p_mp_pago_id)),
          movimiento_id  = coalesce(movimiento_id, (v_r->>'movimiento_id')::bigint),
@@ -191,7 +191,7 @@ returns jsonb
 language plpgsql security definer set search_path = ''
 as $$
 begin
-  update public.pagos
+  update public.recargas_mp
      set estado = 'rechazado', detalle = left(p_detalle, 200), actualizado_en = now()
    where id = p_pago and estado = 'pendiente';
   return jsonb_build_object('ok', true, 'cambio', found);
@@ -206,13 +206,13 @@ returns jsonb
 language plpgsql stable security definer set search_path = ''
 as $$
 declare
-  v_c public.clientes := public._cliente_app(p_dni, p_dispositivo);
-  v_p public.pagos;
+  v_c public.clientes_qr := public._cliente_app(p_dni, p_dispositivo);
+  v_p public.recargas_mp;
 begin
   if v_c.uid is null then
     return jsonb_build_object('ok', false, 'motivo', 'sesion_invalida');
   end if;
-  select * into v_p from public.pagos where id = p_pago and uid = v_c.uid;
+  select * into v_p from public.recargas_mp where id = p_pago and uid = v_c.uid;
   if not found then
     return jsonb_build_object('ok', false, 'motivo', 'pago_desconocido');
   end if;

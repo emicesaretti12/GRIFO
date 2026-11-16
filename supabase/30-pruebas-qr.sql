@@ -49,6 +49,22 @@ begin
   t951 := public.rotar_token_grifo(951) ->> 'token';
   t952 := public.rotar_token_grifo(952) ->> 'token';
 
+  -- Con SEN POS instalado, el mostrador cobra dentro de un turno de caja
+  -- abierto (ver `_cargar`). Sin el POS, este bloque no hace nada.
+  if to_regprocedure('public.pos_abrir_turno(bigint,bigint)') is not null then
+    execute 'insert into public.cajas (nombre) select ''Caja de prueba''
+              where not exists (select 1 from public.cajas where activa)';
+    perform set_config('request.jwt.claims', CAJERO, true);
+    set local role authenticated;
+    -- Primero sin turno: el mostrador no cobra.
+    v := public.caja_vender('27999111', 'Sin Turno', 100000, 'efectivo', 'k-sin-turno');
+    assert v->>'motivo' = 'sin_turno_abierto', '0a: con el POS no se cobra sin turno. ' || v::text;
+    execute 'select public.pos_abrir_turno(0)' into v;
+    assert (v->>'ok')::boolean, '0b: abre el turno. ' || v::text;
+    reset role;
+    perform set_config('request.jwt.claims', '{}', true);
+  end if;
+
   -- ══ 1. La jornada va de 6 a 6, hora de Argentina ═════════════════════════
   assert public.inicio_jornada('2026-11-14 02:00:00-03') = '2026-11-13 06:00:00-03',
          '1a: las 2 AM son de la noche anterior';
@@ -76,7 +92,7 @@ begin
   -- El mismo celular vuelve a entrar: es la misma cuenta, no otra.
   v := public.cliente_entrar('30111222', 'emi', CEL_A);
   assert (v->>'ok')::boolean and not (v->>'nueva')::boolean, '2h: reingreso. ' || v::text;
-  select count(*) into n from public.clientes where dni = '30111222' and tipo = 'app';
+  select count(*) into n from public.clientes_qr where dni = '30111222' and tipo = 'app';
   assert n = 1, '2i: no puede haber dos cuentas de app para un DNI';
 
   -- ══ 3. Otro celular con el mismo DNI NO entra ════════════════════════════
@@ -201,7 +217,10 @@ begin
   v_qr2 := v->'pase'->>'codigo';
   assert v_qr2 ~ '^GRIFO:[0-9A-F]{32}$',                   '9g: trae el QR del ticket. ' || v::text;
   -- Vale hasta que cierra el bar: las 6:00 que terminan esta jornada.
-  assert (v->'pase'->>'vence_en')::timestamptz = public.inicio_jornada(now()) + interval '24 hours',
+  -- (La cuenta se hace a mano: `inicio_jornada` es interna, la caja no la ve.)
+  assert (v->'pase'->>'vence_en')::timestamptz =
+         (date_trunc('day', (now() at time zone 'America/Argentina/Buenos_Aires') - interval '6 hours')
+          + interval '30 hours') at time zone 'America/Argentina/Buenos_Aires',
          '9h: vence a las 6 AM. ' || v::text;
 
   -- Reintento con la misma clave: mismo resultado, sin cobrar de nuevo.
@@ -279,8 +298,8 @@ begin
   assert (v->>'ok')::boolean and (v->>'devuelto_centavos')::bigint = 800000 - 189200,
          '14a: devuelve lo que quedaba. ' || v::text;
   reset role;
-  assert (select nombre from public.clientes where dni = '28999111' and tipo = 'ticket') = 'Juan Perez'
-     and (select nota from public.tarjetas t join public.clientes c using (uid)
+  assert (select nombre from public.clientes_qr where dni = '28999111' and tipo = 'ticket') = 'Juan Perez'
+     and (select nota from public.tarjetas t join public.clientes_qr c using (uid)
            where c.dni = '28999111' and c.tipo = 'ticket') = 'Juan Perez',
          '14b: el cliente conserva su nombre';
   v := public.tablet_abrir_sesion_qr(v_qr2, 952, t952);
@@ -383,7 +402,7 @@ begin
   exception when insufficient_privilege then null;
   end;
   begin
-    perform 1 from public.clientes limit 1;
+    perform 1 from public.clientes_qr limit 1;
     raise exception '22d: AGUJERO: anon lee el padrón';
   exception when insufficient_privilege then null;
   end;
@@ -401,12 +420,12 @@ begin
   -- Un cajero no lee el padrón por la tabla, ni los pases.
   perform set_config('request.jwt.claims', CAJERO, true);
   set local role authenticated;
-  select count(*) into n from public.clientes;
+  select count(*) into n from public.clientes_qr;
   assert n = 0, '22f: AGUJERO: el cajero lee la tabla de clientes';
 
   -- Pero sí reabre una cuenta que ya tiene a la vista, por su identificador.
   reset role;
-  select uid into v_uid from public.clientes where dni = '30111222' and tipo = 'app';
+  select uid into v_uid from public.clientes_qr where dni = '30111222' and tipo = 'app';
   perform set_config('request.jwt.claims', CAJERO, true);
   set local role authenticated;
   v := public.caja_ficha(lower(v_uid));

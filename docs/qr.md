@@ -103,6 +103,23 @@ chica arriba de la tablet lo resuelve.
 No abren ninguna canilla. Las que tenían saldo siguen en **Cuentas** como
 "Tarjeta vieja", con un botón para devolverlo en efectivo.
 
+## Con SEN POS en la misma base
+
+El sistema de canillas y SEN POS comparten la billetera (`tarjetas`). Para que
+no se pisen:
+
+- **Lo que cobra la caja de canillas entra al turno de caja del POS**, con su
+  medio de pago, y las devoluciones salen como egreso. Sin turno abierto en el
+  POS, la caja de canillas no cobra: el arqueo ciego del POS siempre cuadra.
+- **La billetera de la app del POS también sirve en las canillas**: pide un QR
+  temporal con `app_generar_pase()` (cambio en `sen-pos-qr-canilla.patch`), y la
+  caja la encuentra por el código de 6 números.
+- Las tablas propias se llaman `clientes_qr` y `recargas_mp`: el POS ya tiene
+  `clientes` y `pagos`.
+
+Probado sobre una copia de producción: las pruebas de las canillas, las del POS
+completas y `33-pruebas-con-pos.sql`.
+
 ## Instalar
 
 En el editor SQL de Supabase, en este orden:
@@ -110,6 +127,6 @@ En el editor SQL de Supabase, en este orden:
 1. `supabase/29-qr.sql`
 2. `supabase/31-mercadopago.sql`
 
-Los `30-…` y `32-…` son pruebas: se pueden correr, no dejan rastro.
+Los `30-…`, `32-…` y `33-…` son pruebas: se pueden correr, no dejan rastro.
 
 Después, Mercado Pago: [mercado-pago.md](mercado-pago.md).
