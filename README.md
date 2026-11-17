@@ -155,6 +155,7 @@ docs/
   app-gestion.md            app de gestión: puesta en marcha, roles, lector RFID
   pantalla-canilla.md       la pantalla de cada grifo: vinculación, kiosco, animación
   deploy-vercel.md          publicar la app y regenerar los QR de las pantallas
+  FUSION-SEN-POS.md         traspaso: qué está integrado con SEN POS y qué falta
   qr.md                     el QR: app del cliente, ticket de la caja, la cámara de la tablet
   flashear-y-probar.md      flashear el ESP32 (protoboard o placa) y la prueba de punta a punta
   mercado-pago.md           activar la carga con Mercado Pago, paso a paso
